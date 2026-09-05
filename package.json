@@ -1,0 +1,22 @@
+{
+  "name": "scenes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "3D sandbox scenes to test model capabilities. Scene 1: a Kyoto stepped street at sunset matched to japan.webp.",
+  "scripts": {
+    "dev": "node tools/serve.js",
+    "shot": "node tools/shot.js",
+    "compare": "node tools/compare.js",
+    "perf": "node tools/perf.js",
+    "probe": "node tools/probe.js",
+    "inspect": "node tools/inspect.js",
+    "test": "node tools/test.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}

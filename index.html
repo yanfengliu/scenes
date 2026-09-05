@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kyoto stepped street at sunset</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1c24; }
+  canvas#scene { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #reset {
+    position: fixed; right: 12px; bottom: 12px;
+    font: 13px/1.2 system-ui, sans-serif; color: #fff;
+    background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 6px; padding: 6px 10px; cursor: pointer;
+  }
+  #reset:hover { background: rgba(0, 0, 0, 0.8); }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+<script>
+  // Handshake for the test tools: __sceneState leaves "loading" when the first frames are rendered
+  // at the photo view (main.js calls __sceneResolve) or when anything throws (__sceneReject).
+  window.__sceneState = 'loading';
+  window.__sceneReady = new Promise((resolve, reject) => {
+    window.__sceneResolve = (api) => { window.__sceneState = 'ready'; resolve(api); };
+    window.__sceneReject = (err) => { window.__sceneState = 'error'; reject(err); };
+  });
+  window.__sceneReady.catch(() => {});
+  window.addEventListener('error', (e) => window.__sceneReject(e.error || new Error(e.message)));
+  window.addEventListener('unhandledrejection', (e) => window.__sceneReject(e.reason));
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<button id="reset" type="button" title="Reset to the photo view (R)">Reset view (R)</button>
+<script type="module" src="./src/main.js" onerror="window.__sceneReject(new Error('the module script or one of its imports failed to load'))"></script>
+</body>
+</html>
