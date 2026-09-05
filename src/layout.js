@@ -194,7 +194,7 @@ export const STREET = {
   landingLength: 1.5, // flat landing before the paved street continues downhill
   lowerSlope: Math.tan(21.7 * DEG), // the street beyond the landing is a little steeper, so it rejoins the same line by z = -22
   bendStartZ: -20,
-  bendRate: 0.4, // metres of leftward shift per metre beyond bendStartZ
+  bendRate: 0.22, // metres of leftward shift per metre beyond bendStartZ (photo: the far street is centred near u 0.45)
 };
 export const STEP_TREAD = STREET.stepRise / STREET.slope;
 
@@ -217,10 +217,10 @@ export function streetCenterX(z) {
 export const LEFT_TERRACES = [
   { z0: -1.0, z1: -8.0, y: 1.6 },
   { z0: -8.0, z1: -11.5, y: -0.6 },
-  { z0: -11.5, z1: -17.5, y: -3.5 },
+  { z0: -11.5, z1: -15.5, y: -3.5 },
 ];
 // Nearest thing on the left: a tall wall of light stone blocks (photo u 0 to 0.12, v 0.55 to 1.0).
-export const LEFT_STONE_WALL = { x0: -3.6, x1: -2.8, z0: -4.8, z1: 3.0, top: 3.7 };
+export const LEFT_STONE_WALL = { x0: -3.6, x1: -2.8, z0: -5.3, z1: 3.0, top: 3.7 }; // its far end at photo u 0.10
 // Top of the low plaster wall that runs downhill in front of the house fronts, as [z, y] pairs
 // (photo: from about (0.10, 0.84) to (0.28, 0.88), then fading out at the landing).
 export const LEFT_CAP_LINE = [
@@ -231,8 +231,16 @@ export const LEFT_CAP_LINE = [
   [-13.85, -4.3],
 ];
 export const LEFT_LOW_WALL_HEIGHT = 0.6;
+export const LEFT_LOW_WALL_THICKNESS = 0.4; // the photo's cap is a narrow band (u 0.10-0.27 at v 0.84-0.88)
 export function leftCapY(z) {
   return interpolateZ(LEFT_CAP_LINE, z);
+}
+// The potted plant on the low wall: on the ray through its photo position, on top of the cap.
+export function leftPotPlacement() {
+  const x = STREET.x0 + 0.05 - LEFT_LOW_WALL_THICKNESS / 2; // the wall's centre line
+  const u = LEFT_POT.u - 0.025;
+  const p = uvToWorld(u, LEFT_POT.v, depthForU(u, x));
+  return { x, z: p.z, potY: leftCapY(p.z) + 0.12 };
 }
 
 // Right side: a paved walkway in front of the right machiya sloping with the street, with a raised
@@ -240,6 +248,10 @@ export function leftCapY(z) {
 // Beyond the planter the walkway drops to the street level, where the landing widens to the right.
 export const RIGHT_TERRACE = { xInner: 2.1, xBed: 2.4, xOuter: 9.0, line: [[0, 0.45], [-5.6, 0.45], [-14.8, -2.7], [-15.3, -5.0], [-40, -13.0]] };
 export const RIGHT_BED = { z0: -14.8, z1: -5.6, raise: 1.5, fenceHeight: 0.6 };
+// The wooden fence with its small tiled roof stands on the planter strip's street edge and jogs back
+// around the head of the side steps (photo: the low roof's ridge kinks near u 0.68). `path` is the
+// fence's centre line as [x, z] points; the roof overhangs the fence by roofHalfWidth on each side.
+export const RIGHT_FENCE = { thickness: 0.3, roofHalfWidth: 0.4, roofRise: 0.18, path: [[2.25, -5.6], [2.25, -8.85], [3.0, -8.85], [3.0, -12.15], [2.25, -12.15], [2.25, -14.8]] };
 // The side steps cut through the retaining wall; the wall is low over a slightly wider span so the
 // steps stay visible from the photo view.
 export const RIGHT_STEPS_Z = { z0: -12.0, z1: -9.0 };
@@ -270,17 +282,26 @@ export const RIGHT_MACHIYA = {
   baseSplitZ: -10.0,
   plinthTop: 0.3,
   eaveTop: 4.5,
+  eaveDrop: 0.5, // the ground-floor eave steps down along the street (photo: its edge stays at v 0.40 from u 1.0 to 0.75)
   roofY: 6.95,
   roofThickness: 0.65,
   fasciaZ0: -11.0, // only the near part of the top eave's tile ends catches the light (photo u > 0.80)
 };
 // Left house 1 is a low-mezzanine machiya: its top roof sits at about 6.4 m with sky above it.
 // The eave roof runs to photo u 0.18, the top roof overhangs the far end of the shorter mezzanine wall.
-export const LEFT_HOUSE_1 = { front: -3.4, back: -10, groundZ0: -6.0, upperZ0: -7.5, roofZ0: -10.0, eaveZ0: -9.6, z1: 3.0, eaveY: 4.2, eaveTop: 4.9, upperTop: 6.25, roofUnder: 6.0, roofTop: 6.65 };
+export const LEFT_HOUSE_1 = { front: -3.4, back: -10, groundZ0: -6.0, upperZ0: -7.5, roofZ0: -12.0, eaveZ0: -9.6, z1: 3.0, eaveY: 4.2, eaveTop: 4.9, upperTop: 6.25, roofUnder: 6.25, roofEave: 6.6 };
 // Roofs along the left house fronts step down with the terraces. Each is a slab given by its outer
 // edge (near and far ends along z) and the rise of its inner edge, sloping up away from the street.
 export const LEFT_ANNEX_ROOF = { xOuter: -4.0, xInner: -7.5, zNear: -6.0, yNear: 3.4, zFar: -13.4, yFar: 1.7, rise: 2.2 };
 export const LEFT_CANOPY = { xOuter: -2.9, xInner: -6.5, zNear: -5.5, yNear: 3.3, zFar: -13.7, yFar: -0.6, rise: 2.2 };
+// Height of the canopy's outer edge at z, its line continued past both ends.
+export function canopyOuterY(z) {
+  const K = LEFT_CANOPY;
+  return K.yNear + ((K.yFar - K.yNear) * (z - K.zNear)) / (K.zFar - K.zNear);
+}
+// The small white awning is a light sheet laid over the canopy's lower rows near the door (photo
+// u 0.13-0.20, v 0.50-0.57): its extent along the street and how far up the slope it reaches.
+export const LEFT_AWNING = { zNear: -6.0, zFar: -7.5, depth: 0.7, lift: 0.1 };
 
 // Depths (metres along the optical axis) chosen for frontal elements.
 export const DEPTHS = {
@@ -321,6 +342,8 @@ export const COLORS = {
   cherryLow: 0xa58a9a,
   cherryShade: 0xa68b9f,
   roofUnderDark: 0x151515,
+  roofUnderMid: 0x3a2f28,
+  roofUnderFar: 0x8b7568,
   trunk: 0x4e4546,
   eaveDark: 0x3a3330,
   evergreen: 0x3d4b3e,
@@ -347,6 +370,7 @@ export const COLORS = {
   house1Upper: 0x393737,
   house1Hip: 0x5b4e45,
   eaveEdge: 0x6e5f52,
+  leftRoofEdge: 0x8b6c54,
   house3Lower: 0x6f5a49,
   rightGroundFar: 0x63605f,
   shrubDeep: 0x1e2416,
@@ -358,7 +382,10 @@ export const COLORS = {
   stoneWallLeft: 0x857c72,
   stoneWallRight: 0x4d5559,
   sideStepTop: 0x76818e,
-  annex: 0x6f5a49,
+  annex: 0x7a6650,
+  annexLower: 0x55483f,
+  annexFarLower: 0x3a2f28,
+  annexFarUpper: 0xa08b72,
   canopy: 0x979899,
   steps: 0x96959a,
   landing: 0x76818d,

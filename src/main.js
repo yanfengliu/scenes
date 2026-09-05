@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CAMERA, COLORS, uvToWorld } from './layout.js';
-import { buildBlockout } from './blockout.js';
+import { buildScene } from './scene.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -48,7 +48,7 @@ window.addEventListener('keydown', (event) => {
 });
 document.getElementById('reset').addEventListener('click', resetView);
 
-const { group } = buildBlockout();
+const { group } = buildScene();
 scene.add(group);
 
 function onResize() {
