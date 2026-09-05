@@ -66,14 +66,16 @@ Verified by the manager on 2026-09-05: commits cbba4f3 and 4d18d2b on origin/mai
 
 ### Phase 2: Architecture and stone
 
-- [ ] Paving: individual stone slabs (instanced) with procedural stone albedo, roughness and normal textures, mortar joints, worn edges, the drainage strip. Steps with real risers and treads. The right-side stair.
-- [ ] Retaining walls of stacked irregular stones (instanced or displaced), the low white plaster wall with a tile cap, the round pot, the potted plant's pot.
-- [ ] Kawara roofs: instanced pan tiles in rows with ridge tiles and round eave-end caps, dark grey with a soft sheen, correct pitch, deep eaves with exposed rafter ends. Every roof in the left row, both roofs of the right machiya, and the small wall roof.
-- [ ] Walls: dark red-brown and black wood boards (canvas wood grain), white plaster panels, koshi vertical lattices as geometry, shoji upper windows, the right house's balcony rail, doors, the small awning, the blue sign, hanging paper lanterns, the wooden lamp post with its lantern.
-- [ ] Noren: a cloth mesh under the right eave, white with a dark pattern and a scalloped hem, slight sag.
-- [ ] Zoomed views (orbit in three directions) hold up: tiles, lattices, and stones are geometry, not paint.
-- [ ] Scores not worse than phase 1. Draw calls within budget through instancing.
-- [ ] Devlog, critic, commit, push, report.
+- [x] Paving: individual stone slabs (instanced) with procedural stone albedo, roughness and normal textures, mortar joints, worn edges, the drainage strip. Steps with real risers and treads. The right-side stair.
+- [x] Retaining walls of stacked irregular stones (instanced or displaced), the low white plaster wall with a tile cap, the round pot, the potted plant's pot.
+- [x] Kawara roofs: instanced pan tiles in rows with ridge tiles and round eave-end caps, dark grey with a soft sheen, correct pitch, deep eaves with exposed rafter ends. Every roof in the left row, both roofs of the right machiya, and the small wall roof.
+- [x] Walls: dark red-brown and black wood boards (canvas wood grain), white plaster panels, koshi vertical lattices as geometry, shoji upper windows, the right house's balcony rail, doors, the small awning, the blue sign, hanging paper lanterns, the wooden lamp post with its lantern.
+- [x] Noren: a cloth mesh under the right eave, white with a dark pattern and a scalloped hem, slight sag.
+- [x] Zoomed views (orbit in three directions) hold up: tiles, lattices, and stones are geometry, not paint.
+- [x] Scores not worse than phase 1. Draw calls within budget through instancing.
+- [x] Devlog, critic, commit, push, report.
+
+Verified by the manager on 2026-09-05: commit 407d653 on origin/main, clean gate run PASS with cell distance 0.0899 and SSIM 0.3273 (thresholds 0.093 / 0.32), perf 203 draw calls and 1.2 ms median at 1920x1080, compare sheet and landmark overlay inspected at native size, live page orbited and zoomed (tiles, slabs, lattices are geometry) and R reset checked. Partial by design until phase 4: roughness and normal maps are generated but unused while materials are unlit, so the tile sheen waits for lighting.
 
 ### Phase 3: Vegetation, figures, and background
 
