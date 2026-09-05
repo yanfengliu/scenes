@@ -54,13 +54,15 @@ Light and color: the sun is low behind the hill, upper right, so everything is b
 
 ### Phase 1: Harness, camera, and block-out
 
-- [ ] Repo scaffold: `index.html`, `src/main.js`, `src/layout.js` (every landmark position as a named constant), import map pinned to an exact Three.js version (check the CDN for the current release), `package.json` with the scripts above, `tools/` holding the server, screenshot, compare, and perf scripts, Playwright pinned as a dev dependency with chromium installed.
-- [ ] Canon files: `AGENTS.md` in the canon's repo file shape (What this is, the canon block filled by the fleet sync through the `sync-instructions` skill and never by hand, Gates, Invariants and boundaries, Conventions), `CLAUDE.md` containing exactly `@AGENTS.md`, `docs/devlog/summary.md`, `docs/learning/lessons.md`, `docs/learning/defect-register.md`, `docs/policies/local-rules.md`.
-- [ ] Camera matches the photo: horizon, pitch, FOV, and position tuned with the overlay tool. `R` resets to it. OrbitControls with damping, target at the cherry's trunk base.
-- [ ] Block-out of every landmark above with simple meshes and flat colors sampled from the photo: stepped street and landing, both retaining walls, left house row (boxes plus roof slabs), right machiya (two floors, eave, noren plane), low tiled wall, right steps, cherry as a cluster of pink ellipsoids, evergreen as a dark cone, hill ridge as a silhouette mesh, distant mountains as layered planes, sky gradient with the sun glow at (0.62, 0.12), fog.
-- [ ] Every landmark within 0.03 of the frame of its photo position in the overlay. The manager verifies with `out/compare.png`.
-- [ ] All gates green. Baseline scores recorded in `docs/PLAN-scores.md`.
-- [ ] Devlog entry, independent critic run with its findings fixed, committed to `main` by pathspec, pushed.
+- [x] Repo scaffold: `index.html`, `src/main.js`, `src/layout.js` (every landmark position as a named constant), import map pinned to an exact Three.js version (check the CDN for the current release), `package.json` with the scripts above, `tools/` holding the server, screenshot, compare, and perf scripts, Playwright pinned as a dev dependency with chromium installed.
+- [x] Canon files: `AGENTS.md` in the canon's repo file shape (What this is, the canon block filled by the fleet sync through the `sync-instructions` skill and never by hand, Gates, Invariants and boundaries, Conventions), `CLAUDE.md` containing exactly `@AGENTS.md`, `docs/devlog/summary.md`, `docs/learning/lessons.md`, `docs/learning/defect-register.md`, `docs/policies/local-rules.md`.
+- [x] Camera matches the photo: horizon, pitch, FOV, and position tuned with the overlay tool. `R` resets to it. OrbitControls with damping, target at the cherry's trunk base.
+- [x] Block-out of every landmark above with simple meshes and flat colors sampled from the photo: stepped street and landing, both retaining walls, left house row (boxes plus roof slabs), right machiya (two floors, eave, noren plane), low tiled wall, right steps, cherry as a cluster of pink ellipsoids, evergreen as a dark cone, hill ridge as a silhouette mesh, distant mountains as layered planes, sky gradient with the sun glow at (0.62, 0.12), fog.
+- [x] Every landmark within 0.03 of the frame of its photo position in the overlay. The manager verifies with `out/compare.png`.
+- [x] All gates green. Baseline scores recorded in `docs/PLAN-scores.md`.
+- [x] Devlog entry, independent critic run with its findings fixed, committed to `main` by pathspec, pushed.
+
+Verified by the manager on 2026-09-05: commits cbba4f3 and 4d18d2b on origin/main, clean gate run, cell distance 0.0941, SSIM 0.2950, 128 draw calls, orbit and R reset checked live. Decisions: the eye stays 1.65 m above a raised top landing that sits 4.8 m above the stair line (the landing is a real paved platform, to be built as stone in phase 2), and the orbit target stays on the optical axis at the cherry depth.
 
 ### Phase 2: Architecture and stone
 
