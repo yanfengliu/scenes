@@ -333,6 +333,9 @@ export const COLORS = {
   skyHorizon: 0xeed5b4,
   skySun: 0xfdf7e1,
   skyHalo: 0xf6e4cf,
+  cirrus: 0xd8cfd2, // the cirrus at the top left, cells (0.10, 0.05) and (0.15, 0.09)
+  cirrusLit: 0xe8b98e, // their orange undersides, cell (0.19, 0.07)
+  cloudPuff: 0xf3cfc4, // the pink puffs near the sun, cells (0.45, 0.10) and (0.52, 0.07)
   hillRidge: 0xdda586,
   hillHaze: 0x928171,
   hillMid: 0x615d52,

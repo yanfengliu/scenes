@@ -18,11 +18,11 @@ try {
   const errors = collectErrors(page);
   await openScene(page, `${server.url}/`);
   const rows = await page.evaluate((pts) => {
-    const { THREE, camera, scene, renderer } = window.__scene;
+    const { THREE, camera, scene, renderer, render } = window.__scene;
     const raycaster = new THREE.Raycaster();
     raycaster.far = 10000;
     const gl = renderer.getContext();
-    renderer.render(scene, camera);
+    render();
     const px = new Uint8Array(4);
     return pts.map(([u, v]) => {
       raycaster.setFromCamera(new THREE.Vector2(u * 2 - 1, 1 - v * 2), camera);

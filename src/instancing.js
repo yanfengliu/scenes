@@ -9,7 +9,7 @@ import { makeMaterial } from './materials.js';
 // phase 4 flips MATERIALS.lit), with the phase 4 maps kept aside as well.
 export function surface(kind, mean, { seed = 1, side, transparent = false, instancedUv = false } = {}) {
   const t = texturesFor(kind, mean, { seed });
-  const mat = makeMaterial({ map: t.map, transparent, side, normalMap: t.normalMap, roughnessMap: t.roughnessMap });
+  const mat = makeMaterial({ map: t.map, mean, transparent, side, normalMap: t.normalMap, roughnessMap: t.roughnessMap, roughness: t.roughness });
   mat.userData.pbr = { normalMap: t.normalMap ?? null, roughnessMap: t.roughnessMap ?? null, kind, mean };
   if (instancedUv) withInstanceUvOffset(mat);
   return mat;

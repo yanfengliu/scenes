@@ -281,6 +281,7 @@ function noren(b, M) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(index);
+  geo.computeVertexNormals();
   const mat = surface('noren', C.noren, { seed: 97, side: THREE.DoubleSide });
   mat.map.repeat.set(1, 1);
   b.add(new THREE.Mesh(geo, mat), 'noren');

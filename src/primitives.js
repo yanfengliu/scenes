@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import * as L from './layout.js';
 import { makeMaterial } from './materials.js';
 
-// A flat-colored material through the factory (unlit until phase 4 flips MATERIALS.lit).
+// A flat-colored material through the factory. The color is a photo-sampled mean: the factory turns it
+// into the albedo that displays as that mean again once the rig and the tone curve have had their say.
 export function material(color, extra = {}) {
   return makeMaterial({ color, ...extra });
 }
@@ -123,6 +124,7 @@ export function createBuilder(group) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.computeVertexNormals();
     return add(new THREE.Mesh(geo, color && color.isMaterial ? color : material(color, { side: THREE.DoubleSide })), name);
   }
 
@@ -138,7 +140,9 @@ export function createBuilder(group) {
   // A flat card facing the photo camera at `depth`, outlined in photo (u, v) coordinates.
   function frontalCard(name, uvPoints, depth, color) {
     const geo = new THREE.ShapeGeometry(uvShape(uvPoints, depth));
-    const mesh = new THREE.Mesh(geo, material(color, { side: THREE.DoubleSide, fog: false }));
+    // The distant layers are beyond any light in the rig: they carry their sampled color through the
+    // tone curve unchanged.
+    const mesh = new THREE.Mesh(geo, material(color, { side: THREE.DoubleSide, fog: false, unlit: true }));
     orientToCamera(mesh, depth);
     return add(mesh, name);
   }

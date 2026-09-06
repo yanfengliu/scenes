@@ -1,17 +1,17 @@
-// The sky dome with the sun glare (a placeholder until phase 4), and the distant layers: the mountains
-// as planes fading with distance, the forested hill as a surface with a tree-clump texture, the roofs of
-// farther houses below the hill as gabled houses, and the corner house at the bend (still block-out).
+// The distant layers: the mountains as planes fading with distance, the forested hill as a surface with
+// a tree-clump texture, the roofs of farther houses below the hill as gabled houses, the ground they
+// stand on, and the corner house at the bend (still block-out). The sky dome is src/sky.js.
 import * as THREE from 'three';
 import * as L from './layout.js';
-import { hexToVec3 } from './primitives.js';
 import { surface } from './instancing.js';
 import { makeMaterial } from './materials.js';
 import { makeHillTexture } from './textures.js';
+import { buildSky } from './sky.js';
 
 const C = L.COLORS;
 
 export function buildBackground(b) {
-  sky(b);
+  buildSky(b);
   mountains(b);
   hill(b);
   farGround(b);
@@ -19,67 +19,6 @@ export function buildBackground(b) {
   bend(b);
   // Base slab so orbiting never looks into the void.
   b.box('ground base', { x0: -80, x1: 80, y0: -30, y1: -24, z0: -120, z1: 40 }, C.groundBase);
-}
-
-function sky(b) {
-  const sunPoint = L.uvToWorld(L.SUN.u, L.SUN.v, 100);
-  const sunDir = new THREE.Vector3(sunPoint.x, sunPoint.y, sunPoint.z).sub(b.eye).normalize();
-  const mat = new THREE.ShaderMaterial({
-    uniforms: {
-      uSunDir: { value: sunDir },
-      uTopWhite: { value: hexToVec3(C.skyTopWhite) },
-      uTopBlue: { value: hexToVec3(C.skyTopBlue) },
-      uTopGrey: { value: hexToVec3(C.skyTopGrey) },
-      uWarmNear: { value: hexToVec3(C.skyWarmNear) },
-      uWarmFar: { value: hexToVec3(C.skyWarmFar) },
-      uHorizon: { value: hexToVec3(C.skyHorizon) },
-      uSun: { value: hexToVec3(C.skySun) },
-      uHalo: { value: hexToVec3(C.skyHalo) },
-    },
-    vertexShader: `
-      varying vec3 vDir;
-      void main() {
-        vDir = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    // Colors are sRGB values written straight to the sRGB framebuffer (no colorspace_fragment), so the
-    // sampled photo colors come back unchanged.
-    fragmentShader: `
-      uniform vec3 uSunDir, uTopWhite, uTopBlue, uTopGrey, uWarmNear, uWarmFar, uHorizon, uSun, uHalo;
-      varying vec3 vDir;
-      const float DEG = 57.29578;
-      void main() {
-        vec3 d = normalize(vDir);
-        float elev = asin(clamp(d.y, -1.0, 1.0)) * DEG;
-        vec2 h = normalize(d.xz);
-        vec2 hs = normalize(uSunDir.xz);
-        float az = acos(clamp(dot(h, hs), -1.0, 1.0)) * DEG;
-        // The sky is blue to the left of the sun and stays white to its right (haze over the hill).
-        float leftOfSun = step(0.0, h.x * hs.y - h.y * hs.x);
-        float azEff = az * mix(0.55, 1.0, leftOfSun);
-        // The sun sits behind the ridge, so the glare fades quickly upward and lingers sideways.
-        float sunElev = asin(clamp(uSunDir.y, -1.0, 1.0)) * DEG;
-        float dEl = elev - sunElev;
-        float elevWeight = dEl > 0.0 ? 25.0 : 12.0;
-        float theta2 = az * az + dEl * dEl * elevWeight;
-        vec3 top = mix(uTopWhite, uTopBlue, smoothstep(4.0, 20.0, azEff));
-        top = mix(top, uTopGrey, smoothstep(30.0, 42.0, azEff));
-        float band = exp(-pow((elev - 6.5) / 4.5, 2.0));
-        vec3 warm = mix(uWarmNear, uWarmFar, smoothstep(12.0, 35.0, az));
-        vec3 col = mix(top, warm, band * 0.8);
-        col = mix(col, uHorizon, 1.0 - smoothstep(-3.0, 4.0, elev));
-        col = mix(col, uHalo, exp(-sqrt(theta2) / 8.0) * 0.8);
-        col = mix(col, uSun, exp(-theta2 / 50.0));
-        gl_FragColor = vec4(col, 1.0);
-      }`,
-    side: THREE.BackSide,
-    depthWrite: false,
-    fog: false,
-  });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(L.DEPTHS.sky, 48, 24), mat);
-  mesh.position.copy(b.eye);
-  mesh.renderOrder = -10;
-  b.add(mesh, 'sky');
 }
 
 // Hazy mountains as three planes facing the photo camera, farther ones paler: a pale far ridge whose
@@ -155,8 +94,9 @@ function hill(b) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(index);
-  const map = makeHillTexture({ size: 1024, seed: 7, stops, vTop, vBottom });
-  b.add(new THREE.Mesh(geo, makeMaterial({ map, side: THREE.DoubleSide, fog: false })), 'hill');
+  geo.computeVertexNormals();
+  const map = makeHillTexture({ size: 1536, seed: 7, stops, vTop, vBottom });
+  b.add(new THREE.Mesh(geo, makeMaterial({ map, mean: C.hillMid, side: THREE.DoubleSide, fog: false, unlit: true })), 'hill');
 }
 
 // The ground the far houses and the pines stand on (see farGroundY): plots on both sides of the far
@@ -179,6 +119,7 @@ function farGround(b) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setIndex(index);
+    geo.computeVertexNormals();
     b.add(new THREE.Mesh(geo, makeMaterial({ color: C.hill, side: THREE.DoubleSide })), name);
   };
   strip('far plots left', -24, -42, (z) => L.streetCenterX(z) - 3.4, -60, 12);

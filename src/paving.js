@@ -277,6 +277,7 @@ function ribbon(b, name, z0, z1, width, color) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setIndex(index);
+  geo.computeVertexNormals();
   b.add(new THREE.Mesh(geo, material(color, { side: THREE.DoubleSide })), name);
   const skirt = [];
   for (let i = 0; i <= steps; i++) {
@@ -293,5 +294,6 @@ function ribbon(b, name, z0, z1, width, color) {
   const sgeo = new THREE.BufferGeometry();
   sgeo.setAttribute('position', new THREE.Float32BufferAttribute(skirt, 3));
   sgeo.setIndex(skirtIndex);
+  sgeo.computeVertexNormals();
   b.add(new THREE.Mesh(sgeo, material(C.stoneWallRight, { side: THREE.DoubleSide })), `${name} skirt`);
 }

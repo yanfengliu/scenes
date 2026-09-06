@@ -7,12 +7,12 @@ Scores are printed by `npm run compare` (see `tools/lib/metrics.js` for what eac
 - `cellDistanceMax`: mean color distance over a 24x22 grid of cells between `japan.webp` and `out/render.png`, 0 to 1, lower is better.
 - `ssimMin`: grayscale SSIM at 64 px wide, -1 to 1, higher is better.
 
-The margin covers rasterization differences between machines (anti-aliasing, SwiftShader versions); the same machine reproduces the numbers exactly.
+The margin covers rasterization differences between machines (anti-aliasing, SwiftShader versions); the same machine reproduces the numbers exactly. From phase 4 the frame also goes through a tone curve and a bloom pass, so a driver that rounds differently moves the scores a little more than before; the margin is 0.0015 on the cell distance and 0.005 on SSIM.
 
 ```json
 {
-  "cellDistanceMax": 0.088,
-  "ssimMin": 0.41
+  "cellDistanceMax": 0.084,
+  "ssimMin": 0.425
 }
 ```
 
@@ -36,3 +36,9 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 | 3 (critic fixes, first pass) | 2026-09-05 | 0.0908 | 0.3469 | | | the new hillside band rose into the mountains' rows; the pines moved to the hillside beyond the bend, limbs and stems clipped, ground under the far houses |
 | 3 (after critic 1) | 2026-09-05 | 0.0854 | 0.4017 | 208 | 2.8 ms | hillside kept short, limb tubes ending inside the blossom, strand-end cells pink at their own lightness, blossom hues clamped to pink, tube winding outward, every material through the factory, a far-street check added (19 landmarks) |
 | 3 (done, after critic 2) | 2026-09-05 | 0.0844 | 0.4159 | 211 | 1.3 ms | ground strips out of the frame, the far houses off the paving with dark walls below their gables, the shrub standing on the walkway behind the fence's jog, the pines' whorls down to the ground |
+| 4 (lit, first pass) | 2026-09-05 | 0.4122 | 0.0287 | | | the tone curve inverted with the wrong constant (three divides by 0.6, the port multiplied), so every color came out washed |
+| 4 (curve fixed) | 2026-09-05 | 0.1158 | 0.3719 | | | the rig's directionality overwriting the photo's baked shading: up-facing paving blue, camera-facing walls dark |
+| 4 (rig rebalanced) | 2026-09-05 | 0.0976 | 0.3904 | | | most of the irradiance moved to a neutral ambient, the hemisphere's tint cut to 0.14 |
+| 4 (glare tamed) | 2026-09-05 | 0.0841 | 0.4187 | 316 | 5.3 ms | bloom from 0.24/1.05/0.6 to 0.10/1.6/0.35: the first settings washed the hill beside the sun and cost 0.013 alone |
+| 4 (before critic) | 2026-09-05 | 0.0825 | 0.4301 | 316 | 3.4 ms | backlit translucency through the blossoms, a limb over the machiya's eave filling the photo's canopy at u 0.75-0.83, finer hill crowns |
+| 4 (done, after critic) | 2026-09-05 | 0.0820 | 0.4338 | 316 | 2.8 ms | the rim term's sign fixed so its main lobe fires, the ridge's glare confined to the sun's own column, the cirrus thresholds lowered until the clouds show in the scored view, the fog color inverted like every other mean, black fringes lifted off the alpha-tested cards |

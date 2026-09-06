@@ -480,7 +480,19 @@ export function cardTexture(kind, { seed = 1, size = 128 } = {}) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, size, size);
   draw(ctx, size, mulberry32(seed));
-  const d = ctx.getImageData(0, 0, size, size).data;
+  const img = ctx.getImageData(0, 0, size, size);
+  const d = img.data;
+  // A texel that survives the alpha test carries the card's shape, and the instance color carries the
+  // hue, so a petal must never be black: compositing soft discs over a transparent ground leaves dark
+  // fringes where the coverage was partial, and those fringes render as black specks in the canopy.
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] <= 127) continue;
+    const lift = Math.max(d[i], d[i + 1], d[i + 2]);
+    if (lift >= 90) continue;
+    const k = lift > 4 ? 90 / lift : 0;
+    for (let c = 0; c < 3; c++) d[i + c] = lift > 4 ? Math.round(d[i + c] * k) : 90;
+  }
+  ctx.putImageData(img, 0, 0);
   let sum = 0;
   let n = 0;
   const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
@@ -501,7 +513,7 @@ export function cardTexture(kind, { seed = 1, size = 128 } = {}) {
 // A texture whose rows follow the photo's rows between vTop and vBottom: each row's mean is the color the
 // gradient stops give at that photo row (exact, corrected per row), modulated by a tree-clump pattern
 // (rounded crowns lighter on their sun side, dark between). Not tiled; the hill mesh maps photo v to it.
-export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom }) {
+export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, sunU = 0.62, glareWidth = 0.16 }) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -509,11 +521,11 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom }) 
   const img = ctx.createImageData(size, size);
   const d = img.data;
   const noiseB = noise2D(seed + 11);
-  // Tree crowns: one jittered point per cell of a 400x220 grid (about 2 m on the hill); each texel belongs
-  // to its nearest point.
+  // Tree crowns: one jittered point per cell of a 760x420 grid (about 1 m on the hill, which is what the
+  // photo's grain shows at this distance); each texel belongs to its nearest point.
   // Inside a crown the sun side (toward +u, up) is light and the far side dark; between crowns, dark gaps.
-  const CW = 400;
-  const CH = 220;
+  const CW = 760;
+  const CH = 420;
   const rand = mulberry32(seed);
   const px = new Float32Array(CW * CH);
   const py = new Float32Array(CW * CH);
@@ -563,9 +575,14 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom }) 
     const b = rgbOf(c1);
     return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
   };
+  // The warm band under the ridge is the sun's glare washing over it, so it belongs near the sun's own
+  // column and nowhere else: away from it the hill is its dark green at every row. Before this the band
+  // ran the whole width and the hill beside the sun read 0.10 too bright in the cells at u 0.72 to 0.80.
+  const glareAt = (u) => Math.exp(-(((u - sunU) / glareWidth) ** 2));
   for (let y = 0; y < size; y++) {
     const v = vTop + ((vBottom - vTop) * (y + 0.5)) / size;
     const target = colorAt(v);
+    const deep = colorAt(vBottom);
     const row = new Float32Array(size);
     let mean = 0;
     for (let x = 0; x < size; x++) {
@@ -580,10 +597,9 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom }) 
     mean /= size;
     for (let x = 0; x < size; x++) {
       const k = row[x] / mean;
+      const g = glareAt(x / size);
       const i = (y * size + x) * 4;
-      d[i] = clamp255(Math.round(target[0] * k));
-      d[i + 1] = clamp255(Math.round(target[1] * k));
-      d[i + 2] = clamp255(Math.round(target[2] * k));
+      for (let c = 0; c < 3; c++) d[i + c] = clamp255(Math.round((deep[c] + (target[c] - deep[c]) * g) * k));
       d[i + 3] = 255;
     }
   }

@@ -8,7 +8,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as L from './layout.js';
 import { mulberry32, jitter } from './random.js';
 import { instanced, surface } from './instancing.js';
-import { foliageMaterial } from './materials.js';
+import { foliageMaterial, albedoOf } from './materials.js';
 import { cardTexture } from './textures.js';
 import { canopyColorAt, canopyMaskAt } from './photofield.js';
 
@@ -110,8 +110,9 @@ function cardColor(rand, hex, cardMean, { hue = 0.01, sat = 0.06, light = 0.05, 
     hsl.s *= 0.5;
   }
   tmpColor.setHSL(hsl.h + jitter(rand, hue), clamp01(hsl.s + jitter(rand, sat)), clamp01(hsl.l + jitter(rand, light)));
-  tmpColor.multiplyScalar(scale / cardMean);
-  return tmpColor;
+  // The jittered sample is a displayed color; the instance color must be the radiance that displays as
+  // it once the rig and the tone curve have had their say, divided by the card's own mean brightness.
+  return albedoOf(tmpColor.getHex()).multiplyScalar(scale / cardMean);
 }
 
 // Leaf cards filling an ellipsoid around `centre`, shaded from `hex` at the bottom to `topHex` at the top.
@@ -148,16 +149,23 @@ function cherry(b, rand) {
   const clearBoxes = [
     { u0: 0.615, u1: 0.665, v0: 0.53, v1: 0.66, depth: 18.5 },
     { u0: 0.487, u1: 0.515, v0: 0.58, v1: 0.76, depth: lampDepth + 0.3 },
+    // The blue sign hangs in front of the canopy's far left edge (photo 0.33, 0.58).
+    { u0: 0.305, u1: 0.355, v0: 0.545, v1: 0.615, depth: 16.5 },
   ];
   // Solid things the canopy must stay out of, in world space: the right machiya (its wall, the balcony
-  // and the top roof), the band of its ground-floor eave, and the fence's roofed wall.
+  // and the top roof), its ground-floor eave, and the fence's roofed wall. Over a roof is not inside it:
+  // the photo shows blossom above the machiya's eave and against its upper wall (u 0.75 to 0.83), so the
+  // tests stop at each roof's own surface rather than at a tall box over the whole building.
   const M = L.RIGHT_MACHIYA;
+  const topRoofY = (x) => M.roofY + M.roofThickness + 0.02 + Math.max(0, x - M.topEaveEdge) * Math.tan((28 * Math.PI) / 180);
+  const eaveRoofY = (x, z) => M.eaveTop - 0.35 + ((x - M.eaveEdge) / (M.front + 0.2 - M.eaveEdge)) * 0.65 - M.eaveDrop * ((M.z1 - z) / (M.z1 - M.eaveZ0));
   const solid = (p) =>
-    (p.x > M.front - 0.4 && p.z > M.z0 - 0.5 && p.z < M.z1 + 0.5 && p.y < M.roofY + 3.5) ||
-    (p.x > M.eaveEdge - 0.2 && p.x < M.front && p.y > 3.6 && p.y < 5.2 && p.z > M.eaveZ0 - 0.3 && p.z < M.z1) ||
+    (p.x > M.front - 0.4 && p.z > M.z0 - 0.5 && p.z < M.z1 + 0.5 && p.y < topRoofY(p.x) + 0.25) ||
+    (p.x > M.eaveEdge - 0.2 && p.x < M.front && p.y > 3.4 && p.y < eaveRoofY(p.x, p.z) + 0.25 && p.z > M.eaveZ0 - 0.3 && p.z < M.z1) ||
     (p.x > 1.6 && p.x < 3.7 && p.y > 0.2 && p.y < 2.9 && p.z > -15.2 && p.z < -5.4);
   const branches = [];
   const ends = [
+    [0.8, 0.28, 12.5],
     [0.36, 0.3, 15.0],
     [0.56, 0.21, 16.0],
     [0.78, 0.24, 12.5],
@@ -216,7 +224,7 @@ function cherry(b, rand) {
   const stems = [];
   for (let i = 0; i < 760; i++) {
     // The last 160 hang from the far-left limbs, the long ones that fall to v 0.66 in the photo.
-    const br = i < 600 ? branches[Math.floor(rand() * branches.length)] : branches[[0, 12, 24][Math.floor(rand() * 3)]];
+    const br = i < 600 ? branches[Math.floor(rand() * branches.length)] : branches[[4, 16, 28][Math.floor(rand() * 3)]];
     const p = br.curve.getPointAt(0.2 + rand() * 0.8);
     const pu = L.worldToUV(p);
     const length = 1.0 + 3.4 * clamp01((0.78 - pu.u) / 0.45) + rand() * 1.2 + (i >= 600 ? 1.2 : 0);
@@ -263,7 +271,7 @@ function cherry(b, rand) {
       }
     }
   }
-  b.add(instanced('cherry blossoms', cardGeometry, foliageMaterial(bloss.texture), cards, { uvOffsets: false }), 'cherry blossoms');
+  b.add(instanced('cherry blossoms', cardGeometry, foliageMaterial(bloss.texture, { backlit: 1 }), cards, { uvOffsets: false }), 'cherry blossoms');
 }
 
 // ---- the evergreens --------------------------------------------------------------------------------
@@ -304,7 +312,7 @@ function evergreens(b, rand) {
     cards.push(cardItem(rand, top.clone().add(new THREE.Vector3(0, 0.1, 0)), 0.8, cardColor(rand, C.evergreen, needle.mean, { scale: 1.05 }), EYE, 0.3));
   }
   b.add(new THREE.Mesh(mergeGeometries(trunks), surface('bark', C.trunk, { seed: 46 })), 'evergreen trunks');
-  b.add(instanced('evergreen cards', cardGeometry, foliageMaterial(needle.texture), cards, { uvOffsets: false }), 'evergreen cards');
+  b.add(instanced('evergreen cards', cardGeometry, foliageMaterial(needle.texture, { backlit: 0.5 }), cards, { uvOffsets: false }), 'evergreen cards');
 }
 
 // ---- shrubs, potted plants, moss and weeds -------------------------------------------------------
@@ -313,7 +321,7 @@ function groundPlants(b, rand) {
   const leaf = cardTexture('leaves', { seed: 44 });
   const grass = cardTexture('grass', { seed: 45 });
   const moss = cardTexture('moss', { seed: 47 });
-  const leafMat = foliageMaterial(leaf.texture);
+  const leafMat = foliageMaterial(leaf.texture, { backlit: 0.6 });
 
   // The shrub on the planter strip behind the fence (photo: green above the tiles at u 0.72-0.78), a
   // small dark shrub beside the pot, and the potted plant on the left low wall (its pot is built with
