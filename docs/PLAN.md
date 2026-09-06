@@ -103,15 +103,33 @@ Verified by the manager on 2026-09-05: commit 5ab0520 on origin/main, clean gate
 
 ### Phase 5: Life, interaction, performance, delivery
 
-- [ ] Animation: petals drifting down on a wind field, blossom strands swaying, slow cloud drift, lanterns swaying. All subtle. The photo view still scores within tolerance at any moment.
-- [ ] Controls: orbit limits (no going under the ground, no clipping into walls), touch support, resize handling, device-pixel-ratio cap at 2, a loading indicator until `__sceneReady`, an on-screen reset button.
-- [ ] Performance: `npm run perf` within budget at 1920x1080. No console warnings. Texture sizes bounded.
-- [ ] Delivery: README with run and test instructions, the final scores, and `docs/render.webp` (under 256 KiB) beside a link to the photo. A GitHub Pages workflow deploying from `main`. A CI workflow running `npm test`. Devlog and lessons up to date.
-- [ ] Final manager sweep: screenshots from the photo view and three other angles inspected at native resolution.
-- [ ] Devlog, critic, commit, push, report.
+- [x] Animation: petals drifting down on a wind field, blossom strands swaying, slow cloud drift, lanterns swaying. All subtle. The photo view still scores within tolerance at any moment.
+- [x] Controls: orbit limits (no going under the ground, no clipping into walls), touch support, resize handling, device-pixel-ratio cap at 2, a loading indicator until `__sceneReady`, an on-screen reset button.
+- [x] Performance: `npm run perf` within budget at 1920x1080. No console warnings. Texture sizes bounded.
+- [x] Delivery: README with run and test instructions, the final scores, and `docs/render.webp` (under 256 KiB) beside a link to the photo. A GitHub Pages workflow deploying from `main`. A CI workflow running `npm test`. Devlog and lessons up to date.
+- [x] Final manager sweep: screenshots from the photo view and three other angles inspected at native resolution.
+- [x] Devlog, critic, commit, push, report.
+
+Verified by the manager on 2026-09-06: commits b58d1bb, bebc068, 8a7e81d and 15692d1 on origin/main. Clean gate run PASS: cell distance 0.0811, SSIM 0.4411, animation spread 0.0001 over seven frames with per-frame motion bounded from both sides, 19 placement checks, 8 grounding checks, 6 nudge poses. Perf 316 draw calls and 3.2 ms median at 1920x1080. CI green on GitHub reproducing the same numbers. docs/render.webp is 229 KiB. Compare sheet, native render and the live page from several angles inspected; the photo view restores exactly.
+
+User-reported defect, closed in this phase. The user said the scene flickered as they moved the camera. I measured it: identical poses render byte-identically while a 2 mm camera nudge changed 4.76 percent of pixels. My depth-fighting hypothesis was disproved with evidence (24-bit depth measured, near and far swept, post chain disabled, difference image classified). The real cause is geometric aliasing from geometry thinner than a pixel: strand tubes about 0.35 px wide, tile ridges, lattice slats and blossom card edges. Fixed with eight requested multisamples and a 1.2x supersample resolved down, costing 0.6 ms. Drastic changes halved, which I reproduced independently: photo view 0.32 to 0.15 percent, close to the paving 0.57 to 0.28, orbited to zero. Gated by tools/nudge.js in npm test at two device pixel ratios, proved red by reverting the fix, and recorded in docs/learning/defect-register.md.
+
+Not done, and left deliberately. GitHub Pages is not deployed: the workflow is correct but the site has to be switched on once in the repository settings under Pages with source GitHub Actions, and neither session did that, because publishing serves japan.webp, a third-party photograph, publicly. That is the user's decision.
 
 ## Manager verification per phase
 
 - Read the implementer's report, then open `out/compare.png` and the live page in the browser pane, take screenshots at the photo view and from at least two other angles, and compare with `japan.webp` at native size.
 - Check the pushed commit exists on `origin/main` and that `npm test` is green from a clean run.
 - Tick the checkboxes here, record the scores, then message the implementer with the next phase.
+
+## Outcome
+
+All five phases verified. The photo view scores a mean per-cell color distance of 0.0811 and a grayscale SSIM of 0.4411, from a first block-out of 0.1438 and 0.1368.
+
+| Phase | Cell distance | SSIM |
+| ----- | ------------- | ---- |
+| 1 block-out | 0.0941 | 0.2950 |
+| 2 architecture and stone | 0.0899 | 0.3273 |
+| 3 vegetation and background | 0.0844 | 0.4159 |
+| 4 sky, light, post | 0.0820 | 0.4338 |
+| 5 life, interaction, delivery | 0.0811 | 0.4411 |
