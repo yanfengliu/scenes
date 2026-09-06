@@ -79,14 +79,16 @@ Verified by the manager on 2026-09-05: commit 407d653 on origin/main, clean gate
 
 ### Phase 3: Vegetation, figures, and background
 
-- [ ] Weeping cherry: trunk and main limbs as tapered tubes along splines with dark bark. Several hundred pendulous strands (catenary or spline curves) carrying instanced blossom clusters: tens of thousands of soft-edged quads with a canvas-drawn radial blossom texture, per-instance hue from pale pink to light magenta, alpha test, double-sided, back-lit rim tint. The silhouette matches the photo's canopy box and strand fall.
-- [ ] Evergreen behind the cherry from layered instanced needle-cluster cards, dark blue-green.
-- [ ] Shrubs at the right wall and near the pot, small potted plants, moss and weeds at wall bases.
-- [ ] A simple low-poly person in blue at the landing (no face detail), matching the photo's position and size.
-- [ ] Background: roofs of farther houses below the hill, a forested hill surface with tree-clump texture, layered hazy mountains fading with distance.
-- [ ] Mean color of the canopy region close to the photo's (measured with the compare tool's cells).
-- [ ] Scores improve on phase 2. Frame time within budget.
-- [ ] Devlog, critic, commit, push, report.
+- [x] Weeping cherry: trunk and main limbs as tapered tubes along splines with dark bark. Several hundred pendulous strands (catenary or spline curves) carrying instanced blossom clusters: tens of thousands of soft-edged quads with a canvas-drawn radial blossom texture, per-instance hue from pale pink to light magenta, alpha test, double-sided, back-lit rim tint. The silhouette matches the photo's canopy box and strand fall.
+- [x] Evergreen behind the cherry from layered instanced needle-cluster cards, dark blue-green.
+- [x] Shrubs at the right wall and near the pot, small potted plants, moss and weeds at wall bases.
+- [x] A simple low-poly person in blue at the landing (no face detail), matching the photo's position and size.
+- [x] Background: roofs of farther houses below the hill, a forested hill surface with tree-clump texture, layered hazy mountains fading with distance.
+- [x] Mean color of the canopy region close to the photo's (measured with the compare tool's cells).
+- [x] Scores improve on phase 2. Frame time within budget.
+- [x] Devlog, critic, commit, push, report.
+
+Verified by the manager on 2026-09-05: commit 61ada57 on origin/main, clean gate run PASS with cell distance 0.0844 and SSIM 0.4159 (thresholds 0.088 / 0.41) plus 19 placement checks, perf 211 draw calls and 2.4 ms median at 1920x1080, compare sheet inspected and the live page orbited and zoomed. The canopy now reads as tens of thousands of individual blossom cards on real strands rather than block-out ellipsoids. Known gaps carried into phase 4: the canopy stops at x = 4.6 so it does not intrude into the right machiya, leaving that upper wall bare at u 0.75 to 0.83; the blossom tints are baked from the photo, so lighting must work with them; the hill crowns are coarser than the photo grain.
 
 ### Phase 4: Sky, light, atmosphere, post-processing
 
