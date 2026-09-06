@@ -326,7 +326,7 @@ export const DEPTHS = {
 // paperLantern, awning, evergreen (only a sliver shows), platform, groundBase, fog.
 export const COLORS = {
   skyTopWhite: 0xe8e9ea,
-  skyTopBlue: 0xbdd5e8,
+  skyTopBlue: 0x9bc4e4, // the photo's own top row (cells 0.06-0.30 at v 0.02); the paler sample it replaced left the sky washed
   skyTopGrey: 0x7d8c98,
   skyWarmNear: 0xf8dbaf,
   skyWarmFar: 0xecd3bc,
@@ -450,4 +450,25 @@ export const PLACEMENT_CHECKS = [
   { name: 'awning', u: 0.14, v: 0.545, mesh: 'awning' },
   { name: 'annex door 1', u: 0.11, v: 0.77, mesh: 'annex door 1' },
   { name: 'stairs', u: 0.4, v: 0.93, mesh: 'stair treads' },
+];
+
+// ---- Grounding gate ----------------------------------------------------------------------------
+// The placement gate checks what is in front; this checks what is underneath. Phase 3 shipped far houses
+// floating 20 m over nothing, pines with their feet in mid-air and a shrub buried in a roof, and every
+// gate stayed green, because a thing that stands on nothing looks exactly like a thing that stands on
+// something from the photo camera. Each entry names an object and the mesh it must be standing on.
+// tools/placement.js finds the object, takes the bottom of its own bounding box, drops a ray from there,
+// and fails when that ground mesh is more than `tolerance` below it (floating) or more than `sink` above
+// it (buried). The two are separate because a wall or a trunk is meant to run into the ground, while
+// nothing is meant to hang over it. The base is measured from the object every run, so an object that
+// drifts away from its ground is caught even though the ground itself never moved.
+export const GROUNDING_CHECKS = [
+  { name: 'cherry trunk', mesh: 'right walkway', tolerance: 0.6, sink: 1.6, x: 2.6, z: -16.8 },
+  { name: 'lamp post', mesh: 'landing slabs', tolerance: 0.5, sink: 0.4 },
+  { name: 'person leg left', mesh: 'landing slabs', tolerance: 0.4 },
+  { name: 'pot', mesh: 'right walkway', tolerance: 0.7 },
+  { name: 'small pot', mesh: 'right walkway', tolerance: 0.6 },
+  { name: 'left pot', mesh: 'left low wall', tolerance: 0.4 },
+  { name: 'far roof c house lower', mesh: 'far plots left', tolerance: 0.8, sink: 3.5 },
+  { name: 'evergreen trunks', mesh: 'hillside', tolerance: 0.8, sink: 2.5 },
 ];

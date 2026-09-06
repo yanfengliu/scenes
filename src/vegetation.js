@@ -11,6 +11,7 @@ import { instanced, surface } from './instancing.js';
 import { foliageMaterial, albedoOf } from './materials.js';
 import { cardTexture } from './textures.js';
 import { canopyColorAt, canopyMaskAt } from './photofield.js';
+import { applyWind, buildPetals } from './animation.js';
 
 const C = L.COLORS;
 const S = L.STREET;
@@ -28,6 +29,7 @@ export function buildVegetation(b) {
   cherry(b, mulberry32(3));
   evergreens(b, mulberry32(4));
   groundPlants(b, mulberry32(6));
+  buildPetals(b);
 }
 
 // ---- helpers -------------------------------------------------------------------------------------
@@ -255,7 +257,10 @@ function cherry(b, rand) {
     for (let k = 0; k <= m; k++) stemPts.push(full.getPointAt((lastKept * k) / m));
     stems.push(taperedTube(new THREE.CatmullRomCurve3(stemPts), 0.016, 0.008, stemPts.length, 3));
   }
-  b.add(new THREE.Mesh(mergeGeometries(stems), bark), 'cherry strands');
+  // The strands sway with the blossoms they carry: same wind, same weighting by depth below the crown,
+  // so a strand and its flowers never come apart.
+  const stemMat = applyWind(surface('bark', C.trunk, { seed: 41.5 }));
+  b.add(new THREE.Mesh(mergeGeometries(stems), stemMat), 'cherry strands');
 
   // The canopy mass around the limbs and sub-branches, denser toward their ends.
   for (const br of branches) {
@@ -271,7 +276,7 @@ function cherry(b, rand) {
       }
     }
   }
-  b.add(instanced('cherry blossoms', cardGeometry, foliageMaterial(bloss.texture, { backlit: 1 }), cards, { uvOffsets: false }), 'cherry blossoms');
+  b.add(instanced('cherry blossoms', cardGeometry, applyWind(foliageMaterial(bloss.texture, { backlit: 1 })), cards, { uvOffsets: false }), 'cherry blossoms');
 }
 
 // ---- the evergreens --------------------------------------------------------------------------------

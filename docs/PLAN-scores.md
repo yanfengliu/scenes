@@ -11,10 +11,12 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 
 ```json
 {
-  "cellDistanceMax": 0.084,
-  "ssimMin": 0.425
+  "cellDistanceMax": 0.083,
+  "ssimMin": 0.433
 }
 ```
+
+The animation adds a second question the thresholds cannot answer: the shot is one frame, and the scene moves. `npm run animation` scores seven frames across the wind's period and asserts the worst of them against these same thresholds plus 0.002 of cell distance and 0.006 of SSIM. The spread it measures is in the phase 5 devlog.
 
 ## History
 
@@ -42,3 +44,7 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 | 4 (glare tamed) | 2026-09-05 | 0.0841 | 0.4187 | 316 | 5.3 ms | bloom from 0.24/1.05/0.6 to 0.10/1.6/0.35: the first settings washed the hill beside the sun and cost 0.013 alone |
 | 4 (before critic) | 2026-09-05 | 0.0825 | 0.4301 | 316 | 3.4 ms | backlit translucency through the blossoms, a limb over the machiya's eave filling the photo's canopy at u 0.75-0.83, finer hill crowns |
 | 4 (done, after critic) | 2026-09-05 | 0.0820 | 0.4338 | 316 | 2.8 ms | the rim term's sign fixed so its main lobe fires, the ridge's glare confined to the sun's own column, the cirrus thresholds lowered until the clouds show in the scored view, the fog color inverted like every other mean, black fringes lifted off the alpha-tested cards |
+| 5 (animated) | 2026-09-05 | 0.0820 | 0.4340 | 318 | 3.7 ms | wind through the canopy, petals, cloud drift, lantern sway, all in the vertex shaders |
+| 5 (sky blue) | 2026-09-05 | 0.0816 | 0.4338 | | | `skyTopBlue` replaced by the photo's own top row (#9bc4e4) |
+| 5 (before critic) | 2026-09-05 | 0.0812 | 0.4389 | 318 | 3.7 ms | the landing shading into the bend as the photo does |
+| 5 (done, after critic) | 2026-09-06 | 0.0813 | 0.4385 | 316 | 2.6 ms | the animation gate given a motion bound that a fourteen-fold sway fails, the swaying strands and petals taken out of the shadow pass (they cast still shadows), CI trimmed to three frames; animation spread over 7 frames 0.0001 cell and 0.0005 SSIM, motion 0.18 levels |

@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import * as L from './layout.js';
 import { sceneRadiance } from './tonemap.js';
 import { MATERIALS } from './materials.js';
+import { registerTimeUniform, WIND } from './animation.js';
 
 const C = L.COLORS;
 
@@ -33,6 +34,8 @@ export function skyMaterial() {
       uCirrusLit: radianceUniform(C.cirrusLit),
       uPuff: radianceUniform(C.cloudPuff),
       uSunDisc: { value: 3.2 },
+      uTime: { value: 0 },
+      uDrift: { value: WIND.cloud },
     },
     vertexShader: `
       varying vec3 vDir;
@@ -44,6 +47,8 @@ export function skyMaterial() {
       uniform vec3 uSunDir, uTopWhite, uTopBlue, uTopGrey, uWarmNear, uWarmFar, uHorizon, uSun, uHalo;
       uniform vec3 uCirrus, uCirrusLit, uPuff;
       uniform float uSunDisc;
+      uniform float uTime;
+      uniform float uDrift;
       varying vec3 vDir;
       const float DEG = 57.29578;
 
@@ -96,7 +101,8 @@ export function skyMaterial() {
 
         // Cirrus: stretched fBm streaks high in the sky, thickest away from the sun (the photo's top
         // left), lit warm from below where the low sun reaches their undersides.
-        vec2 cp = vec2(atan(d.z, d.x) * 2.4, elev * 0.055);
+        // The clouds drift across the sky; the gradient, the glare and the sun's disc do not move.
+        vec2 cp = vec2(atan(d.z, d.x) * 2.4 + uTime * uDrift, elev * 0.055);
         float streak = fbm(vec2(cp.x * 1.6, cp.y * 7.0), 5);
         // The thresholds decide whether any of this is visible in the photo view, where the sky is only
         // the top of the frame: the first set fired so rarely that the scored cells were a bare gradient.
@@ -123,7 +129,9 @@ export function skyMaterial() {
 }
 
 export function buildSky(b) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(L.DEPTHS.sky, 64, 32), skyMaterial());
+  const material = skyMaterial();
+  registerTimeUniform(material.uniforms.uTime);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(L.DEPTHS.sky, 64, 32), material);
   mesh.position.copy(b.eye);
   mesh.renderOrder = -10;
   b.add(mesh, 'sky');

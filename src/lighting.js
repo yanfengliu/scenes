@@ -127,7 +127,10 @@ function skyEnvironment(renderer) {
 // CAST_SIZE across, inside the shadow camera's box, and not foliage or a distant layer. The 30,000
 // blossom cards are the expensive case and the one this rules out: their shadow is already in the
 // paving's sampled means, and casting from them costs more than the whole rest of the frame.
-const NO_CAST = /^(sky|hill|mountains|near ridge|ground base|far plots|hillside|cherry blossoms|evergreen|shrub|left plant|weeds|moss|sun|fill|far roof|corner house|bend|noren)/;
+// The wind is patched into each material's own vertex shader, not into three's depth material, so a
+// swaying mesh would cast a still shadow. The canopy's cards and strands and the petals are excluded for
+// that reason as well as for their cost.
+const NO_CAST = /^(sky|hill|mountains|near ridge|ground base|far plots|hillside|cherry blossoms|cherry strands|petals|evergreen|shrub|left plant|weeds|moss|sun|fill|far roof|corner house|bend|noren)/;
 const CAST_SIZE = 1.6;
 const CAST_BOX = { x0: -14, x1: 14, y0: -14, y1: 14, z0: 6, z1: -34 };
 

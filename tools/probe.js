@@ -17,6 +17,7 @@ try {
   const page = await browser.newPage({ viewport: { width: SHOT.width, height: SHOT.height }, deviceScaleFactor: 1 });
   const errors = collectErrors(page);
   await openScene(page, `${server.url}/`);
+  await page.evaluate(() => window.__scene.setTime(0));
   const rows = await page.evaluate((pts) => {
     const { THREE, camera, scene, renderer, render } = window.__scene;
     const raycaster = new THREE.Raycaster();

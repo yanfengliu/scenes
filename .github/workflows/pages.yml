@@ -1,0 +1,44 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# The scene is plain static files (index.html, src/*.js, japan.webp) served as they are: no build step,
+# and the only runtime download is the pinned three.js on the jsdelivr CDN.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # Everything the page needs, and nothing else: no node_modules, no gate output, no tools.
+      - name: Collect the site
+        run: |
+          mkdir -p _site/src _site/docs
+          cp index.html japan.webp _site/
+          cp src/*.js _site/src/
+          cp README.md _site/
+          if [ -f docs/render.webp ]; then cp docs/render.webp _site/docs/; fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

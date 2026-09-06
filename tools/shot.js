@@ -15,7 +15,9 @@ try {
   errors = collectErrors(page);
   const info = await openScene(page, `${server.url}/`);
   // The on-screen reset button is UI, not scene: keep it out of the scored image.
-  await page.addStyleTag({ content: '#reset { display: none !important; }' });
+  await page.addStyleTag({ content: '#reset { display: none !important; } #loading { display: none !important; }' });
+  // The scene animates; the scored frame is the one at t = 0, every run.
+  await page.evaluate(() => window.__scene.setTime(0));
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   mkdirSync('out', { recursive: true });
   await page.screenshot({ path: OUT, type: 'png' });

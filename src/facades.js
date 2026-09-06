@@ -9,6 +9,7 @@ import { mulberry32, jitter } from './random.js';
 import { instanced, surface } from './instancing.js';
 import { balancedMean, darker } from './paving.js';
 import { roofOuterY } from './primitives.js';
+import { applyWind, registerSway, WIND } from './animation.js';
 
 const C = L.COLORS;
 const SLAT = 0x2e2724;
@@ -221,6 +222,18 @@ function slidingDoor(b, rand, unit, name, wallX, facing, floorY, zc, width, heig
 
 // A paper lantern: a ribbed ellipsoid on a short rod with dark caps.
 function paperLantern(b, name, x, yTop, z, diameter, height) {
+  // Everything below the bracket hangs from one pivot, so the lantern swings as a lantern does.
+  const pivot = new THREE.Group();
+  pivot.position.set(x, yTop + 0.25, z);
+  b.add(pivot, `${name} pivot`);
+  const hang = { x: 0, yTop: -0.25, z: 0 };
+  const local = (mesh) => {
+    b.group.remove(mesh);
+    mesh.position.sub(pivot.position);
+    pivot.add(mesh);
+    return mesh;
+  };
+  registerSway(pivot, { phase: z * 0.7, rate: 0.9 + (Math.abs(z) % 1) * 0.3 });
   const profile = [];
   const n = 10;
   for (let i = 0; i <= n; i++) {
@@ -230,10 +243,10 @@ function paperLantern(b, name, x, yTop, z, diameter, height) {
   }
   const body = new THREE.Mesh(new THREE.LatheGeometry(profile, 20), surface('lantern', C.paperLantern, { seed: 96 }));
   body.position.set(x, yTop - 0.1, z);
-  b.add(body, name);
-  b.box(`${name} cap`, { x0: x - 0.07, x1: x + 0.07, y0: yTop - 0.12, y1: yTop - 0.06, z0: z - 0.07, z1: z + 0.07 }, C.woodDark);
-  b.box(`${name} foot`, { x0: x - 0.06, x1: x + 0.06, y0: yTop - 0.1 - height - 0.05, y1: yTop - 0.1 - height + 0.01, z0: z - 0.06, z1: z + 0.06 }, C.woodDark);
-  b.box(`${name} rod`, { x0: x - 0.012, x1: x + 0.012, y0: yTop - 0.06, y1: yTop + 0.25, z0: z - 0.012, z1: z + 0.012 }, C.woodDark);
+  local(b.add(body, name));
+  local(b.box(`${name} cap`, { x0: x - 0.07, x1: x + 0.07, y0: yTop - 0.12, y1: yTop - 0.06, z0: z - 0.07, z1: z + 0.07 }, C.woodDark));
+  local(b.box(`${name} foot`, { x0: x - 0.06, x1: x + 0.06, y0: yTop - 0.1 - height - 0.05, y1: yTop - 0.1 - height + 0.01, z0: z - 0.06, z1: z + 0.06 }, C.woodDark));
+  local(b.box(`${name} rod`, { x0: x - 0.012, x1: x + 0.012, y0: yTop - 0.06, y1: yTop + 0.25, z0: z - 0.012, z1: z + 0.012 }, C.woodDark));
 }
 
 // A paper lantern hung in front of the wall at wallX from a bracket, its body centred at x.
@@ -282,7 +295,7 @@ function noren(b, M) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(index);
   geo.computeVertexNormals();
-  const mat = surface('noren', C.noren, { seed: 97, side: THREE.DoubleSide });
+  const mat = applyWind(surface('noren', C.noren, { seed: 97, side: THREE.DoubleSide }), { amplitude: WIND.noren, reach: 1.6, top: M.norenTop });
   mat.map.repeat.set(1, 1);
   b.add(new THREE.Mesh(geo, mat), 'noren');
   // The hanging rod.

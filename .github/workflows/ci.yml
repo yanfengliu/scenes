@@ -1,0 +1,45 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The gates drive a headless chromium. Only chromium is needed, and --with-deps brings the system
+      # libraries the runner does not ship.
+      - run: npx playwright install --with-deps chromium
+
+      # shot, compare, placement and animation. The runner has no GPU, so every render goes through
+      # SwiftShader, which is what tools/lib/browser.js asks for anyway: the scored shot has always used
+      # it so the numbers do not move with the graphics driver.
+      #
+      # npm run perf is deliberately NOT run here. It measures frame time on the machine it runs on, and
+      # a shared runner without a GPU produces numbers unrelated to the budget in AGENTS.md; asserting
+      # them would fail forever and tell nobody anything.
+      # Three frames instead of seven: the animation gate shoots 1200x1100 through shadows and bloom on
+      # a software renderer, which is minutes per frame on a shared runner. Three still spans the cycle.
+      - run: npm test
+        env:
+          ANIMATION_FRAMES: 3
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-output
+          path: out/
+          retention-days: 7

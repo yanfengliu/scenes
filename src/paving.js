@@ -194,7 +194,10 @@ export function buildPaving(b) {
         const cx = (sx0 + sx1) / 2;
         if (!keep(cx, cz)) continue;
         const { y, euler } = place(cx, cz);
-        items.push({ position: [cx, y, cz], euler, scale: [sx1 - sx0 - JOINT, 1, d - JOINT], tint: 1 + jitter(rand, 0.05), uv: [rand() * 4, rand() * 4] });
+        // The landing darkens toward its far end, where the photo's street runs into the shade of the
+        // bend (cells at v 0.75 read #323840 against #4a4950 at v 0.70).
+        const shade = 1 - 0.32 * Math.min(1, Math.max(0, (-cz - 14.5) / 7));
+        items.push({ position: [cx, y, cz], euler, scale: [sx1 - sx0 - JOINT, 1, d - JOINT], tint: shade + jitter(rand, 0.05), uv: [rand() * 4, rand() * 4] });
       }
     }
   }

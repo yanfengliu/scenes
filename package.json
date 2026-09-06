@@ -11,8 +11,10 @@
     "perf": "node tools/perf.js",
     "probe": "node tools/probe.js",
     "placement": "node tools/placement.js",
+    "animation": "node tools/animation.js",
     "inspect": "node tools/inspect.js",
-    "test": "node tools/test.js"
+    "test": "node tools/test.js",
+    "webp": "node tools/render-webp.js"
   },
   "engines": {
     "node": ">=24"
