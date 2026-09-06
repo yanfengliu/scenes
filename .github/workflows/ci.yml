@@ -9,7 +9,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The gates render through SwiftShader here, which is minutes per frame. The nudge gate alone shoots
+    # eighteen frames, half of them at a device pixel ratio of 2, and runs of this project have taken most
+    # of an hour when several pushes compete for runners. Ninety minutes is room, not an expectation.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
