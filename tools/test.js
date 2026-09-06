@@ -1,5 +1,5 @@
-// npm test: shot -> compare -> placement checks -> the animation's own frames -> assert the scores
-// against the thresholds in docs/PLAN-scores.md.
+// npm test: shot -> compare -> placement checks -> the animation's own frames -> the frame's stability
+// under a small camera move -> assert the scores against the thresholds in docs/PLAN-scores.md.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -16,6 +16,7 @@ run('tools/shot.js');
 run('tools/compare.js');
 run('tools/placement.js');
 run('tools/animation.js');
+run('tools/nudge.js');
 
 const scores = JSON.parse(readFileSync('out/scores.json', 'utf8'));
 const doc = readFileSync('docs/PLAN-scores.md', 'utf8');

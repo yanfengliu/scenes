@@ -14,7 +14,8 @@
     "animation": "node tools/animation.js",
     "inspect": "node tools/inspect.js",
     "test": "node tools/test.js",
-    "webp": "node tools/render-webp.js"
+    "webp": "node tools/render-webp.js",
+    "nudge": "node tools/nudge.js"
   },
   "engines": {
     "node": ">=24"

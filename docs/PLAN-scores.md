@@ -11,12 +11,14 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 
 ```json
 {
-  "cellDistanceMax": 0.083,
-  "ssimMin": 0.433
+  "cellDistanceMax": 0.0825,
+  "ssimMin": 0.436
 }
 ```
 
-The animation adds a second question the thresholds cannot answer: the shot is one frame, and the scene moves. `npm run animation` scores seven frames across the wind's period and asserts the worst of them against these same thresholds plus 0.002 of cell distance and 0.006 of SSIM. The spread it measures is in the phase 5 devlog.
+Two questions the thresholds cannot answer are asked elsewhere. `npm run nudge` moves the camera 2 mm from three poses at two device pixel ratios and bounds how much of the frame may change drastically, because a still camera renders the same frame every time and the user's flicker lived entirely in the movement.
+
+The animation adds a third: the shot is one frame, and the scene moves. `npm run animation` scores seven frames across the wind's period and asserts the worst of them against these same thresholds plus 0.002 of cell distance and 0.006 of SSIM. The spread it measures is in the phase 5 devlog.
 
 ## History
 
@@ -47,4 +49,5 @@ The animation adds a second question the thresholds cannot answer: the shot is o
 | 5 (animated) | 2026-09-05 | 0.0820 | 0.4340 | 318 | 3.7 ms | wind through the canopy, petals, cloud drift, lantern sway, all in the vertex shaders |
 | 5 (sky blue) | 2026-09-05 | 0.0816 | 0.4338 | | | `skyTopBlue` replaced by the photo's own top row (#9bc4e4) |
 | 5 (before critic) | 2026-09-05 | 0.0812 | 0.4389 | 318 | 3.7 ms | the landing shading into the bend as the photo does |
-| 5 (done, after critic) | 2026-09-06 | 0.0813 | 0.4385 | 316 | 2.6 ms | the animation gate given a motion bound that a fourteen-fold sway fails, the swaying strands and petals taken out of the shadow pass (they cast still shadows), CI trimmed to three frames; animation spread over 7 frames 0.0001 cell and 0.0005 SSIM, motion 0.18 levels |
+| 5 (after critic) | 2026-09-06 | 0.0813 | 0.4385 | 316 | 2.6 ms | the animation gate given a motion bound that a fourteen-fold sway fails, the swaying strands and petals taken out of the shadow pass (they cast still shadows), CI trimmed to three frames; animation spread over 7 frames 0.0001 cell and 0.0005 SSIM, motion 0.18 levels |
+| 5 (done, user's flicker fixed) | 2026-09-06 | 0.0811 | 0.4411 | 316 | 3.2 ms | eight requested multisamples and a 1.2x supersample resolved down, for the shimmer the user reported while orbiting; the scores moved because the same resolve runs in the scored shot, which is what the page does too |

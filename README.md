@@ -36,6 +36,7 @@ npm test
 | `npm run compare` | Scores `out/render.png` against `japan.webp` and writes `out/compare.png` (photo, render, 50% overlay, heat map), `out/overlay.png` and `out/scores.json`. |
 | `npm run placement` | Two checks the scores cannot make: a ray through 19 photo positions that must hit the object belonging there, and 8 objects whose own base must sit on the ground they claim to stand on. |
 | `npm run animation` | Scores the photo view at several points across the animation cycle, so a drift that only shows at t = 3 s cannot hide. |
+| `npm run nudge` | Moves the camera two millimetres from three poses and fails if the frame changes more than a little. A still camera renders the same frame every time, so this is the only gate that sees the scene the way someone orbiting it does. |
 | `npm run perf` | Median frame time and draw calls over 5 s at 1920x1080. Budget: under 16 ms and under 400 draw calls. |
 | `npm run probe -- u,v ...` | Names the mesh under each photo position, and the pixel there. |
 | `npm run inspect -- pair u0 v0 u1 v1` | Writes a photograph-versus-render crop of a region. |
@@ -56,8 +57,8 @@ Two metrics, both computed by `npm run compare` (see `tools/lib/metrics.js` for 
 | Architecture and stone (phase 2) | 0.0899 | 0.3273 |
 | Vegetation and background (phase 3) | 0.0844 | 0.4159 |
 | Light and atmosphere (phase 4) | 0.0820 | 0.4338 |
-| Life and delivery (phase 5) | 0.0813 | 0.4385 |
-| **Final** | **0.0813** | **0.4385** |
+| Life and delivery (phase 5) | 0.0811 | 0.4411 |
+| **Final** | **0.0811** | **0.4411** |
 
 The thresholds the tests assert live in `docs/PLAN-scores.md`, along with every intermediate measurement and what moved it.
 

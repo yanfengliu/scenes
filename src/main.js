@@ -6,7 +6,7 @@ import * as L from './layout.js';
 import { CAMERA, COLORS, uvToWorld } from './layout.js';
 import { buildScene } from './scene.js';
 import { buildLighting, applyShadowFlags } from './lighting.js';
-import { buildComposer } from './post.js';
+import { buildComposer, resizeComposer } from './post.js';
 import { MATERIALS } from './materials.js';
 import { sceneRadiance } from './tonemap.js';
 import * as anim from './animation.js';
@@ -108,7 +108,7 @@ function render() {
 function onResize() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO_CAP));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  composer.setSize(window.innerWidth, window.innerHeight);
+  resizeComposer(composer, renderer);
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
 }

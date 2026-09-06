@@ -2,6 +2,16 @@
 
 Each retired lesson's gate is listed with the mutation that made it go red, the failure it produced, and where the evidence lived before retirement. A gate that was never seen red proves nothing.
 
+## nudge: the frame is stable under a small camera move (2026-09-06)
+
+- Claim (in the gate's own header, `tools/nudge.js`): a still camera renders the same frame byte for byte, so no scored gate can see a frame that is unstable while the camera moves. For three poses at two device pixel ratios the gate renders the same pose twice and requires identical output, then nudges the camera 2 mm and requires the fraction of pixels changing by more than 90 levels to stay under its per-ratio limits (0.4% per pose and 0.2% on the mean at ratio 1; 0.6% and 0.3% at ratio 2).
+- Origin: the user's report, "As I move the camera around it flickers a lot", recorded in `defect-register.md` with the investigation that traced it to geometry thinner than a pixel rather than to depth fighting.
+- Mutation: `POST.renderScale` set back to 1.0 and `POST.samples` to 4 in `src/post.js`, which is the state the user saw, then `npm run nudge`.
+- Failure produced: four failures, exit status 1. `FAIL close to the paving, ratio 1: 0.57% ... over the 0.4% allowed`, the same pose at ratio 2 with 0.70% over 0.6%, and both means (0.298 over 0.2 at ratio 1, 0.369 over 0.3 at ratio 2). Restored, the same run printed `nudge: 6 poses stable across device pixel ratios 1 and 2`.
+- The limits sit between the two measured states at each ratio, roughly 1.3x above the fixed scene and 1.3x below the broken one. The mean does the separating and the per-pose ceiling catches a single bad view that a mean would dilute.
+- The first version of the gate ran only at ratio 1, and it passed a fix that was switched off at ratio 2 and rendering the scene at a quarter of the canvas there. That is why the gate runs both.
+- Bound: three poses, one nudge direction, one viewport (900x820) and one renderer. It measures the whole frame, so a small patch of violent instability can hide under the fraction. It counts only pixels that change *drastically*, so it says nothing about the ordinary resampling a moving camera always produces. And it has about one bit of resolution on the supersample: 1.2, 1.35, 1.5 and 2.0 all pass alike, and only turning it off fails, so it proves the class rather than the setting.
+
 ## animation: the scene moves, and not too much (2026-09-05)
 
 - Claim (in the gate's own header, `tools/animation.js`): the scored shot is one frame, so it cannot see what the animation does at t = 3 s. The gate scores seven frames across the wind's slowest period and asserts the worst frame's scores, the spread between frames, and the mean per-pixel change between neighbouring frames from both sides: too little and the scene has stopped moving, too much and it is thrashing.
