@@ -268,6 +268,27 @@ function clampSamples(renderer, n) {
 
 // The rungs, in the order they are tried, each named by what it gives up. The first is the chain as
 // designed; every later one is reached only because the frame before it was measured and was not there.
+// Bytes the composer's two ping-pong targets need at a given size and sample count. Each texel is RGBA
+// half-float, four channels of two bytes, once per sample, and there are two targets.
+export function targetBytes(width, height, samples) {
+  return width * height * 4 * 2 * Math.max(1, samples) * 2;
+}
+
+// A ceiling on that. Without one the request grows with the square of the window: a 2560x1305 window at a
+// device pixel ratio of 1.5 asks for a 4608x2348 target, which at eight samples is 660 MiB per buffer and
+// 1.3 GiB for the pair, before the bloom chain. That is an unreasonable thing to ask of any driver, it is
+// the same ingredient that poisons the frame at particular sizes, and it grows fastest exactly on the
+// large high-density displays most likely to be someone's main screen. 512 MiB is enough for eight
+// samples at 3840x2160 supersampled to 1.0, or for the shipped 1.2 supersample at four samples on a
+// 2560-wide window, and the ladder below drops samples before it drops the supersample.
+export const TARGET_BYTE_BUDGET = 512 * 1024 * 1024;
+
+function withinBudget(renderer, scale, samples) {
+  const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const w = Math.round(buffer.x * scale), h = Math.round(buffer.y * scale);
+  return targetBytes(w, h, samples) <= TARGET_BYTE_BUDGET;
+}
+
 function ladder(renderer, base) {
   const full = clampSamples(renderer, POST.samples);
   const half = clampSamples(renderer, Math.floor(POST.samples / 2));
@@ -280,14 +301,24 @@ function ladder(renderer, base) {
     // every other rung: about three quarters of sizes are good, so it usually lands.
     { scale: base * 0.99, samples: full, cost: 'one percent of the supersample' },
     { scale: 1, samples: full, cost: 'the supersample, keeping every multisample' },
+    // For a large high-density window, where the budget above rules out both of the supersampled rungs:
+    // native resolution with half the samples fits where 1.2x with any multisampling does not, and
+    // multisampling was measured to carry more of the stability than the supersample does, so this is
+    // preferred to keeping the supersample and losing multisampling altogether.
+    { scale: 1, samples: half, cost: 'the supersample and half the multisamples' },
     // Measured clean at every size tried, and the reason the ladder can promise to terminate.
     { scale: base, samples: 0, cost: 'all multisampling, keeping the supersample' },
     { scale: 1, samples: 0, cost: 'both the multisampling and the supersample' },
   ];
+  // Drop any rung whose targets would exceed the memory budget, so a large high-density window starts at
+  // a request the driver can reasonably serve instead of asking for a gigabyte and finding out. The last
+  // rung is always kept: it is the smallest thing the chain can ask for, and having no rung at all would
+  // be worse than an over-budget one.
+  const affordable = rungs.filter((rung, i) => i === rungs.length - 1 || withinBudget(renderer, rung.scale, rung.samples));
   // Dedupe: the device-ratio cap can already have pushed `base` to 1, and a driver maximum of 4 makes
   // the first two rungs the same request.
   const seen = new Set();
-  return rungs.filter((rung) => {
+  return affordable.filter((rung) => {
     const key = `${rung.scale.toFixed(4)}@${rung.samples}`;
     if (seen.has(key)) return false;
     seen.add(key);

@@ -23,6 +23,11 @@
 //     drag needs the sequence, not the final state.
 const BG = [0x1a, 0x1c, 0x24]; // index.html's page background: unpainted canvas reads exactly this
 const SAMPLE = 7; // a SAMPLE x SAMPLE grid of probe points
+const DARK_LUMA = 24; // out of 255. A back-lit sunset has deep shadow but very little true black.
+// How many of the grid points may read near black before it counts as a fault. The photo view itself has
+// one or two genuinely dark points under the eaves, so a single point is not news; a quarter of the grid
+// going dark is the rectangle a user photographed.
+const DARK_POINT_LIMIT = 8;
 const PERIOD_MS = 400;
 const HISTORY = 40;
 
@@ -69,20 +74,24 @@ export function mountDebug(api) {
   // question that matters here: is any part of the canvas still the page background?
   const probe = () => {
     const w = canvas.width, h = canvas.height;
-    if (!w || !h) return { bgPoints: [], sampled: 0 };
+    if (!w || !h) return { bgPoints: [], darkPoints: [], sampled: 0 };
     const px = new Uint8Array(4);
-    const bgPoints = [];
+    const bgPoints = [];   // exactly the page background: canvas nobody drew into
+    const darkPoints = []; // near black of ANY shade: a region that rendered as nothing
     for (let iy = 0; iy < SAMPLE; iy++) {
       for (let ix = 0; ix < SAMPLE; ix++) {
         const x = Math.min(w - 1, Math.round(((ix + 0.5) * w) / SAMPLE));
         const yUp = Math.min(h - 1, Math.round(((iy + 0.5) * h) / SAMPLE));
         gl.readPixels(x, yUp, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-        if (px[0] === BG[0] && px[1] === BG[1] && px[2] === BG[2]) {
-          bgPoints.push({ u: +(x / w).toFixed(3), v: +(1 - yUp / h).toFixed(3) });
-        }
+        const at = { u: +(x / w).toFixed(3), v: +(1 - yUp / h).toFixed(3), rgb: [px[0], px[1], px[2]] };
+        if (px[0] === BG[0] && px[1] === BG[1] && px[2] === BG[2]) bgPoints.push(at);
+        // The first version of this only matched the page background exactly, so a dark rectangle of any
+        // other shade — a black composite, a surface rendered unlit — kept it silent while a person was
+        // looking straight at the fault. Luminance catches the whole class.
+        else if (0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2] < DARK_LUMA) darkPoints.push(at);
       }
     }
-    return { bgPoints, sampled: SAMPLE * SAMPLE };
+    return { bgPoints, darkPoints, sampled: SAMPLE * SAMPLE };
   };
 
   // The full picture, only when something is already wrong: the exact painted rectangle.
@@ -145,16 +154,19 @@ export function mountDebug(api) {
   function tick(now) {
     if (on && now - last > PERIOD_MS) {
       last = now;
-      const { bgPoints, sampled } = probe();
+      const { bgPoints, darkPoints, sampled } = probe();
       const s = sizes();
       const p = camera.position;
-      if (bgPoints.length && !faulted) {
+      const wrong = bgPoints.length > 0 || darkPoints.length >= DARK_POINT_LIMIT;
+      if (wrong && !faulted) {
         faulted = true;
         const full = paintedBox();
         const fault = {
           t: +now.toFixed(0),
-          note: 'part of the canvas is still the page background: nothing drew there',
-          bgPoints, ...s, ...full, overlays: covers(),
+          note: bgPoints.length
+            ? 'part of the canvas is exactly the page background: nothing drew there'
+            : `${darkPoints.length} of ${sampled} probe points are near black: a large region rendered as nothing`,
+          bgPoints, darkPoints, ...s, ...full, overlays: covers(),
           camera: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)],
           recentEvents: events.slice(-8),
         };
@@ -174,6 +186,7 @@ export function mountDebug(api) {
         `viewport      ${s.viewport.join(', ')}`,
         `composer      ${s.composer.join(' x ')}   samples ${s.samples}`,
         `bg probes     ${bgPoints.length} of ${sampled}${bgPoints.length ? '   <-- UNPAINTED' : ''}`,
+        `dark probes   ${darkPoints.length} of ${sampled}${darkPoints.length >= DARK_POINT_LIMIT ? '   <-- LARGE DARK REGION' : ''}`,
         `overlays      ${covers().map((c) => `${c.what} ${c.coversPct}%`).join(', ') || 'none'}`,
         `faults        ${faults.length}${faults.length ? '   window.__debugDump()' : ''}`,
       ].join('\n');
