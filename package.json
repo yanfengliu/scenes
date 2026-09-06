@@ -10,6 +10,7 @@
     "compare": "node tools/compare.js",
     "perf": "node tools/perf.js",
     "probe": "node tools/probe.js",
+    "placement": "node tools/placement.js",
     "inspect": "node tools/inspect.js",
     "test": "node tools/test.js"
   },

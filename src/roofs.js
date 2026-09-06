@@ -7,6 +7,7 @@ import { mulberry32, jitter } from './random.js';
 import { instanced, surface, panTileGeometry, ridgeTileGeometry, eaveCapGeometry, basisAlong } from './instancing.js';
 import { steppedRoofCorners } from './primitives.js';
 import { darker } from './paving.js';
+import { makeMaterial } from './materials.js';
 
 const C = L.COLORS;
 const TILE_W = 0.3;
@@ -290,7 +291,7 @@ function tileRoof(b, rand, geos, name, corners, opts) {
   }
   if (opts.fascia !== false && opts.fasciaColor !== undefined) {
     const fasciaGeo = new THREE.BoxGeometry(length, opts.fasciaHeight ?? 0.14, 0.04);
-    const mesh = new THREE.Mesh(fasciaGeo, new THREE.MeshBasicMaterial({ color: opts.fasciaColor }));
+    const mesh = new THREE.Mesh(fasciaGeo, makeMaterial({ color: opts.fasciaColor }));
     const mid = oN.clone().add(oF).multiplyScalar(0.5).addScaledVector(normal, -0.02 - (opts.fasciaHeight ?? 0.14) / 2).addScaledVector(upslope, -0.01);
     mesh.position.copy(mid);
     mesh.quaternion.setFromRotationMatrix(basis);

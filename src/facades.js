@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import * as L from './layout.js';
 import { mulberry32, jitter } from './random.js';
 import { instanced, surface } from './instancing.js';
-import { balancedMean } from './paving.js';
+import { balancedMean, darker } from './paving.js';
 import { roofOuterY } from './primitives.js';
 
 const C = L.COLORS;
@@ -59,10 +59,11 @@ export function buildFacades(b) {
   // A koshi lattice window under the awning, where the photo shows dark slats (u 0.08-0.16, v 0.58-0.66);
   // its top rail stays under the canopy, which meets the wall at 2.6 m at the window's far end.
   lattice(b, rand, unit, 'annex window', H.front, 1.75, 2.4, -7.6, -6.2, 0.07, 0.03, SLAT, 1);
-  // The doors stand on the annex's terrace; from the photo camera their upper halves show above the low
-  // wall (v 0.72 to 0.85 at u 0.14 to 0.24): a wide pair and a narrow one beside it on the near board wall.
-  slidingDoor(b, rand, unit, 'annex door 1', H.front, 1, t2.y, -7.0, 1.9, 2.0);
-  slidingDoor(b, rand, unit, 'annex door 2', H.front, 1, t2.y, -8.95, 1.0, 1.7);
+  // The doors stand on the annex's terrace; from the photo camera the near door's upper half shows above
+  // the low wall beyond the stone wall's end (dark red-brown at u 0.08 to 0.14, v 0.74 to 0.80), and a
+  // narrow one stands beside it on the near board wall.
+  slidingDoor(b, rand, unit, 'annex door 1', H.front, 1, t2.y, -6.7, 1.6, 2.0, C.doorRed);
+  slidingDoor(b, rand, unit, 'annex door 2', H.front, 1, t2.y, -8.95, 1.0, 1.7, C.annexLower);
   // The small white awning: a light sheet over the canopy's lower rows by the near door, clear of the
   // tile crests, with an edge board. Two-sided, since the sheet is seen from above and from the street.
   const A = L.LEFT_AWNING;
@@ -200,10 +201,10 @@ function balconyRail(b, rand, unit, wallX, floorY, z0, z1) {
 }
 
 // A sliding door pair standing on the wall face at wallX, its parts extending `facing` (+1 toward +x)
-// from the wall: a dark backing, two lattice panels in a frame, thin bars on each panel.
-function slidingDoor(b, rand, unit, name, wallX, facing, floorY, zc, width, height) {
+// from the wall: a dark backing, two lattice panels in a frame, thin bars on each panel, in `woodHex`.
+function slidingDoor(b, rand, unit, name, wallX, facing, floorY, zc, width, height, woodHex) {
   const at = (a, w) => ({ x0: Math.min(wallX + facing * a, wallX + facing * (a + w)), x1: Math.max(wallX + facing * a, wallX + facing * (a + w)) });
-  b.box(`${name} backing`, { ...at(0.005, 0.025), y0: floorY, y1: floorY + height, z0: zc - width / 2, z1: zc + width / 2 }, surface('wood', C.woodDark, { seed: 94 }), { metric: true });
+  b.box(`${name} backing`, { ...at(0.005, 0.025), y0: floorY, y1: floorY + height, z0: zc - width / 2, z1: zc + width / 2 }, surface('wood', darker(woodHex, 0.7), { seed: 94 }), { metric: true });
   const parts = [];
   for (const side of [-1, 1]) {
     const pz = zc + (side * width) / 4;
@@ -213,9 +214,9 @@ function slidingDoor(b, rand, unit, name, wallX, facing, floorY, zc, width, heig
   parts.push({ position: [wallX + facing * 0.045, floorY + height / 2, zc - width / 2 - 0.04], scale: [0.09, height, 0.08], uv: [0, 0] });
   parts.push({ position: [wallX + facing * 0.045, floorY + height / 2, zc + width / 2 + 0.04], scale: [0.09, height, 0.08], uv: [0, 0] });
   parts.push({ position: [wallX + facing * 0.045, floorY + height + 0.04, zc], scale: [0.09, 0.08, width + 0.16], uv: [0, 0] });
-  b.add(instanced(`${name}`, unit, surface('wood', C.annex, { seed: 95, instancedUv: true }), parts), `${name}`);
+  b.add(instanced(`${name}`, unit, surface('wood', woodHex, { seed: 95, instancedUv: true }), parts), `${name}`);
   // Vertical lattice bars on each panel.
-  lattice(b, rand, unit, `${name} lattice`, wallX + facing * 0.07, floorY + 0.1, floorY + height - 0.1, zc - width / 2 + 0.05, zc + width / 2 - 0.05, 0.09, 0.025, SLAT, facing);
+  lattice(b, rand, unit, `${name} lattice`, wallX + facing * 0.07, floorY + 0.1, floorY + height - 0.1, zc - width / 2 + 0.05, zc + width / 2 - 0.05, 0.09, 0.025, darker(woodHex, 0.6), facing);
 }
 
 // A paper lantern: a ribbed ellipsoid on a short rod with dark caps.

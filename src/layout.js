@@ -207,6 +207,13 @@ export function streetY(z) {
   return landingY - STREET.lowerSlope * (landingEnd - z);
 }
 
+// Ground beside and beyond the far street: the plots on both sides sit a kerb above the street, and past
+// the paving's end (z = -42) the hillside rises toward the forested hill at 19 degrees.
+export function farGroundY(z) {
+  if (z >= -42) return streetY(z) + 0.4;
+  return streetY(-42) + 0.4 + Math.min(16, -42 - z) * 0.35;
+}
+
 export function streetCenterX(z) {
   const center = (STREET.x0 + STREET.x1) / 2;
   if (z >= STREET.bendStartZ) return center;
@@ -220,7 +227,7 @@ export const LEFT_TERRACES = [
   { z0: -11.5, z1: -15.5, y: -3.5 },
 ];
 // Nearest thing on the left: a tall wall of light stone blocks (photo u 0 to 0.12, v 0.55 to 1.0).
-export const LEFT_STONE_WALL = { x0: -3.6, x1: -2.8, z0: -5.3, z1: 3.0, top: 3.7 }; // its far end at photo u 0.10
+export const LEFT_STONE_WALL = { x0: -3.6, x1: -2.8, z0: -4.8, z1: 3.0, top: 3.7 }; // its far end at photo u 0.09, where the annex's red door begins
 // Top of the low plaster wall that runs downhill in front of the house fronts, as [z, y] pairs
 // (photo: from about (0.10, 0.84) to (0.28, 0.88), then fading out at the landing).
 export const LEFT_CAP_LINE = [
@@ -333,6 +340,8 @@ export const COLORS = {
   nearRidge: 0x6b7a5f,
   mountainFar: 0xb9c0c8,
   mountainMid: 0xacb5bf,
+  mountainFarthest: 0xcdc8cc,
+  mountainBlue: 0x6ca8c4,
   cherryDense: 0xbca2ae,
   cherryEdge: 0xd8c4c5,
   cherryShadow: 0xc5a7bd,
@@ -374,6 +383,8 @@ export const COLORS = {
   house3Lower: 0x6f5a49,
   rightGroundFar: 0x63605f,
   shrubDeep: 0x1e2416,
+  shrubLit: 0x7c958b, // the planter shrub's lit top, cell (0.771, 0.659)
+  doorRed: 0x6f3219, // the annex's near door, cells (0.104, 0.75) and (0.104, 0.795)
   house1Wall: 0x39241c,
   house3Wall: 0xbcae9c,
   plant: 0x4a5230,
@@ -407,6 +418,33 @@ export const COLORS = {
   platform: 0x8a8d92,
   farRoof: 0x87887b,
   farWall: 0xacafac,
+  farWallLow: 0x4e4a3f, // below the far roofs the photo is dark, cells (0.354, 0.659) and (0.313, 0.682)
   groundBase: 0x3a3a36,
   fog: 0xdccfc4,
 };
+
+// ---- Placement gate ----------------------------------------------------------------------------
+// tools/placement.js (run by npm test) casts the photo camera's ray through each position and requires
+// the first mesh hit to start with `mesh`. It catches what the compare scores cannot see: a door built
+// inside its wall, a canopy hiding a missing trunk. Positions are on the object's photo body, not its edge.
+export const PLACEMENT_CHECKS = [
+  { name: 'cherry trunk', u: 0.635, v: 0.585, mesh: 'cherry trunk' },
+  { name: 'cherry blossoms', u: 0.58, v: 0.35, mesh: 'cherry blossoms' },
+  { name: 'cherry lower canopy', u: 0.44, v: 0.6, mesh: 'cherry blossoms' },
+  { name: 'far street', u: 0.47, v: 0.72, mesh: 'far street' },
+  { name: 'evergreen', u: 0.3, v: 0.29, mesh: 'evergreen' },
+  { name: 'far roof', u: 0.2, v: 0.33, mesh: 'far roof' },
+  { name: 'hill', u: 0.72, v: 0.13, mesh: 'hill' },
+  { name: 'mountains', u: 0.25, v: 0.27, mesh: 'mountains' },
+  { name: 'person', u: 0.52, v: 0.76, mesh: 'person' },
+  { name: 'lamp post', u: 0.5, v: 0.7, mesh: 'lamp post' },
+  { name: 'pot', u: 0.85, v: 0.75, mesh: 'pot' },
+  { name: 'shrub', u: 0.755, v: 0.575, mesh: 'shrub' },
+  { name: 'left plant', u: 0.21, v: 0.84, mesh: 'left plant' },
+  { name: 'sign', u: 0.33, v: 0.58, mesh: 'sign' },
+  { name: 'noren', u: 0.93, v: 0.5, mesh: 'noren' },
+  { name: 'right eave', u: 0.85, v: 0.365, mesh: 'right eave tiles' },
+  { name: 'awning', u: 0.14, v: 0.545, mesh: 'awning' },
+  { name: 'annex door 1', u: 0.11, v: 0.77, mesh: 'annex door 1' },
+  { name: 'stairs', u: 0.4, v: 0.93, mesh: 'stair treads' },
+];

@@ -2,9 +2,11 @@
 // add named meshes to `group`; every mesh gets a name so the probe tool can map a pixel to it.
 import * as THREE from 'three';
 import * as L from './layout.js';
+import { makeMaterial } from './materials.js';
 
+// A flat-colored material through the factory (unlit until phase 4 flips MATERIALS.lit).
 export function material(color, extra = {}) {
-  return new THREE.MeshBasicMaterial({ color, ...extra });
+  return makeMaterial({ color, ...extra });
 }
 
 export function hexToVec3(hex) {
@@ -141,63 +143,6 @@ export function createBuilder(group) {
     return add(mesh, name);
   }
 
-  // Color at photo row v from [[v, color], ...] stops (linear between stops, clamped at the ends).
-  function colorAtRow(stops, v, out) {
-    let k = 1;
-    while (k < stops.length - 1 && v > stops[k][0]) k++;
-    const [v0, col0] = stops[k - 1];
-    const [v1, col1] = stops[k];
-    const t = THREE.MathUtils.clamp((v - v0) / (v1 - v0), 0, 1);
-    return out.set(col0).lerp(new THREE.Color(col1), t);
-  }
-
-  // A card facing the photo camera bounded above by a ridge polyline in photo (u, v) and below by row
-  // vBottom, filled with a vertical color gradient. Built as a grid so every stop row is a vertex row
-  // and the gradient is exact, unlike vertex colors on an outline-only shape.
-  function ridgeCard(name, ridge, vBottom, depth, stops, columns = 60, rows = 8) {
-    const ridgeV = (u) => {
-      if (u <= ridge[0][0]) return ridge[0][1];
-      for (let i = 1; i < ridge.length; i++) {
-        if (u <= ridge[i][0]) {
-          const [u0, v0] = ridge[i - 1];
-          const [u1, v1] = ridge[i];
-          return v0 + ((v1 - v0) * (u - u0)) / (u1 - u0);
-        }
-      }
-      return ridge[ridge.length - 1][1];
-    };
-    const positions = [];
-    const colors = [];
-    const c = new THREE.Color();
-    const u0 = ridge[0][0];
-    const u1 = ridge[ridge.length - 1][0];
-    for (let i = 0; i <= columns; i++) {
-      const u = u0 + ((u1 - u0) * i) / columns;
-      const top = ridgeV(u);
-      for (let j = 0; j <= rows; j++) {
-        const v = top + ((vBottom - top) * j) / rows;
-        positions.push((u - 0.5) * 2 * basis.tanH * depth, (0.5 - v) * 2 * basis.tanV * depth, 0);
-        colorAtRow(stops, v, c);
-        colors.push(c.r, c.g, c.b);
-      }
-    }
-    const index = [];
-    for (let i = 0; i < columns; i++) {
-      for (let j = 0; j < rows; j++) {
-        const a = i * (rows + 1) + j;
-        const b = a + rows + 1;
-        index.push(a, b, a + 1, a + 1, b, b + 1);
-      }
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geo.setIndex(index);
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false }));
-    orientToCamera(mesh, depth);
-    return add(mesh, name);
-  }
-
   // A box whose camera-facing front covers the uv box at `depth` and extends `thickness` away from the camera.
   function frontalBox(name, uv, depth, thickness, color) {
     const w = (uv.u1 - uv.u0) * 2 * basis.tanH * depth;
@@ -244,7 +189,6 @@ export function createBuilder(group) {
     bandSolid,
     quadSlab,
     frontalCard,
-    ridgeCard,
     frontalBox,
     ellipsoid,
     uvEllipsoid,

@@ -11,8 +11,8 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 
 ```json
 {
-  "cellDistanceMax": 0.093,
-  "ssimMin": 0.32
+  "cellDistanceMax": 0.088,
+  "ssimMin": 0.41
 }
 ```
 
@@ -30,3 +30,9 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 | 2 (after critic 1) | 2026-09-05 | 0.0903 | 0.3190 | 200 | 1.00 ms | canopy restored with the awning as a sheet on it, annex wall kept under the canopy, a dormer in the corner, low wall cap flattened, house 3 wall set back under its eave, stones proud of their mortar |
 | 2 (after critic 2) | 2026-09-05 | 0.0901 | 0.3270 | 202 | 1.00 ms | sign on a bracket at house 3's corner, awning clear of the tile crests, dormer a wedge on the mezzanine, the wall notch faced in stone, gutter mortar stepped, a lattice window under the awning |
 | 2 (done, after critic 3) | 2026-09-05 | 0.0899 | 0.3273 | 203 | 1.0 to 1.5 ms | fence roof corners clipped on one signed diagonal each (hips and valleys, boards cut the same way), walkway band behind the notch stones, window rail under the canopy, curbs on the mortar; a post under house 1's overhang was tried and cost 0.008 of SSIM, so it is not there |
+| 3 (first cherry) | 2026-09-05 | 0.0921 | 0.3642 | 196 (shot) | | the block-out replaced: spline limbs, 640 strands, blossom cards colored from the photo's canopy field, pines, far houses, hill surface, mountain layers, person; the pines too tall and the canopy's sun-lit top missing from the mask |
+| 3 (mask and pines fixed) | 2026-09-05 | 0.0853 | 0.4176 | | | sun-lit top and lavender strand ends counted as blossom, pines lowered, the annex's near door red and clear of the stone wall's end |
+| 3 (before critic) | 2026-09-05 | 0.0855 | 0.4160 | 204 | 2.6 ms | the lamp post and trunk kept clear of blossoms and stems, the hill textured with cellular tree crowns; placement gate on 18 landmarks in npm test |
+| 3 (critic fixes, first pass) | 2026-09-05 | 0.0908 | 0.3469 | | | the new hillside band rose into the mountains' rows; the pines moved to the hillside beyond the bend, limbs and stems clipped, ground under the far houses |
+| 3 (after critic 1) | 2026-09-05 | 0.0854 | 0.4017 | 208 | 2.8 ms | hillside kept short, limb tubes ending inside the blossom, strand-end cells pink at their own lightness, blossom hues clamped to pink, tube winding outward, every material through the factory, a far-street check added (19 landmarks) |
+| 3 (done, after critic 2) | 2026-09-05 | 0.0844 | 0.4159 | 211 | 1.3 ms | ground strips out of the frame, the far houses off the paving with dark walls below their gables, the shrub standing on the walkway behind the fence's jog, the pines' whorls down to the ground |

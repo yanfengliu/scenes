@@ -3,14 +3,13 @@
 // material's mean, and a UV offset so shared geometry does not repeat the same texel pattern.
 import * as THREE from 'three';
 import { texturesFor } from './textures.js';
+import { makeMaterial } from './materials.js';
 
-// A MeshBasicMaterial carrying the albedo for `kind` at `mean`, with the phase 4 maps kept aside.
-// Unlit for now: the photo colors are already lit, and lighting arrives in phase 4.
+// A material carrying the albedo for `kind` at `mean`, through the material factory (unlit until
+// phase 4 flips MATERIALS.lit), with the phase 4 maps kept aside as well.
 export function surface(kind, mean, { seed = 1, side, transparent = false, instancedUv = false } = {}) {
   const t = texturesFor(kind, mean, { seed });
-  const params = { map: t.map, transparent };
-  if (side !== undefined) params.side = side;
-  const mat = new THREE.MeshBasicMaterial(params);
+  const mat = makeMaterial({ map: t.map, transparent, side, normalMap: t.normalMap, roughnessMap: t.roughnessMap });
   mat.userData.pbr = { normalMap: t.normalMap ?? null, roughnessMap: t.roughnessMap ?? null, kind, mean };
   if (instancedUv) withInstanceUvOffset(mat);
   return mat;
@@ -35,8 +34,9 @@ const tmpE = new THREE.Euler();
 const tmpC = new THREE.Color();
 
 // Build an InstancedMesh. items: [{ position: [x, y, z], euler?: [x, y, z], quaternion?, basis?: Matrix4,
-// scale?: [sx, sy, sz], tint?: number (multiplier around 1), uv?: [du, dv] }]. Geometry is cloned when
-// UV offsets are used so the attribute belongs to this mesh.
+// scale?: [sx, sy, sz], tint?: number (multiplier around 1), color?: hex (an sRGB color the tint then
+// scales), uv?: [du, dv] }]. Geometry is cloned when UV offsets are used so the attribute belongs to
+// this mesh.
 export function instanced(name, geometry, material, items, { uvOffsets = true } = {}) {
   const geo = uvOffsets ? geometry.clone() : geometry;
   const mesh = new THREE.InstancedMesh(geo, material, items.length);
@@ -52,9 +52,11 @@ export function instanced(name, geometry, material, items, { uvOffsets = true } 
     else tmpS.set(1, 1, 1);
     tmpM.compose(tmpP, tmpQ, tmpS);
     mesh.setMatrixAt(i, tmpM);
-    if (it.tint !== undefined) {
+    if (it.tint !== undefined || it.color !== undefined) {
       anyTint = true;
-      tmpC.setRGB(it.tint, it.tint, it.tint, THREE.LinearSRGBColorSpace);
+      if (it.color !== undefined) tmpC.set(it.color);
+      else tmpC.setRGB(1, 1, 1, THREE.LinearSRGBColorSpace);
+      if (it.tint !== undefined) tmpC.multiplyScalar(it.tint);
       mesh.setColorAt(i, tmpC);
     }
     if (uvs) {

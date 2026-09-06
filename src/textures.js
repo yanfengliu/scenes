@@ -305,7 +305,21 @@ export function glazePixel(c) {
 
 // Registry of named albedo kinds: pixel function factory, tile size in metres, and whether the kind
 // carries a height field for the normal and roughness maps.
+// Bark: vertical fissures and streaks, darker in the furrows.
+export function barkPixel(c) {
+  return (u, v, env) => {
+    const streak = env.noise(u * 40, v * 4);
+    const fissure = env.noiseB(u * 18 + v * 0.5, v * 2.5);
+    const fine = (env.noiseC(u * 120, v * 60) - 0.5) * 0.12;
+    let k = 0.85 + (streak - 0.5) * 0.5 + fine;
+    if (fissure < 0.32) k -= 0.3 * (1 - fissure / 0.32);
+    env.height = 0.5 + (streak - 0.5) * 0.4 - (fissure < 0.32 ? 0.3 : 0);
+    return tint(c, k);
+  };
+}
+
 export const KINDS = {
+  bark: { pixel: barkPixel, metres: 1.2, height: true, size: 256 },
   stone: { pixel: stonePixel, metres: 1.4, height: true, size: 256 },
   rubble: { pixel: rubblePixel, metres: 1.0, height: true, size: 256 },
   wood: { pixel: (c) => woodPixel(c, 6), metres: 1.0, height: true, size: 256 },
@@ -336,4 +350,248 @@ export function texturesFor(kind, mean, { seed = 1 } = {}) {
   }
   cache.set(key, out);
   return out;
+}
+
+// ---- foliage cards -------------------------------------------------------------------------------
+// Card textures are drawn with canvas calls: white-ish shapes with alpha on a transparent ground, so the
+// instance color carries the mean and one texture serves every tint. `makeCard` returns the texture and
+// the linear-space mean brightness of its opaque texels (alpha over 0.5, the alpha test), so callers
+// divide their colors by it and the visible mean lands on the intended color.
+
+function drawSoftDisc(ctx, x, y, r, shade, alphaCentre = 1, alphaEdge = 0, rim = null) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  const c = Math.round(255 * shade);
+  g.addColorStop(0, `rgba(255,255,255,${alphaCentre})`);
+  g.addColorStop(0.6, `rgba(${c},${c},${c},${(alphaCentre + alphaEdge) / 2})`);
+  if (rim) g.addColorStop(0.82, `rgba(${rim[0]},${rim[1]},${rim[2]},${(alphaCentre + alphaEdge) / 2})`);
+  g.addColorStop(1, `rgba(${c},${c},${c},${alphaEdge})`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+const grey = (shade, alpha = 1) => `rgba(${Math.round(255 * shade)},${Math.round(255 * shade)},${Math.round(255 * shade)},${alpha})`;
+
+// A blossom cluster: soft petal discs around the centre, a little darker toward their middles with a
+// warm light rim where the low sun comes through the petals (the back-lit rim tint), and three faint
+// stamen dots. Its opaque area is about 55% of the card; the instance color carries the mean.
+function blossomCard(ctx, s, rand) {
+  const n = 5 + Math.floor(rand() * 3);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rand() * 0.6;
+    const d = s * (0.1 + rand() * 0.15);
+    drawSoftDisc(ctx, s / 2 + Math.cos(a) * d, s / 2 + Math.sin(a) * d, s * (0.15 + rand() * 0.08), 0.84, 1, 0, [255, 248, 236]);
+  }
+  drawSoftDisc(ctx, s / 2, s / 2, s * 0.18, 1.0);
+  ctx.fillStyle = 'rgba(120,70,95,0.5)';
+  for (let i = 0; i < 3; i++) {
+    const a = rand() * Math.PI * 2;
+    const d = s * 0.08 * rand();
+    ctx.beginPath();
+    ctx.arc(s / 2 + Math.cos(a) * d, s / 2 + Math.sin(a) * d, s * 0.008, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// A needle cluster: a dense core so the card survives minification, with needles fanning out of it.
+function needleCard(ctx, s, rand) {
+  drawSoftDisc(ctx, s / 2, s * 0.58, s * 0.3, 0.7, 1, 0);
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 60; i++) {
+    const a = -Math.PI / 2 + (rand() - 0.5) * 3.0;
+    const len = s * (0.18 + rand() * 0.28);
+    const x0 = s / 2 + (rand() - 0.5) * s * 0.4;
+    const y0 = s * (0.5 + rand() * 0.4);
+    ctx.strokeStyle = grey(0.7 + rand() * 0.3);
+    ctx.lineWidth = s * 0.03;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + Math.cos(a) * len, y0 + Math.sin(a) * len);
+    ctx.stroke();
+  }
+}
+
+// A leaf cluster: oval leaves around a soft core.
+function leafCard(ctx, s, rand) {
+  drawSoftDisc(ctx, s / 2, s / 2, s * 0.26, 0.75, 1, 0);
+  for (let i = 0; i < 11; i++) {
+    const a = rand() * Math.PI * 2;
+    const d = s * (0.12 + rand() * 0.22);
+    const x = s / 2 + Math.cos(a) * d;
+    const y = s / 2 + Math.sin(a) * d;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a + Math.PI / 2 + (rand() - 0.5) * 0.6);
+    ctx.fillStyle = grey(0.75 + rand() * 0.3);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * (0.1 + rand() * 0.05), s * (0.055 + rand() * 0.03), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// A tuft of grass blades fanning up from the bottom centre.
+function grassCard(ctx, s, rand) {
+  for (let i = 0; i < 9; i++) {
+    const a = -Math.PI / 2 + (rand() - 0.5) * 1.5;
+    const len = s * (0.55 + rand() * 0.4);
+    const x0 = s / 2 + (rand() - 0.5) * s * 0.2;
+    const tipX = x0 + Math.cos(a) * len;
+    const tipY = s - Math.sin(-a) * len;
+    ctx.fillStyle = grey(0.7 + rand() * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(x0 - s * 0.03, s);
+    ctx.lineTo(x0 + s * 0.03, s);
+    ctx.lineTo(tipX, tipY);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// A moss patch: an irregular soft blob with darker pits and lighter speckles.
+function mossCard(ctx, s, rand) {
+  for (let i = 0; i < 14; i++) {
+    const a = rand() * Math.PI * 2;
+    const d = s * 0.22 * rand();
+    drawSoftDisc(ctx, s / 2 + Math.cos(a) * d, s / 2 + Math.sin(a) * d * 0.6, s * (0.14 + rand() * 0.12), 0.7 + rand() * 0.35, 1, 0);
+  }
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = grey(rand() < 0.5 ? 0.55 : 1.0);
+    ctx.beginPath();
+    ctx.arc(s / 2 + jitterS(rand, s * 0.3), s / 2 + jitterS(rand, s * 0.2), s * 0.012, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+const jitterS = (rand, amount) => (rand() - 0.5) * 2 * amount;
+
+const CARDS = { blossom: blossomCard, needles: needleCard, leaves: leafCard, grass: grassCard, moss: mossCard };
+const cardCache = new Map();
+
+// The card texture for a kind: { texture, mean } with `mean` the linear-space mean of its opaque texels.
+export function cardTexture(kind, { seed = 1, size = 128 } = {}) {
+  const key = `${kind}:${seed}:${size}`;
+  if (cardCache.has(key)) return cardCache.get(key);
+  const draw = CARDS[kind];
+  if (!draw) throw new Error(`unknown card kind "${kind}"; known: ${Object.keys(CARDS).join(', ')}`);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  draw(ctx, size, mulberry32(seed));
+  const d = ctx.getImageData(0, 0, size, size).data;
+  let sum = 0;
+  let n = 0;
+  const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] <= 127) continue;
+    sum += (toLinear(d[i] / 255) + toLinear(d[i + 1] / 255) + toLinear(d[i + 2] / 255)) / 3;
+    n++;
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  const out = { texture, mean: n ? sum / n : 1, coverage: n / (size * size) };
+  cardCache.set(key, out);
+  return out;
+}
+
+// ---- the hill ------------------------------------------------------------------------------------
+// A texture whose rows follow the photo's rows between vTop and vBottom: each row's mean is the color the
+// gradient stops give at that photo row (exact, corrected per row), modulated by a tree-clump pattern
+// (rounded crowns lighter on their sun side, dark between). Not tiled; the hill mesh maps photo v to it.
+export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  const noiseB = noise2D(seed + 11);
+  // Tree crowns: one jittered point per cell of a 400x220 grid (about 2 m on the hill); each texel belongs
+  // to its nearest point.
+  // Inside a crown the sun side (toward +u, up) is light and the far side dark; between crowns, dark gaps.
+  const CW = 400;
+  const CH = 220;
+  const rand = mulberry32(seed);
+  const px = new Float32Array(CW * CH);
+  const py = new Float32Array(CW * CH);
+  const pr = new Float32Array(CW * CH);
+  for (let i = 0; i < CW * CH; i++) {
+    px[i] = rand();
+    py[i] = rand();
+    pr[i] = 0.45 + rand() * 0.3;
+  }
+  const crown = (u, v) => {
+    const cx = u * CW;
+    const cy = v * CH;
+    const ci = Math.floor(cx);
+    const cj = Math.floor(cy);
+    let best = Infinity;
+    let bx = 0;
+    let by = 0;
+    let br = 0.5;
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let i = ci - 1; i <= ci + 1; i++) {
+        const ii = ((i % CW) + CW) % CW;
+        const jj = ((j % CH) + CH) % CH;
+        const k = jj * CW + ii;
+        const dx = cx - (i + px[k]);
+        const dy = cy - (j + py[k]);
+        const d = dx * dx + dy * dy;
+        if (d < best) {
+          best = d;
+          bx = dx;
+          by = dy;
+          br = pr[k];
+        }
+      }
+    }
+    const d = Math.sqrt(best);
+    if (d > br) return 0.55;
+    const lit = (bx * 0.6 - by * 0.8) / br; // -1 on the shaded side, +1 on the lit side
+    return 0.85 + 0.3 * lit + 0.15 * (1 - d / br);
+  };
+  const colorAt = (v) => {
+    let k = 1;
+    while (k < stops.length - 1 && v > stops[k][0]) k++;
+    const [v0, c0] = stops[k - 1];
+    const [v1, c1] = stops[k];
+    const t = Math.max(0, Math.min(1, (v - v0) / (v1 - v0)));
+    const a = rgbOf(c0);
+    const b = rgbOf(c1);
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  };
+  for (let y = 0; y < size; y++) {
+    const v = vTop + ((vBottom - vTop) * (y + 0.5)) / size;
+    const target = colorAt(v);
+    const row = new Float32Array(size);
+    let mean = 0;
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const vv = y / size;
+      // Crowns about 5 m across on the hill, over slower undulations of the slope beneath.
+      const big = noiseB(u * 9, vv * 6);
+      let k = crown(u, vv) + (big - 0.5) * 0.3;
+      row[x] = k;
+      mean += k;
+    }
+    mean /= size;
+    for (let x = 0; x < size; x++) {
+      const k = row[x] / mean;
+      const i = (y * size + x) * 4;
+      d[i] = clamp255(Math.round(target[0] * k));
+      d[i + 1] = clamp255(Math.round(target[1] * k));
+      d[i + 2] = clamp255(Math.round(target[2] * k));
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 4;
+  return texture;
 }
