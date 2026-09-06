@@ -39,6 +39,7 @@ npm test
 | `npm run placement` | Two checks the scores cannot make: a ray through 19 photo positions that must hit the object belonging there, and 8 objects whose own base must sit on the ground they claim to stand on. |
 | `npm run animation` | Scores the photo view at several points across the animation cycle, so a drift that only shows at t = 3 s cannot hide. |
 | `npm run nudge` | Moves the camera two millimetres from three poses and fails if the frame changes more than a little. A still camera renders the same frame every time, so this is the only gate that sees the scene the way someone orbiting it does. |
+| `npm run blackframe` | Loads the scene at six window sizes and device pixel ratios, including non-round ones, and fails when the post chain hands back a black, flat or nearly lightless frame. It is the counterpart to `nudge`: that one scores how much the frame *changes*, which rates a fully black frame as perfectly stable, and this one scores whether the frame is there at all. |
 | `npm run perf` | Median frame time and draw calls over 5 s at 1920x1080. Budget: under 16 ms and under 400 draw calls. |
 | `npm run probe -- u,v ...` | Names the mesh under each photo position, and the pixel there. |
 | `npm run inspect -- pair u0 v0 u1 v1` | Writes a photograph-versus-render crop of a region. |
@@ -85,7 +86,7 @@ Two ideas run through all of it. Every colour is a mean sampled from the photogr
 
 ## Deployment
 
-The page is static. `.github/workflows/ci.yml` runs `npm test` on every push to `main` and on pull requests: the runner has no GPU, so it renders through SwiftShader, which is what the scored shot has always used, and it reproduces the same scores this machine gets. It does not run `npm run perf`, and it shoots three animation frames instead of seven (`ANIMATION_FRAMES`), because a frame takes minutes on a shared runner.
+The page is static. `.github/workflows/ci.yml` runs `npm test` on every push to `main` and on pull requests: the runner has no GPU, so it renders through SwiftShader, which is what the scored shot has always used, and it reproduces the same scores this machine gets. It does not run `npm run perf`, it shoots three animation frames instead of seven (`ANIMATION_FRAMES`) and two of the six blackframe sizes (`BLACKFRAME_VIEWS`), because a frame takes minutes on a shared runner. `blackframe` asks for the GPU and will not get one there, so on CI it proves the chain is sound on SwiftShader; the driver behaviour it was written for needs a machine with a GPU to see.
 
 `.github/workflows/pages.yml` publishes `index.html`, `src/`, the photograph and the render to GitHub Pages on the same pushes. **It needs Pages switched on once before it can deploy**: in the repository's Settings, under Pages, set the source to GitHub Actions. Until then the workflow fails with "Resource not accessible by integration", because a workflow token cannot create the site by itself. Note what deploying does: it serves `japan.webp`, a third-party photograph, from a public URL. See the licence note below before turning it on.
 

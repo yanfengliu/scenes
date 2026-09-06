@@ -39,9 +39,16 @@ jobs:
       # them would fail forever and tell nobody anything.
       # Three frames instead of seven: the animation gate shoots 1200x1100 through shadows and bloom on
       # a software renderer, which is minutes per frame on a shared runner. Three still spans the cycle.
+      # Two of the blackframe gate's six size/ratio combinations, for the same reason: each one loads the
+      # page and builds the scene again, and on SwiftShader that is minutes. The two kept are the size
+      # the user's report came from (1280x720 at a device pixel ratio of 1.5) and the size every other
+      # gate uses, and each is measured twice, on load and after a resize. The gate asks for the GPU and
+      # will not get one here, so what it proves on this runner is that the chain is sound on SwiftShader;
+      # the driver behaviour it was written for needs a machine with a GPU to see.
       - run: npm test
         env:
           ANIMATION_FRAMES: 3
+          BLACKFRAME_VIEWS: 2
 
       - if: failure()
         uses: actions/upload-artifact@v4

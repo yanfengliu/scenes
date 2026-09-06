@@ -6,7 +6,7 @@ import * as L from './layout.js';
 import { CAMERA, COLORS, uvToWorld } from './layout.js';
 import { buildScene } from './scene.js';
 import { buildLighting, applyShadowFlags } from './lighting.js';
-import { buildComposer, resizeComposer } from './post.js';
+import { buildComposer, resizeComposer, postState } from './post.js';
 import { MATERIALS } from './materials.js';
 import { sceneRadiance } from './tonemap.js';
 import * as anim from './animation.js';
@@ -53,13 +53,31 @@ controls.keyPanSpeed = 12;
 // applied after the controls have had their say, so a drag that would push through simply stops there.
 const FLOOR_CLEARANCE = 0.45;
 const CORRIDOR = { x0: L.STREET.x0 - 0.35, x1: L.STREET.x1 + 0.35, z0: 4.0, z1: -15.0, top: 3.2 };
+// The corridor above only reaches the near stairway pinch: its `top` is measured above the LOCAL street
+// surface, which is right for the low retaining walls built along that same slope. The two house rows'
+// roof mass sits at a roughly fixed absolute height instead, and runs deeper than the corridor's z1 (the
+// right machiya's back is at RIGHT_MACHIYA.z0 = -21, six metres past the old z1 = -15). Past either
+// boundary the clamp was a no-op, and ordinary orbiting, helped along by the controls' own damping which
+// keeps rotating for dozens of frames after the mouse is released, could carry the camera to within
+// centimetres of that roof mass. Its outside faces carry the photo's own near-black eave shadow
+// (C.eaveDark, C.topEaveUnder), so a surface meant to be seen from 18 m away filled the frame with a
+// black rectangle that nothing pulled the camera back out of: the second half of the "giant rectangular
+// blackouts" a user reported. Measured at radius 18, the photo view's own distance with no zoom, an
+// exhaustive sweep of 2580 poses within half a metre of a roof box left 2580 of them unclamped; with
+// this zone, none. A live mouse drag that settled at 100% of a 32x32 block near-black now settles at
+// 14.5%. The 0.5 m margins match FLOOR_CLEARANCE's scale and are measured, not guessed: a first pass at
+// 0.3 m still left 162 poses just above the roof unclamped.
+const ROOF_ZONE = { z0: 4.0, z1: L.RIGHT_MACHIYA.z0 - 0.5, top: L.RIGHT_MACHIYA.roofY + 0.5 + 0.5 };
 function clampCamera() {
   const p = camera.position;
   const ground = Math.min(L.streetY(p.z), L.farGroundY(p.z));
   const floor = ground + FLOOR_CLEARANCE;
   if (p.y < floor) p.y = floor;
-  // Inside the street's corridor and below the eaves, hold the camera between the two walls.
-  if (p.z < CORRIDOR.z0 && p.z > CORRIDOR.z1 && p.y < L.streetY(p.z) + CORRIDOR.top) {
+  // Inside the street's corridor and below the eaves, or within the house rows' own height and depth
+  // whatever the street is doing beneath them, hold the camera between the two walls.
+  const inCorridor = p.z < CORRIDOR.z0 && p.z > CORRIDOR.z1 && p.y < L.streetY(p.z) + CORRIDOR.top;
+  const inRoofZone = p.z < ROOF_ZONE.z0 && p.z > ROOF_ZONE.z1 && p.y < ROOF_ZONE.top;
+  if (inCorridor || inRoofZone) {
     p.x = Math.min(Math.max(p.x, CORRIDOR.x0), CORRIDOR.x1);
   }
   // The target stays in the scene, so the camera cannot be levered out of the world by dragging it away.
@@ -99,6 +117,10 @@ const { group } = buildScene();
 scene.add(group);
 const lights = buildLighting(scene, renderer);
 const shadowCasters = applyShadowFlags(group);
+// The photo view is set before the composer is built, because building it renders and inspects a real
+// frame to prove the post chain survives on this driver at this size (see src/post.js), and that frame
+// should be the scene as it is meant to be seen rather than whatever the default camera happens to face.
+applyPhotoView();
 const { composer, bloom, grade } = buildComposer(renderer, scene, camera);
 
 // The composer renders several passes per frame and three resets its counters on every one of them, so
@@ -112,9 +134,11 @@ function render() {
 function onResize() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO_CAP));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  resizeComposer(composer, renderer);
+  // The camera is updated before the composer, because resizing the composer renders and inspects a real
+  // frame at the new size and that frame should be framed the way the next one will be.
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  resizeComposer(composer, renderer);
 }
 window.addEventListener('resize', onResize);
 // Moving the window to a screen with a different pixel ratio fires this, not resize.
@@ -156,6 +180,8 @@ const api = {
       animationTime: anim.time(),
       width: renderer.domElement.width,
       height: renderer.domElement.height,
+      // What the post chain settled on for this size, and what the verification measured getting there.
+      post: postState(),
     };
   },
   // True per-frame cost: render the whole chain, then read one pixel so the call blocks until the frame
@@ -185,7 +211,6 @@ const api = {
 };
 window.__scene = api;
 
-applyPhotoView();
 let frames = 0;
 function frame(now) {
   controls.update();

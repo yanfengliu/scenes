@@ -18,6 +18,8 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 
 Two questions the thresholds cannot answer are asked elsewhere. `npm run nudge` moves the camera 2 mm from three poses at two device pixel ratios and bounds how much of the frame may change drastically, because a still camera renders the same frame every time and the user's flicker lived entirely in the movement.
 
+A third, added 2026-09-06: every scored gate here shoots one viewport at one device pixel ratio, and the post chain can hand back a black frame from the *size* alone. `npm run blackframe` loads the scene at six window size and ratio combinations, including non-round ratios, measures each on load and after a resize, and fails when the frame is too dark, has a blacked-out tile, is flat, or has lost most of the light the plain renderer sees. Nudge could not see it and never could: it scores how much the frame *changes*, and a black frame is the most stable frame there is.
+
 The animation adds a third: the shot is one frame, and the scene moves. `npm run animation` scores seven frames across the wind's period and asserts the worst of them against these same thresholds plus 0.002 of cell distance and 0.006 of SSIM. The spread it measures is in the phase 5 devlog.
 
 ## History

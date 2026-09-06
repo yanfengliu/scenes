@@ -1,5 +1,10 @@
 // npm test: shot -> compare -> placement checks -> the animation's own frames -> the frame's stability
-// under a small camera move -> assert the scores against the thresholds in docs/PLAN-scores.md.
+// under a small camera move -> the frame is actually there, at several window sizes and device pixel
+// ratios -> assert the scores against the thresholds in docs/PLAN-scores.md.
+//
+// `nudge` and `blackframe` are the two halves of one question and neither can answer the other's. Nudge
+// scores how much the frame *changes*, so a frame that is entirely black is the most stable frame there
+// is and passes it perfectly; blackframe scores whether the frame is *there*.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -17,6 +22,7 @@ run('tools/compare.js');
 run('tools/placement.js');
 run('tools/animation.js');
 run('tools/nudge.js');
+run('tools/blackframe.js');
 
 const scores = JSON.parse(readFileSync('out/scores.json', 'utf8'));
 const doc = readFileSync('docs/PLAN-scores.md', 'utf8');
