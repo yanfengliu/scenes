@@ -136,6 +136,18 @@ export function normalMapFromHeights(heights, size, strength = 2.0, repeatMetres
 }
 
 // Grayscale roughness map: base roughness plus a term from the height field (pits are rougher).
+//
+// A steepness-proportional roughness boost (raise roughness where the normal map's slope is highest, the
+// textbook remedy for specular sparkle from a bump map) was tried here and measured out at three
+// strengths, from a per-texel term capped at +0.35 to a near-uniform +1.2 saturating almost every non-flat
+// texel: mean shimmer moved by less than 0.3% each time (3.158 to 3.155 to 3.150 to 3.147, on the same
+// path that separately went to 3.031, a real 4.5% drop, when the normal map was removed outright). That
+// gap says the earlier drop was not a roughness effect: these materials are non-metallic (metalness 0) and
+// diffuse-dominant, and roughness only narrows or widens the specular lobe, while a bumpy normal feeding
+// straight into the Lambert term (N.L) aliases the diffuse shading regardless of roughness. The standard
+// remedy for specular sparkle does not reach that, and removing the normal map to chase the 4.5% would be
+// the "no normal maps" false fix this family warns against, so this is left as it shipped, with the finding
+// recorded rather than a change that measurably does nothing.
 export function roughnessMapFromHeights(heights, size, base = 0.85, variation = 0.12, repeatMetres = 1) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -468,9 +480,98 @@ const jitterS = (rand, amount) => (rand() - 0.5) * 2 * amount;
 const CARDS = { blossom: blossomCard, needles: needleCard, leaves: leafCard, grass: grassCard, moss: mossCard };
 const cardCache = new Map();
 
+// ---- coverage-preserving mipmaps -----------------------------------------------------------------
+// A card is alpha-tested at 0.5 (0.4 for moss), and its coverage - the fraction of its texels that pass -
+// is exact at the base level (a blossom cluster is drawn to be about 55% opaque). Plain box-filtered
+// mipmapping (gl.generateMipmap, what a CanvasTexture gets by default) does not preserve that fraction: a
+// bright disc averaged toward a transparent ground loses alpha faster than it loses area, so a distant,
+// minified card can fall under the test almost everywhere well before its silhouette should vanish - and
+// since the mip level sampled drifts continuously with camera distance, a card near that crossover flickers
+// whole and gone as the camera moves by fractions of a pixel. Rescaling each mip's alpha so its own
+// coverage fraction matches the base level's, at every size down to 1x1, is the standard fix (mipmapping
+// with alpha test coverage). It needs the mips supplied by hand: three only takes manual mip data for a
+// DataTexture, not a CanvasTexture, which is why `cardTexture` builds one below instead of letting the GPU
+// generate mips on its own.
+
+// A 2x2 box filter, one level smaller (each dimension halved, rounding up on an odd size though every
+// card here is a power of two so this always halves exactly).
+function downsample2x(data, w, h) {
+  const nw = Math.max(1, w >> 1);
+  const nh = Math.max(1, h >> 1);
+  const out = new Uint8Array(nw * nh * 4);
+  for (let y = 0; y < nh; y++) {
+    for (let x = 0; x < nw; x++) {
+      const x0 = x * 2;
+      const y0 = y * 2;
+      const x1 = Math.min(w - 1, x0 + 1);
+      const y1 = Math.min(h - 1, y0 + 1);
+      const samples = [y0 * w + x0, y0 * w + x1, y1 * w + x0, y1 * w + x1];
+      const o = (y * nw + x) * 4;
+      for (let c = 0; c < 4; c++) {
+        let sum = 0;
+        for (const s of samples) sum += data[s * 4 + c];
+        out[o + c] = Math.round(sum / samples.length);
+      }
+    }
+  }
+  return { data: out, width: nw, height: nh };
+}
+
+// The fraction of `n` texels whose alpha, scaled by `scale`, reaches `thresholdByte` (0..255).
+function coverageFraction(data, n, thresholdByte, scale = 1) {
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.min(255, data[i * 4 + 3] * scale) >= thresholdByte) count++;
+  }
+  return count / n;
+}
+
+// The alpha multiplier that brings this level's coverage up to `target` (bisection: coverage is
+// monotonic non-decreasing in scale, since raising every texel's alpha can only add texels to the count,
+// never remove one). Capped at `maxScale`, so a mip with almost no content left (a stray bright corner)
+// is not blown out chasing a fraction it no longer has enough texels to reach.
+function solveCoverageScale(data, n, thresholdByte, target, maxScale = 48) {
+  if (coverageFraction(data, n, thresholdByte) >= target) return 1;
+  let lo = 1;
+  let hi = maxScale;
+  for (let i = 0; i < 16; i++) {
+    const mid = (lo + hi) / 2;
+    if (coverageFraction(data, n, thresholdByte, mid) < target) lo = mid;
+    else hi = mid;
+  }
+  return hi;
+}
+
+// Level 0 is `baseData` untouched (cloned); every level after is a box-filtered downsample with its alpha
+// rescaled to match the base level's own coverage fraction at `alphaTest`, down to 1x1. Colors are left to
+// average plainly: card art never puts pure black behind a transparent edge (see the fringe fix below),
+// so a plain box filter does not pull dark halos in around a shrinking disc.
+function buildCoverageMips(baseData, size, alphaTest) {
+  const thresholdByte = Math.round(alphaTest * 255);
+  const baseCoverage = coverageFraction(baseData, size * size, thresholdByte);
+  const levels = [{ data: new Uint8Array(baseData), width: size, height: size }];
+  let level = levels[0];
+  while (level.width > 1 || level.height > 1) {
+    const next = downsample2x(level.data, level.width, level.height);
+    const n = next.width * next.height;
+    const scale = solveCoverageScale(next.data, n, thresholdByte, baseCoverage);
+    if (scale !== 1) {
+      for (let i = 0; i < n; i++) {
+        const o = i * 4 + 3;
+        next.data[o] = Math.min(255, Math.round(next.data[o] * scale));
+      }
+    }
+    levels.push(next);
+    level = next;
+  }
+  return levels;
+}
+
 // The card texture for a kind: { texture, mean } with `mean` the linear-space mean of its opaque texels.
-export function cardTexture(kind, { seed = 1, size = 128 } = {}) {
-  const key = `${kind}:${seed}:${size}`;
+// `alphaTest` must match what the material tests against (foliageMaterial defaults to 0.5; moss uses 0.4),
+// since it is also the coverage fraction the mip chain preserves.
+export function cardTexture(kind, { seed = 1, size = 128, alphaTest = 0.5 } = {}) {
+  const key = `${kind}:${seed}:${size}:${alphaTest}`;
   if (cardCache.has(key)) return cardCache.get(key);
   const draw = CARDS[kind];
   if (!draw) throw new Error(`unknown card kind "${kind}"; known: ${Object.keys(CARDS).join(', ')}`);
@@ -501,9 +602,18 @@ export function cardTexture(kind, { seed = 1, size = 128 } = {}) {
     sum += (toLinear(d[i] / 255) + toLinear(d[i + 1] / 255) + toLinear(d[i + 2] / 255)) / 3;
     n++;
   }
-  const texture = new THREE.CanvasTexture(canvas);
+  const mipLevels = buildCoverageMips(d, size, alphaTest);
+  const texture = new THREE.DataTexture(mipLevels[0].data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+  texture.mipmaps = mipLevels;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  // DataTexture defaults flipY to false (raw buffers are assumed GL-native already); CanvasTexture, which
+  // this replaces, defaults it to true, and every card's UVs and instancing were built against that.
+  texture.flipY = true;
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
+  texture.needsUpdate = true;
   const out = { texture, mean: n ? sum / n : 1, coverage: n / (size * size) };
   cardCache.set(key, out);
   return out;

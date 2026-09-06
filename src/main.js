@@ -6,10 +6,11 @@ import * as L from './layout.js';
 import { CAMERA, COLORS, uvToWorld } from './layout.js';
 import { buildScene } from './scene.js';
 import { buildLighting, applyShadowFlags } from './lighting.js';
-import { buildComposer, resizeComposer, postState } from './post.js';
+import { buildComposer, resizeComposer, postState, composerSize } from './post.js';
 import { MATERIALS } from './materials.js';
 import { sceneRadiance } from './tonemap.js';
 import * as anim from './animation.js';
+import { mountDebug } from './debug.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -210,6 +211,9 @@ const api = {
   },
 };
 window.__scene = api;
+// The debug harness: off unless ?debug=1 or the D key. It watches for canvas nobody painted, which is a
+// different fault from a dark render and cannot be told apart in a screenshot.
+mountDebug(api);
 
 let frames = 0;
 function frame(now) {
@@ -217,6 +221,11 @@ function frame(now) {
   clampCamera();
   anim.advance(now ?? performance.now());
   anim.apply();
+  // The composer's own target resolution, not the canvas: post.js may render above the drawing buffer,
+  // and that is the resolution sub-pixel geometry actually rasterizes at, which is what decides how far
+  // a strand has to be widened to still cover a sample. Cheap enough to redo every frame, so a resize or
+  // a first-frame shader compile is never stale for more than one.
+  anim.updateScreenScale(composerSize(renderer).y, camera.fov);
   render();
   frames++;
   if (frames === 2) window.__sceneResolve(api);

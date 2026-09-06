@@ -79,8 +79,19 @@ export function makeMaterial(params = {}) {
 // is the cheap standard translucency, how much the card faces away from the sun times how much the
 // camera looks into it, times the card's own color. It costs no extra pass and no extra draw call, and
 // it is what makes a blossom glow rather than sit there.
+//
+// `alphaToCoverage` turns the hard alphaTest cutoff into a multisampled one. Three's own
+// `alphatest_fragment` chunk special-cases it: with both `USE_ALPHATEST` and `ALPHA_TO_COVERAGE` defined
+// it replaces the discard with `diffuseColor.a = smoothstep(alphaTest, alphaTest + fwidth(alpha), alpha)`
+// and only discards where that reaches exactly 0, then WebGLState enables `gl.SAMPLE_ALPHA_TO_COVERAGE`
+// whenever `material.alphaToCoverage` is true. That GL state only does anything when the bound target is
+// actually multisampled, which is why an earlier attempt (see docs/learning/defect-register.md) measured
+// no effect: the composer's target had no MSAA samples at the time. It does now (`POST.samples` in
+// src/post.js), so the same flag is live here: a card's silhouette edge dithers across the sample mask
+// and resolves smooth instead of flipping whole pixels on and off as a triangle or texel boundary crosses
+// a sample point.
 export function foliageMaterial(map, { alphaTest = 0.5, side = THREE.DoubleSide, vertexColors = false, roughness = 0.85, backlit = 0 } = {}) {
-  const mat = makeMaterial({ map, alphaTest, side, transparent: false, vertexColors, roughness });
+  const mat = makeMaterial({ map, alphaTest, side, transparent: false, vertexColors, roughness, alphaToCoverage: true });
   if (backlit > 0 && MATERIALS.lit) applyBacklight(mat, backlit);
   return mat;
 }

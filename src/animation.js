@@ -34,6 +34,7 @@ export const WIND = {
 const clock = { time: 0, frozen: false, last: 0 };
 const timeUniforms = [];
 const swayObjects = [];
+const screenScaleUniforms = [];
 
 // The shared wind: two sine waves crossing the street, so the canopy breathes rather than ticks.
 const WIND_GLSL = `
@@ -80,6 +81,76 @@ export function applyWind(material, { amplitude = WIND.canopy, reach = WIND.reac
   const previousKey = material.customProgramCacheKey.bind(material);
   material.customProgramCacheKey = () => `${previousKey()}|wind${amplitude}`;
   return material;
+}
+
+// Widen geometry that is thinner than `minPx` on screen, fading it so width times opacity stays roughly
+// constant (a strand twice as wide as it should be is drawn at half the coverage). This is the sub-pixel
+// remedy for the cherry's strand tubes: at their radius (0.008 to 0.016 m) and distance they measure about
+// 0.35 px wide, so a fraction-of-a-pixel camera move switches a whole run of pixels on and off no matter
+// how many spatial samples resolve each one. Widening happens per vertex in view space, so it tracks the
+// live camera distance every frame rather than a fixed worst case.
+//
+// Needs a `vec4 aWiden` attribute per vertex: xyz the unit outward direction from the tube's centreline
+// (so the centreline itself is `position - aWiden.xyz * aWiden.w`), w the original radius in metres. Only
+// `taperedTube(..., { widen: true })` in src/vegetation.js writes it.
+//
+// The fade is coverage, not blending: it lands in `diffuseColor.a` and leaves through the same
+// `SAMPLE_ALPHA_TO_COVERAGE` state `foliageMaterial` uses (see materials.js), which needs no alphaTest to
+// do something useful here (the coverage value is already a smooth per-vertex scalar, not a texture edge
+// that needs the `alphatest_fragment` chunk's own sharpening), and keeps the strands opaque and
+// depth-sorted rather than turning them into blended, draw-order-sensitive geometry.
+const MIN_WIDTH_GLSL = `
+  attribute vec4 aWiden;
+  uniform float uPxPerMetre1m;
+  uniform float uMinPxRadius;
+  uniform float uMaxGrowth;
+  varying float vCoverageAlpha;`;
+
+export function applyMinWidth(material, { minPx = 1.0, maxGrowth = 4.0 } = {}) {
+  const previous = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (previous) previous(shader, renderer);
+    shader.uniforms.uPxPerMetre1m = { value: 500 };
+    shader.uniforms.uMinPxRadius = { value: minPx };
+    shader.uniforms.uMaxGrowth = { value: maxGrowth };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>${MIN_WIDTH_GLSL}`)
+      .replace(
+        '#include <begin_vertex>',
+        [
+          'vec3 transformed = vec3( position );',
+          '{',
+          '  vec3 wCentre = position - aWiden.xyz * aWiden.w;',
+          '  vec4 wView = modelViewMatrix * vec4( wCentre, 1.0 );',
+          '  float wDist = max( 0.0001, -wView.z );',
+          '  float wApparentPx = ( aWiden.w * uPxPerMetre1m ) / wDist;',
+          '  float wGrowth = clamp( uMinPxRadius / max( wApparentPx, 1e-5 ), 1.0, uMaxGrowth );',
+          '  transformed = wCentre + aWiden.xyz * ( aWiden.w * wGrowth );',
+          '  vCoverageAlpha = 1.0 / wGrowth;',
+          '}',
+        ].join('\n'),
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying float vCoverageAlpha;`)
+      .replace('#include <opaque_fragment>', 'diffuseColor.a *= vCoverageAlpha;\n#include <opaque_fragment>');
+    registerScreenScale(shader.uniforms.uPxPerMetre1m);
+  };
+  material.alphaToCoverage = true;
+  const previousKey = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `${previousKey()}|minwidth${minPx}/${maxGrowth}`;
+  return material;
+}
+
+// Pixels of apparent size per metre of world size at one metre from the camera: apparent px radius of a
+// feature of radius r at distance d is `r * uPxPerMetre1m / d`. Depends on the drawing buffer's height in
+// device pixels and the camera's vertical FOV, so it is recomputed on build and on every resize (src/main.js).
+export function registerScreenScale(uniform) {
+  if (!screenScaleUniforms.includes(uniform)) screenScaleUniforms.push(uniform);
+}
+
+export function updateScreenScale(pixelHeight, fovYDeg) {
+  const value = pixelHeight / (2 * Math.tan((fovYDeg * Math.PI) / 360));
+  for (const u of screenScaleUniforms) u.value = value;
 }
 
 // A time uniform the frame loop should advance (the sky's cloud drift, and every patched material's).

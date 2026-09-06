@@ -11,7 +11,7 @@ import { instanced, surface } from './instancing.js';
 import { foliageMaterial, albedoOf } from './materials.js';
 import { cardTexture } from './textures.js';
 import { canopyColorAt, canopyMaskAt } from './photofield.js';
-import { applyWind, buildPetals } from './animation.js';
+import { applyWind, applyMinWidth, buildPetals } from './animation.js';
 
 const C = L.COLORS;
 const S = L.STREET;
@@ -34,13 +34,17 @@ export function buildVegetation(b) {
 
 // ---- helpers -------------------------------------------------------------------------------------
 
-// A tube of `radial` sides along `curve`, its radius tapering from r0 to r1, with metric UVs.
-function taperedTube(curve, r0, r1, segments = 12, radial = 7) {
+// A tube of `radial` sides along `curve`, its radius tapering from r0 to r1, with metric UVs. With
+// `widen`, also writes a per-vertex `aWiden` attribute (xyz the unit outward direction from the
+// centreline, w the true radius) that `applyMinWidth` (animation.js) reads to keep sub-pixel tubes from
+// flickering: the strands are as thin as 0.008 m and cross well under a pixel at the camera's distance.
+function taperedTube(curve, r0, r1, segments = 12, radial = 7, { widen = false } = {}) {
   const pts = curve.getSpacedPoints(segments);
   const frames = curve.computeFrenetFrames(segments, false);
   const positions = [];
   const uvs = [];
   const index = [];
+  const widenAttr = widen ? [] : null;
   let along = 0;
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
@@ -52,8 +56,14 @@ function taperedTube(curve, r0, r1, segments = 12, radial = 7) {
       const a = (j / radial) * Math.PI * 2;
       const ca = Math.cos(a);
       const sa = Math.sin(a);
-      positions.push(pts[i].x + (ca * N.x + sa * B.x) * r, pts[i].y + (ca * N.y + sa * B.y) * r, pts[i].z + (ca * N.z + sa * B.z) * r);
+      // N and B are the curve's Frenet normal and binormal: unit length and orthogonal, so this is a
+      // unit vector regardless of a, one of the two things `aWiden` needs from it.
+      const rx = ca * N.x + sa * B.x;
+      const ry = ca * N.y + sa * B.y;
+      const rz = ca * N.z + sa * B.z;
+      positions.push(pts[i].x + rx * r, pts[i].y + ry * r, pts[i].z + rz * r);
       uvs.push((j / radial) * 2 * Math.PI * r, along);
+      if (widenAttr) widenAttr.push(rx, ry, rz, r);
     }
   }
   for (let i = 0; i < segments; i++) {
@@ -66,6 +76,7 @@ function taperedTube(curve, r0, r1, segments = 12, radial = 7) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  if (widenAttr) geo.setAttribute('aWiden', new THREE.Float32BufferAttribute(widenAttr, 4));
   geo.setIndex(index);
   geo.computeVertexNormals();
   return geo;
@@ -255,11 +266,14 @@ function cherry(b, rand) {
     const stemPts = [];
     const m = Math.max(3, Math.round((lastKept * full.getLength()) / 0.3));
     for (let k = 0; k <= m; k++) stemPts.push(full.getPointAt((lastKept * k) / m));
-    stems.push(taperedTube(new THREE.CatmullRomCurve3(stemPts), 0.016, 0.008, stemPts.length, 3));
+    stems.push(taperedTube(new THREE.CatmullRomCurve3(stemPts), 0.016, 0.008, stemPts.length, 3, { widen: true }));
   }
   // The strands sway with the blossoms they carry: same wind, same weighting by depth below the crown,
-  // so a strand and its flowers never come apart.
-  const stemMat = applyWind(surface('bark', C.trunk, { seed: 41.5 }));
+  // so a strand and its flowers never come apart. Their radius (0.008 to 0.016 m) is under a pixel wide at
+  // the camera's distance, which is the geometric half of the user's flicker report: applyMinWidth keeps
+  // each one at least about a pixel wide on screen and fades it in proportion, so a stem does not wink
+  // whole pixels on and off as the camera moves by a fraction of one.
+  const stemMat = applyMinWidth(applyWind(surface('bark', C.trunk, { seed: 41.5 })));
   b.add(new THREE.Mesh(mergeGeometries(stems), stemMat), 'cherry strands');
 
   // The canopy mass around the limbs and sub-branches, denser toward their ends.
@@ -325,7 +339,7 @@ function evergreens(b, rand) {
 function groundPlants(b, rand) {
   const leaf = cardTexture('leaves', { seed: 44 });
   const grass = cardTexture('grass', { seed: 45 });
-  const moss = cardTexture('moss', { seed: 47 });
+  const moss = cardTexture('moss', { seed: 47, alphaTest: 0.4 });
   const leafMat = foliageMaterial(leaf.texture, { backlit: 0.6 });
 
   // The shrub on the planter strip behind the fence (photo: green above the tiles at u 0.72-0.78), a
