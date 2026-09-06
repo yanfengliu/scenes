@@ -9,9 +9,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # The gates render through SwiftShader here, which is minutes per frame. The nudge gate alone shoots
-    # eighteen frames, half of them at a device pixel ratio of 2, and runs of this project have taken most
-    # of an hour when several pushes compete for runners. Ninety minutes is room, not an expectation.
+    # The gates render through SwiftShader here, which is minutes per frame. Measured on the run for
+    # 15692d1, which four competing runs had slowed to about seven times local speed: animation 41 minutes,
+    # nudge 16, everything else 9, so 66 for the suite. That run was cancelled at a 60-minute ceiling six
+    # minutes short of the end, partway through nudge. Ninety is room under that contention, not an
+    # expectation. The animation gate is the one to look at first if this ever needs trimming; it is the
+    # largest share by far, and it is already down to three frames here.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
