@@ -92,12 +92,14 @@ Verified by the manager on 2026-09-05: commit 61ada57 on origin/main, clean gate
 
 ### Phase 4: Sky, light, atmosphere, post-processing
 
-- [ ] Sky dome shader: gradient from deep blue (top-left) through pale cyan to warm yellow-white at the sun. Sun disc and glare at (0.62, 0.12) partly behind the ridge. Procedural cirrus (FBM) with orange undersides top-left and pink cumulus puffs near the sun.
-- [ ] Lighting: directional sun from the sky position (back-light), PCF soft shadows with tuned bias and no acne, hemisphere light blue above and warm below, PMREM environment from the sky for reflections and blossom rim.
-- [ ] Atmosphere: height and distance haze tinting toward warm pale, distant mountains fading to blue-violet, a gentle glow around the sun.
-- [ ] Post: EffectComposer with ACES filmic tone mapping, tuned exposure, UnrealBloomPass for the glare and blossom highlights, subtle vignette, a color grade matched to the photo's per-region means.
-- [ ] Per-cell color distance at its lowest so far and SSIM at its highest so far. Record both.
-- [ ] Devlog, critic, commit, push, report.
+- [x] Sky dome shader: gradient from deep blue (top-left) through pale cyan to warm yellow-white at the sun. Sun disc and glare at (0.62, 0.12) partly behind the ridge. Procedural cirrus (FBM) with orange undersides top-left and pink cumulus puffs near the sun.
+- [x] Lighting: directional sun from the sky position (back-light), PCF soft shadows with tuned bias and no acne, hemisphere light blue above and warm below, PMREM environment from the sky for reflections and blossom rim.
+- [x] Atmosphere: height and distance haze tinting toward warm pale, distant mountains fading to blue-violet, a gentle glow around the sun.
+- [x] Post: EffectComposer with ACES filmic tone mapping, tuned exposure, UnrealBloomPass for the glare and blossom highlights, subtle vignette, a color grade matched to the photo's per-region means.
+- [x] Per-cell color distance at its lowest so far and SSIM at its highest so far. Record both.
+- [x] Devlog, critic, commit, push, report.
+
+Verified by the manager on 2026-09-05: commit 5ab0520 on origin/main, clean gate run PASS with cell distance 0.0820 and SSIM 0.4338 (thresholds 0.084 / 0.425) plus 19 placement checks, perf 316 draw calls and 3.1 ms median at 1920x1080, compare sheet and out/render.png inspected at native size, live page orbited. Both scores are the best so far. The lighting decision is recorded in the implementer report and devlog: the sampled photo means stay the target displayed color and each albedo is derived by inverting the ACES fit and dividing by the rig irradiance, with most energy in a neutral ambient. The color grade is identity because every gain tried scored worse. The blossom tints stay baked from the photo, so the canopy is mildly lit twice.
 
 ### Phase 5: Life, interaction, performance, delivery
 
