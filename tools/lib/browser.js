@@ -16,6 +16,10 @@ export function launch({ gpu = false } = {}) {
 export const ACTION_TIMEOUT_MS = 300_000;
 
 
+// The page's own chrome is UI, not scene: every gate that screenshots hides it with this, so a control
+// added to index.html's #hud never lands in a scored image.
+export const HIDE_UI_CSS = '#hud { display: none !important; } #loading { display: none !important; }';
+
 // Every console error, uncaught page error, and failed request lands in the returned array.
 export function collectErrors(page) {
   const errors = [];

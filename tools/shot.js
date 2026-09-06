@@ -2,7 +2,7 @@
 // Fails on any console error, uncaught page error, or failed request.
 import { mkdirSync, rmSync } from 'node:fs';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
+import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
 import { SHOT } from '../src/layout.js';
 
 const OUT = 'out/render.png';
@@ -16,7 +16,7 @@ try {
   errors = collectErrors(page);
   const info = await openScene(page, `${server.url}/`);
   // The on-screen reset button is UI, not scene: keep it out of the scored image.
-  await page.addStyleTag({ content: '#reset { display: none !important; } #loading { display: none !important; }' });
+  await page.addStyleTag({ content: HIDE_UI_CSS });
   // The scene animates; the scored frame is the one at t = 0, every run.
   await page.evaluate(() => window.__scene.setTime(0));
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));

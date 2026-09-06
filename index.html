@@ -3,17 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kyoto stepped street at sunset</title>
+<title>Scenes</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1c24; }
   canvas#scene { display: block; width: 100vw; height: 100vh; touch-action: none; }
-  #reset {
-    position: fixed; right: 12px; bottom: 12px;
+  /* The page's chrome in one box, so a gate hides all of it with one selector (tools/lib/browser.js).
+     It spans the width so a long scene name wraps instead of running off the side, and it lets pointer
+     events through everywhere but the controls themselves, or it would eat drags along the bottom. */
+  #hud {
+    position: fixed; left: 12px; right: 12px; bottom: 12px;
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center;
+    pointer-events: none;
+  }
+  #hud > * {
+    pointer-events: auto;
     font: 13px/1.2 system-ui, sans-serif; color: #fff;
     background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: 6px; padding: 6px 10px; cursor: pointer;
   }
-  #reset:hover { background: rgba(0, 0, 0, 0.8); }
+  #hud > *:hover { background: rgba(0, 0, 0, 0.8); }
+  /* color-scheme keeps the native dropdown list dark instead of flashing a white panel over the scene. */
+  #scene-picker { color-scheme: dark; max-width: 60vw; }
+  #scene-picker option { color: #fff; background: #1a1c24; }
   #loading {
     position: fixed; inset: 0; display: grid; place-content: center; gap: 10px; justify-items: center;
     font: 14px/1.4 system-ui, sans-serif; color: #e8e3da; background: #1a1c24;
@@ -59,7 +70,10 @@
 <body>
 <canvas id="scene"></canvas>
 <div id="loading"><div>Building the scene</div><div class="bar"><i></i></div></div>
-<button id="reset" type="button" title="Reset to the photo view (R)">Reset view (R)</button>
-<script type="module" src="./src/main.js" onerror="window.__sceneReject(new Error('the module script or one of its imports failed to load'))"></script>
+<div id="hud">
+  <!-- The scene dropdown is inserted here by src/picker.js, from the registry in src/scenes.js. -->
+  <button id="reset" type="button" title="Reset to the photo view (R)">Reset view (R)</button>
+</div>
+<script type="module" src="./src/boot.js" onerror="window.__sceneReject(new Error('the module script or one of its imports failed to load'))"></script>
 </body>
 </html>

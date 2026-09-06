@@ -87,6 +87,10 @@ function resetView() {
 }
 
 window.addEventListener('keydown', (event) => {
+  // Not while a form control has the keyboard: R in the scene picker means "jump to the scene starting
+  // with R", and the browser's own Ctrl+R and Cmd+R are not ours to take either.
+  if (event.target instanceof Element && event.target.closest('select, input, textarea')) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.key === 'r' || event.key === 'R') resetView();
 });
 document.getElementById('reset').addEventListener('click', resetView);

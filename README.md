@@ -4,6 +4,8 @@
 
 `index.html` is that scene rebuilt in Three.js. It loads framed exactly like the photograph. Drag to orbit, scroll or pinch to zoom, and press `R` (or the button) to return to the photo view.
 
+The dropdown next to that button picks the scene, and `?scene=<id>` in the URL names one directly. This repository has one scene so far, so the list has one entry; each new one is an entry in `src/scenes.js` pointing at the module that builds it.
+
 Everything in it is procedural. There are no downloaded models, no image assets beyond the photograph itself, and no build step: the page is `index.html` plus the modules in `src/`, and the only runtime download is a pinned copy of Three.js from a CDN.
 
 ![The render](docs/render.webp)
@@ -28,7 +30,7 @@ npx playwright install chromium
 npm test
 ```
 
-`npm test` renders the photo view, scores it against the photograph, checks that the right object is where the photograph says it is, and scores several frames across the animation cycle. Each step is also a command of its own:
+`npm test` renders the photo view, scores it against the photograph, checks that the right object is where the photograph says it is, scores several frames across the animation cycle, and moves the camera a hair to see that the frame holds still. Each step is also a command of its own:
 
 | Command | What it does |
 | ------- | ------------ |
@@ -66,6 +68,7 @@ The thresholds the tests assert live in `docs/PLAN-scores.md`, along with every 
 
 | File | What lives there |
 | ---- | ---------------- |
+| `src/boot.js`, `scenes.js`, `picker.js` | Which scene the URL asks for, the registry of them all, and the dropdown that switches between them. |
 | `src/layout.js` | The camera model, every landmark's position in the photograph, and the colours sampled from it. The tools import this too, so the photograph's geometry has one home. |
 | `src/scene.js` | Assembles the scene from the modules below. |
 | `src/paving.js`, `walls.js`, `roofs.js`, `facades.js` | The street, the stone, the kawara roofs, the house fronts. Repeated pieces are instanced geometry, never painted on. |
