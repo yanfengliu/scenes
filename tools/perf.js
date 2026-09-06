@@ -3,7 +3,7 @@
 // Frame time is measured around renderer.render plus a 1x1 readPixels, which blocks until the GPU
 // (or SwiftShader) has finished the frame, so it is the true cost of a frame and not the rAF interval.
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene } from './lib/browser.js';
+import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
 
 const SECONDS = Number(process.env.PERF_SECONDS || 5);
 const BUDGET_MS = 16;
@@ -17,6 +17,7 @@ let failure = null;
 let result = null;
 try {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   errors = collectErrors(page);
   await openScene(page, `${server.url}/`);
   result = await page.evaluate((seconds) => window.__scene.benchmark(seconds), SECONDS);

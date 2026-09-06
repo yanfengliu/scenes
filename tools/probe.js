@@ -2,7 +2,7 @@
 // three, nearest first, with distances) and the rendered pixel there. Diagnostic, not a gate: it maps a
 // wrong pixel in out/compare.png to the mesh that put it there.
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene } from './lib/browser.js';
+import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
 import { SHOT } from '../src/layout.js';
 
 const points = process.argv.slice(2).map((s) => s.split(',').map(Number));
@@ -15,6 +15,7 @@ const server = await startServer({ port: 0, quiet: true });
 const browser = await launch();
 try {
   const page = await browser.newPage({ viewport: { width: SHOT.width, height: SHOT.height }, deviceScaleFactor: 1 });
+  page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   const errors = collectErrors(page);
   await openScene(page, `${server.url}/`);
   await page.evaluate(() => window.__scene.setTime(0));

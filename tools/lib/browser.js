@@ -10,6 +10,12 @@ export function launch({ gpu = false } = {}) {
   return chromium.launch({ args: gpu ? GPU_ARGS : WEBGL_ARGS });
 }
 
+// Playwright's default action timeout is 30 s. One frame of this scene at 1200x1100 through SwiftShader
+// takes minutes on a machine without a GPU (a CI runner), so every gate gives its page far longer before
+// it calls a screenshot a failure.
+export const ACTION_TIMEOUT_MS = 300_000;
+
+
 // Every console error, uncaught page error, and failed request lands in the returned array.
 export function collectErrors(page) {
   const errors = [];

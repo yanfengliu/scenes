@@ -2,7 +2,7 @@
 // Fails on any console error, uncaught page error, or failed request.
 import { mkdirSync, rmSync } from 'node:fs';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene } from './lib/browser.js';
+import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
 import { SHOT } from '../src/layout.js';
 
 const OUT = 'out/render.png';
@@ -12,6 +12,7 @@ let errors = [];
 let failure = null;
 try {
   const page = await browser.newPage({ viewport: { width: SHOT.width, height: SHOT.height }, deviceScaleFactor: 1 });
+  page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   errors = collectErrors(page);
   const info = await openScene(page, `${server.url}/`);
   // The on-screen reset button is UI, not scene: keep it out of the scored image.

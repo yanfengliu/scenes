@@ -10,13 +10,14 @@
 //
 // Fails (exit 1) listing every mismatch; prints every check.
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene } from './lib/browser.js';
+import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
 import { GROUNDING_CHECKS, PLACEMENT_CHECKS, SHOT } from '../src/layout.js';
 
 const server = await startServer({ port: 0, quiet: true });
 const browser = await launch();
 try {
   const page = await browser.newPage({ viewport: { width: SHOT.width, height: SHOT.height }, deviceScaleFactor: 1 });
+  page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   const errors = collectErrors(page);
   await openScene(page, `${server.url}/`);
   await page.evaluate(() => window.__scene.setTime(0));

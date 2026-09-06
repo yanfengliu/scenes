@@ -14,7 +14,7 @@
 // too little and the scene has died, too much and it is thrashing.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene } from './lib/browser.js';
+import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
 import { decodeImage } from './lib/image.js';
 import { cellDistance, ssimGray } from './lib/metrics.js';
 import { PHOTO, SHOT } from '../src/layout.js';
@@ -54,6 +54,7 @@ const rows = [];
 let previous = null;
 try {
   const page = await browser.newPage({ viewport: { width: SHOT.width, height: SHOT.height }, deviceScaleFactor: 1 });
+  page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   errors = collectErrors(page);
   await openScene(page, `${server.url}/`);
   await page.addStyleTag({ content: '#reset { display: none !important; } #loading { display: none !important; }' });
