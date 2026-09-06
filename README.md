@@ -81,7 +81,9 @@ Two ideas run through all of it. Every colour is a mean sampled from the photogr
 
 ## Deployment
 
-The page is static. `.github/workflows/pages.yml` publishes `index.html`, `src/`, the photograph and the render to GitHub Pages on every push to `main`; `.github/workflows/ci.yml` runs `npm test` on the same pushes and on pull requests.
+The page is static. `.github/workflows/ci.yml` runs `npm test` on every push to `main` and on pull requests: the runner has no GPU, so it renders through SwiftShader, which is what the scored shot has always used, and it reproduces the same scores this machine gets. It does not run `npm run perf`, and it shoots three animation frames instead of seven (`ANIMATION_FRAMES`), because a frame takes minutes on a shared runner.
+
+`.github/workflows/pages.yml` publishes `index.html`, `src/`, the photograph and the render to GitHub Pages on the same pushes. **It needs Pages switched on once before it can deploy**: in the repository's Settings, under Pages, set the source to GitHub Actions. Until then the workflow fails with "Resource not accessible by integration", because a workflow token cannot create the site by itself. Note what deploying does: it serves `japan.webp`, a third-party photograph, from a public URL. See the licence note below before turning it on.
 
 ## Licence
 
