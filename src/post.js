@@ -339,6 +339,9 @@ function applyRung(composer, buffer, rung) {
 }
 
 let state = null;
+// Declared here because tuneComposer's default argument reads it; the watchdog that maintains it is
+// further down, next to the evidence that made it necessary.
+let watch = { last: 0, floor: 0 };
 let subject = null;
 // What the chain settled on, for `window.__scene.describe()` and for the gates: the size and sample
 // count in use, which rung produced them and why, and the numbers the verification measured.
@@ -348,12 +351,15 @@ export function postState() {
 
 // Walk the ladder at the renderer's current drawing buffer and stop at the first rung whose frame is
 // actually there. Called on build and on every size change.
-export function tuneComposer(renderer, composer) {
+export function tuneComposer(renderer, composer, { minRung = watch.floor } = {}) {
   const { scene, camera } = subject;
   const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
   const rungs = ladder(renderer, renderScale(renderer));
   let chosen = null;
-  for (let i = 0; i < rungs.length; i++) {
+  // Never start above a rung this machine has already failed at runtime, but never skip past the last
+  // one either: something has to be applied.
+  const start = Math.min(minRung, rungs.length - 1);
+  for (let i = start; i < rungs.length; i++) {
     applyRung(composer, buffer, rungs[i]);
     const verdict = verifyComposer(renderer, composer, scene, camera);
     chosen = {
@@ -388,13 +394,63 @@ export function tuneComposer(renderer, composer) {
 
 // Resize the composer's targets after the renderer's own size or pixel ratio has changed, and decide the
 // configuration again for the new size. The decision is per size and always starts from the top rung, so
-// a driver that fails at one size is never held to a lesser chain at another.
+// a driver that fails at one size is never held to a lesser chain at another — except never above the
+// floor the watchdog below has already proved this machine cannot hold.
 export function resizeComposer(composer, renderer) {
   const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
   // A drag across the screen fires dozens of resize events at the same drawing buffer. Nothing about the
   // decision can have changed, and re-deciding would reallocate every target and re-render for nothing.
   if (state && state.buffer.width === buffer.x && state.buffer.height === buffer.y) return state;
   return tuneComposer(renderer, composer);
+}
+
+// A user's debug capture settled this: the chain was verified at a resize, reported ok with four samples
+// at 3007x1957, and about a hundred milliseconds later every one of forty-nine probe points across the
+// canvas read pure black, with the camera untouched at the photo view and nothing covering the page. A
+// check that runs once cannot see a configuration that passes and then stops working, and the same
+// geometry driven from a headless browser on the same GPU renders correctly, so this is not something the
+// size alone predicts. The chain therefore has to keep being watched, not just approved once.
+//
+// Cost is the reason this is a few pixels and not a frame: reading back from the GPU stalls the pipeline,
+// so it samples nine single pixels a few times a second, and only when they are all black does it pay for
+// the full verification. A black frame is uniform, so nine points spread across it are enough to notice.
+const WATCH = {
+  everyMs: 500,
+  points: 3, // a points x points grid of single-pixel reads
+  luma: 24,
+};
+
+// Reset the watchdog's memory of what this machine cannot do. Only for tests.
+export function resetPostFloor() {
+  watch = { last: 0, floor: 0 };
+}
+
+// Call once per frame. Cheap almost always; when the frame has gone black it re-tunes and ratchets the
+// floor down so later sizes never climb back to a configuration this machine has failed at runtime.
+export function watchPostChain(renderer, composer, now = performance.now()) {
+  if (!state || now - watch.last < WATCH.everyMs) return null;
+  watch.last = now;
+  const gl = renderer.getContext();
+  const el = renderer.domElement;
+  const w = el.width, h = el.height;
+  if (!w || !h) return null;
+  const px = new Uint8Array(4);
+  for (let iy = 0; iy < WATCH.points; iy++) {
+    for (let ix = 0; ix < WATCH.points; ix++) {
+      const x = Math.min(w - 1, Math.round(((ix + 0.5) * w) / WATCH.points));
+      const y = Math.min(h - 1, Math.round(((iy + 0.5) * h) / WATCH.points));
+      gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      // One lit pixel anywhere is enough to say the chain is working; stop reading.
+      if (0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2] >= WATCH.luma) return null;
+    }
+  }
+  console.warn(
+    `post: the frame has gone black at a ${state.width}x${state.height} target with ${state.samples} samples, ` +
+      'after that configuration had already been verified at this size. Stepping down and staying down.',
+  );
+  watch.floor = Math.max(watch.floor, state.rung + 1);
+  const chosen = tuneComposer(renderer, composer, { minRung: watch.floor });
+  return chosen;
 }
 
 export function buildComposer(renderer, scene, camera) {

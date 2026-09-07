@@ -6,7 +6,7 @@ import * as L from './layout.js';
 import { CAMERA, COLORS, uvToWorld } from './layout.js';
 import { buildScene } from './scene.js';
 import { buildLighting, applyShadowFlags } from './lighting.js';
-import { buildComposer, resizeComposer, postState, composerSize } from './post.js';
+import { buildComposer, resizeComposer, postState, composerSize, watchPostChain } from './post.js';
 import { MATERIALS } from './materials.js';
 import { sceneRadiance } from './tonemap.js';
 import * as anim from './animation.js';
@@ -227,6 +227,10 @@ function frame(now) {
   // a first-frame shader compile is never stale for more than one.
   anim.updateScreenScale(composerSize(renderer).y, camera.fov);
   render();
+  // Keep watching the post chain rather than approving it once. A user's debug capture showed a
+  // configuration verified ok at a resize and the whole canvas reading pure black about a tenth of a
+  // second later, camera untouched and nothing covering the page, so a one-shot check is not enough.
+  watchPostChain(renderer, composer, now ?? performance.now());
   frames++;
   if (frames === 2) window.__sceneResolve(api);
   requestAnimationFrame(frame);
