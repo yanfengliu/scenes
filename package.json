@@ -16,7 +16,8 @@
     "test": "node tools/test.js",
     "blackframe": "node tools/blackframe.js",
     "webp": "node tools/render-webp.js",
-    "nudge": "node tools/nudge.js"
+    "nudge": "node tools/nudge.js",
+    "record": "node tools/record.js"
   },
   "engines": {
     "node": ">=24"

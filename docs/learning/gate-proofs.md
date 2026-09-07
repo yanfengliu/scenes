@@ -57,3 +57,20 @@ Each retired lesson's gate is listed with the mutation that made it go red, the 
 - Mutation: `touch src/layout.js` after a successful shot, then `npm run compare`.
 - Failure produced: `FAIL: out/render.png is 392.0 s older than src/layout.js; run npm run shot so the score is of the current scene`, exit status 1. A fresh `npm run shot` followed by `compare` passed again with the same scores (0.0940 / 0.2929).
 - Bound: the check compares file modification times, so it cannot see an edit that preserves the mtime, and it does not cover `tools/` (a tool change does not change the scene).
+
+## `npm run record` — a frame that goes dark while the camera is driven
+
+Claim in the gate's header: no single frame may have 12 or more of its 25 probes dark during a scripted
+gesture sequence driven by real mouse events at 2005x1305 on a GPU.
+
+Mutation: remove `composer.addPass(sanitize)` from `buildComposer` in `src/post.js`, which is exactly the
+state before the ceiling was added, with the bloom fed straight from the scene.
+
+Failure produced: `FAIL: 171 of 1022 frames had 12 or more of 25 probes dark while the camera was being
+driven`, exit code 1, first failures at frames 21, 26, 36, 42, 51 and 55 with 12 to 16 probes dark.
+Restored, the same sequence reports a worst frame of 3 of 25 and passes.
+
+Bound: it drives one gesture sequence at one window size and one device pixel ratio, on a GPU. Under the
+software renderer the driver fault this exists for does not occur, so a green run there proves only that
+the page renders through a camera move. It measures darkness, so a bright fault is invisible to it, and
+its probe is a 5x5 grid, so a dark region smaller than that spacing is missed.

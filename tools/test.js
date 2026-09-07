@@ -23,6 +23,7 @@ run('tools/placement.js');
 run('tools/animation.js');
 run('tools/nudge.js');
 run('tools/blackframe.js');
+run('tools/record.js');
 
 const scores = JSON.parse(readFileSync('out/scores.json', 'utf8'));
 const doc = readFileSync('docs/PLAN-scores.md', 'utf8');

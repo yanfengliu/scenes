@@ -21,6 +21,13 @@ import { launch, collectErrors, openScene } from './lib/browser.js';
 export const DARK_LUMA = 24;
 export const GRID = 5; // GRID x GRID single-pixel probes per frame
 
+// No frame may have this many of its probes dark. Measured, broken against fixed, over the gesture
+// sequence below at 2005x1305 on a GPU: with the bloom overflowing, the worst frame was 25 of 25 and 89
+// frames were at 15 or more; with the ceiling in place the worst frame is 3 of 25 and nothing exceeds it.
+// 12 sits between them with room on both sides, and it is a per-FRAME limit rather than an average
+// because the fault is a flicker: averaged over a recording it disappears into the good frames.
+export const WORST_FRAME_LIMIT = 12;
+
 export async function record({
   width = 2005, height = 1305, ratio = 1.5, seconds = 12, gpu = true,
 } = {}) {
@@ -155,4 +162,18 @@ if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
     console.log('wrote out/record-firstbad.png');
   }
   console.log('wrote out/record.json');
+
+  // The gate. `darkForced` is the one to judge on: it is measured after a render forced in the same
+  // callback, so a frame the browser happened to composite away cannot be mistaken for a black one.
+  const over = trace.filter((f) => f.darkForced >= WORST_FRAME_LIMIT);
+  if (over.length) {
+    console.log(`\nFAIL: ${over.length} of ${trace.length} frames had ${WORST_FRAME_LIMIT} or more of ${GRID * GRID} probes dark while the camera was being driven.`);
+    for (const f of over.slice(0, 6)) {
+      console.log(`  frame ${f.i} at t=${f.t}: ${f.darkForced} of ${f.of} dark, composer ${f.composer.join('x')} samples ${f.samples}, camera ${JSON.stringify(f.cam)}`);
+    }
+    console.log('A frame that goes dark under ordinary camera movement is the defect a user reported as flickering and as rectangular blackouts.');
+    process.exit(1);
+  }
+  const worstForced = trace.reduce((a, f) => Math.max(a, f.darkForced), 0);
+  console.log(`record: ${trace.length} frames driven by real input, worst frame ${worstForced} of ${GRID * GRID} probes dark (limit ${WORST_FRAME_LIMIT})`);
 }
