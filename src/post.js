@@ -49,6 +49,49 @@ export const POST = {
   grade: { gain: [1.0, 1.0, 1.0], lift: [0.0, 0.0, 0.0] },
 };
 
+// Replace any value that is not a finite number with black, between the scene and the bloom.
+//
+// A user photographed a hard-edged black rectangle covering part of the window, and it reproduces: at
+// some camera angles the frame contains a handful of non-finite pixels, and `UnrealBloomPass` blurs each
+// one across its kernel and down its mip chain, so a few bad texels become a solid rectangle covering
+// half the frame. Measured at one such angle on an ANGLE/D3D11 NVIDIA driver, with the camera stationary:
+// 53.7% of the frame black, and the chain's own check agreeing at 53.9% of the frame not a finite number.
+// Disabling the bloom pass alone takes it to 0.1%. Dropping multisampling does NOT (54.4%), which is what
+// separates this from the size fault below: the ladder cannot reach it, because the ingredient is not the
+// multisampling and not the size, it is the blur meeting a NaN.
+//
+// This is written in GLSL 3 so it can use the real `isnan` and `isinf`. The obvious portable trick in
+// GLSL 1, testing `x != x`, is exactly the expression a shader compiler is entitled to fold away on the
+// assumption that no value is NaN, and an earlier attempt at this pass measured as a complete no-op.
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null }, uCeiling: { value: 64.0 } },
+  vertexShader: `
+    out vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    precision highp float;
+    uniform sampler2D tDiffuse;
+    uniform float uCeiling;
+    in vec2 vUv;
+    out vec4 fragColor;
+    void main() {
+      vec4 texel = texture(tDiffuse, vUv);
+      // Per component, so one bad channel does not discard the two good ones.
+      vec4 bad = min(vec4(isnan(texel)) + vec4(isinf(texel)), vec4(1.0));
+      vec4 safe = mix(texel, vec4(0.0), bad);
+      // And a ceiling, which is the half of this that actually does the work. The scene's own output is
+      // clean: toggling this pass changes nothing, and the bloom is what produces the non-finite values,
+      // from finite input. Bloom blurs in a half-float target whose largest value is 65504, and its
+      // bright-pass and separable blur can carry the sun's radiance past that, to infinity and then to
+      // NaN in the composite. A ceiling well above the bloom's own threshold of 1.6 costs nothing that
+      // survives tone mapping and leaves the blur no way to overflow.
+      fragColor = vec4(min(safe.rgb, vec3(uCeiling)), 1.0);
+    }`,
+};
+
 // A grade and vignette in linear radiance: a per-channel gain and lift, then a soft corner falloff.
 const GradeShader = {
   uniforms: {
@@ -463,6 +506,12 @@ export function buildComposer(renderer, scene, camera) {
   const composer = new EffectComposer(renderer, target);
   composer.setPixelRatio(1);
   composer.addPass(new RenderPass(scene, camera));
+  // Between the scene and the bloom, because the bloom is what turns a few bad pixels into a rectangle.
+  const sanitize = new ShaderPass(SanitizeShader);
+  // ShaderPass does not carry a shader's GLSL version onto its material, so it is set here; without it
+  // the `isnan` and `isinf` above will not compile.
+  sanitize.material.glslVersion = THREE.GLSL3;
+  composer.addPass(sanitize);
   const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), POST.bloomStrength, POST.bloomRadius, POST.bloomThreshold);
   composer.addPass(bloom);
   const grade = new ShaderPass(GradeShader);
