@@ -82,7 +82,7 @@ The thresholds the tests assert live in `docs/PLAN-scores.md`, along with every 
 
 Two ideas run through all of it. Every colour is a mean sampled from the photograph, and because the photograph's colours already contain the photograph's light, each material's albedo is derived by inverting the tone curve so the lit result lands back on the sampled mean. And the scene is built from fixed seeds, so the same render comes out every time.
 
-`AGENTS.md` is the working brief; `docs/PLAN.md` is the plan the work followed; `docs/devlog/` records what was tried, what it measured, and what turned out to be false.
+`AGENTS.md` is the working brief; [the work entry](docs/work/0_japan-street-scene/plan.md) records status and links to the original plan the work followed; `docs/devlog/` records what was tried, what it measured, and what turned out to be false.
 
 ## Deployment
 

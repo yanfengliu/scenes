@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "allocations": [
+    {
+      "id": 0,
+      "theme": "japan-street-scene",
+      "legacyFiles": [
+        {
+          "path": "historical/PLAN.md",
+          "sha256": "5cf4b02eea7c26f2704119752df3f0be95ed3b4ab9c06a652eabba856f6d4798",
+          "source": "scenes@a7111cca410059fe6a60793fc28b4ec547a9ae8a:docs/PLAN.md"
+        }
+      ]
+    }
+  ]
+}

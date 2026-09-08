@@ -22,7 +22,7 @@ export const CAMERA = {
 export const EYE_HEIGHT = 1.65;
 export const PLATFORM_Y = CAMERA.eye.y - EYE_HEIGHT;
 
-// ---- Photo landmarks (from docs/PLAN.md) --------------------------------------------------------
+// Photo landmarks from docs/work/0_japan-street-scene/historical/PLAN.md.
 export const HORIZON_V = 0.3;
 export const SUN = { u: 0.62, v: 0.12 };
 export const HILL_RIDGE = [
