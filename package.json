@@ -13,6 +13,7 @@
     "placement": "node tools/placement.js",
     "animation": "node tools/animation.js",
     "inspect": "node tools/inspect.js",
+    "shimmer": "node tools/shimmer.js",
     "test": "node tools/test.js",
     "blackframe": "node tools/blackframe.js",
     "webp": "node tools/render-webp.js",

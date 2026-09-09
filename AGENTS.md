@@ -122,6 +122,7 @@ Do not declare the result fully verified while material findings or required che
 - `npm run perf` prints the median frame time and draw calls over 5 s at 1920x1080. Budget: under 16 ms and under 400 draw calls. It launches chromium with the GPU (ANGLE/D3D11) and prints the renderer it got; `PERF_GPU=0` forces SwiftShader. `shot` always uses SwiftShader so renders are deterministic.
 - `npm run dev` serves the repo root on http://localhost:8080.
 - `npm run probe -- u,v ...` names the mesh under each photo position and its pixel; `npm run inspect -- pair u0 v0 u1 v1` writes photo-versus-render crops. Both are diagnostics, not gates.
+- `npm run shimmer` orbits the camera 0.1 degrees a frame through three poses at device pixel ratios 1 and 2 and scores the temporal second difference, `|2*F(i) - F(i-1) - F(i+1)|` as a frame mean and a worst 16x16 block, which cancels smooth motion and keeps pixels that toggle; a still control must read 0 or it exits 1, because a scene that changes with the camera and clock held still makes the figure meaningless. It is a diagnostic, not a gate: disocclusion at silhouettes sits under the figure as a floor, so the number compares builds on the same path and has no absolute threshold; it writes `out/shimmer.json`.
 
 Bound of the compare scores: they see 528 mean colors and a 64 px grayscale image, so a landmark 10 px off in the photo is invisible to them. `out/overlay.png` is the check for placement.
 
