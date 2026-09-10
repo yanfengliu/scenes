@@ -54,6 +54,17 @@ export function buildFacades(b) {
   b.box('left annex lower far', { x0: H.back, x1: H.front, y0: t2.y - 2, y1: -0.7, z0: annexEnd, z1: -9.5 }, surface('wood', C.annexFarLower, { seed: 99 }), { metric: true });
   b.bandSolid('left annex far upper', -9.5, annexEnd, (z) => Math.min(0.9, canopyAtWall(z)), () => -0.7, H.back, H.front, surface('plaster', C.annexFarUpper, { seed: 100 }), 6);
   b.bandSolid('left annex plaster', plasterZ, t2.z1, (z) => annexEave(z), (z) => annexEave(z) - 0.55, H.front - 0.08, H.front + 0.04, surface('plaster', C.plaster, { seed: 75 }), 4);
+  // The same plaster band carries on under the door canopy along the near house front. It is NOT the
+  // annex: the annex starts at z = -6.0 and the rays through the two cells this fixes meet the wall at
+  // z = -5.91 and -6.52, so it runs over house 1's near ground floor as well. The photo is light along
+  // that whole stretch, #c5b8aa at (0.063, 0.568) and #b0a395 at (0.104, 0.568), where the dark board
+  // wall behind read #866f5d and #796a5e.
+  // Both ends are placed, not chosen: the near end is buried 0.5 m inside LEFT_STONE_WALL so its cut end
+  // cap is hidden from every angle and not only from the photo camera, and the far end stops at -6.7
+  // because past that the photo turns dark again (#6a5a4a at (0.146, 0.568)), the band's underside would
+  // drop through the annex window's top rail at the same x (coplanar front faces, so z-fighting), and it
+  // would close on the `awning` placement check, whose ray passes 1.4 cm from a band ending at -7.1.
+  b.bandSolid('left front plaster', -4.6, -6.7, (z) => Math.min(annexEave(z), canopyAtWall(z)), (z) => Math.min(annexEave(z), canopyAtWall(z)) - 0.55, H.front - 0.08, H.front + 0.04, surface('plaster', C.plaster, { seed: 101 }), 4);
   // Where the wall rises through the canopy, a tile-colored ledge, flush with the plaster's top, covers
   // the wall top between the annex roof's eave (behind the wall face) and the face.
   b.quadSlab('annex eave ledge', [{ x: AR.xOuter, y: annexEave(plasterZ), z: plasterZ }, { x: H.front + 0.02, y: annexEave(plasterZ), z: plasterZ }, { x: H.front + 0.02, y: annexEave(t2.z1), z: t2.z1 }, { x: AR.xOuter, y: annexEave(t2.z1), z: t2.z1 }], 0.08, C.tileLeft);
@@ -97,7 +108,11 @@ export function buildFacades(b) {
   const groundBackFar = balancedMean(C.rightGroundFar, SLAT_FAR, 0.7);
   b.box('right house ground', { x0: M.front, x1: M.back, y0: -3.5, y1: M.eaveTop - 0.22, z0: M.baseSplitZ, z1: M.z1 }, surface('plaster', groundBack, { seed: 80 }), { metric: true });
   b.box('right house ground far', { x0: M.front, x1: M.back, y0: -3.5, y1: M.eaveTop - 0.22, z0: M.z0, z1: M.baseSplitZ }, surface('plaster', groundBackFar, { seed: 81 }), { metric: true });
-  b.box('right house plinth', { x0: M.front - 0.06, x1: M.front + 0.3, y0: -3.5, y1: M.plinthTop, z0: M.z0, z1: M.z1 }, surface('stone', C.plinth, { seed: 82 }), { metric: true });
+  // The plinth is split at the same z as the base above it: the photo's base band is a mid grey where the
+  // near half shows (u 0.87-1.0) and runs almost black where the far half does (u 0.66-0.90), so one
+  // colour across the whole run is 40 levels wrong at both ends.
+  b.box('right house plinth', { x0: M.front - 0.06, x1: M.front + 0.3, y0: -3.5, y1: M.plinthTop, z0: M.baseSplitZ, z1: M.z1 }, surface('stone', C.plinth, { seed: 82 }), { metric: true });
+  b.box('right house plinth far', { x0: M.front - 0.06, x1: M.front + 0.3, y0: -3.5, y1: M.plinthTop, z0: M.z0, z1: M.baseSplitZ }, surface('stone', C.plinthFar, { seed: 96 }), { metric: true });
   b.box('right house base', { x0: M.front - 0.05, x1: M.front + 0.3, y0: M.plinthTop, y1: M.baseTop, z0: M.baseSplitZ, z1: M.z1 }, surface('wood', C.woodBase, { seed: 83 }), { metric: true });
   b.box('right house base far', { x0: M.front - 0.05, x1: M.front + 0.3, y0: M.plinthTop, y1: M.baseTopFar, z0: M.z0, z1: M.baseSplitZ }, surface('wood', C.woodBase, { seed: 84 }), { metric: true });
   lattice(b, rand, unit, 'right lattice near', M.front - 0.01, M.baseTop + 0.03, M.eaveTop - 0.7, M.baseSplitZ + 0.15, M.z1 - 0.15, 0.07, 0.03, SLAT_NEAR);

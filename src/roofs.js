@@ -24,14 +24,29 @@ export function buildRoofs(b) {
   const [, , t3] = L.LEFT_TERRACES;
 
   // Left house 1: the hisashi eave roof at eye level, and the low top roof (both slopes) above the mezzanine.
-  // Its edge and underside carry the eave band's sampled mean (a darker underside scored worse: the
-  // photo's band is brownish over most of its length).
-  tileRoof(b, rand, geos, 'house 1 eave', [v(H.front - 0.95, 4.25, H.z1), v(H.front, 4.8, H.z1), v(H.front, 4.8, H.eaveZ0), v(H.front - 0.95, 4.25, H.eaveZ0)], {
+  // The eave band is split at H.eaveSplitZ. Only its far 3 m is in frame, and along that stretch the photo
+  // goes from #ba9674 at (0.06, 0.341) through #6c4e3a at (0.10, 0.341) to #38241c at (0.15, 0.341): one
+  // colour across the whole band read 60 levels dark at the near end and 60 light at the far one, which is
+  // also why the note this replaces recorded that "a darker underside scored worse". Measured with the
+  // split geometry in both arms so its reseed of every later roof cancels: the far half's own colours are
+  // worth 0.0005 of cell distance and 0.0055 of SSIM against the same two pieces painted alike.
+  // Two seams this leaves, both invisible from the photo view but real from close up: the tile rows stop
+  // 0.075 m short of the split on one side and start 0.125 m past it on the other, leaving about 0.20 m of
+  // bare board, and the eave-cap row skips one cap across it.
+  const eaveCorners = (za, zb) => [v(H.front - 0.95, 4.25, za), v(H.front, 4.8, za), v(H.front, 4.8, zb), v(H.front - 0.95, 4.25, zb)];
+  tileRoof(b, rand, geos, 'house 1 eave', eaveCorners(H.z1, H.eaveSplitZ), {
     color: C.tileLeft,
     fasciaColor: C.leftRoofEdge,
     fasciaHeight: 0.2,
     boardColor: C.leftRoofEdge,
-    rafterColor: C.eaveEdge,
+    rafterColor: C.eaveNearRafter,
+  });
+  tileRoof(b, rand, geos, 'house 1 eave far', eaveCorners(H.eaveSplitZ, H.eaveZ0), {
+    color: C.tileLeft,
+    fasciaColor: C.eaveFar,
+    fasciaHeight: 0.2,
+    boardColor: C.eaveFar,
+    rafterColor: C.eaveFar,
   });
   const ridgeX = -7.0;
   const ridgeY = H.roofEave + (ridgeX - (H.front - 0.5)) * -Math.tan((28 * Math.PI) / 180);
@@ -60,7 +75,7 @@ export function buildRoofs(b) {
 
   // The annex lean-to and its door canopy, both stepping down the street. The small white awning lies
   // over the canopy's lower rows near the door (built with the facades).
-  tileRoof(b, rand, geos, 'annex roof', steppedRoofCorners(L.LEFT_ANNEX_ROOF), { color: C.tileLeft, fasciaColor: C.eaveEdge, boardColor: C.house1Wall, rafterColor: C.house1Wall });
+  tileRoof(b, rand, geos, 'annex roof', steppedRoofCorners(L.LEFT_ANNEX_ROOF), { color: C.tileAnnex, fasciaColor: C.eaveEdge, boardColor: C.house1Wall, rafterColor: C.house1Wall });
   tileRoof(b, rand, geos, 'door canopy', steppedRoofCorners(L.LEFT_CANOPY), { color: C.canopy, fasciaColor: darker(C.canopy, 0.75), boardColor: C.annex, rafterColor: C.annex });
 
   // House 3's short roof on the photo's eave line; its wall stands 0.1 m behind the eave and the roof
