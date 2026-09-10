@@ -20,6 +20,8 @@
 // - The static control (a path that does not move) must read 0. If it does not, the scene is
 //   nondeterministic per frame and the shimmer figure means nothing until that is fixed.
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene } from './lib/browser.js';
 
@@ -172,7 +174,16 @@ function report(rows) {
   return { meanShimmer: mean('shimmer'), meanWorstBlock: mean('worstBlockShimmer'), meanMotion: mean('motion') };
 }
 
-if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
+// True only when node was started with THIS file. The form that was here,
+// `import.meta.url === \`file:///${process.argv[1].replace(/\\/g, '/')}\``, is wrong everywhere but
+// Windows: a POSIX argv[1] of /home/runner/... builds file:////home/runner/... with four slashes, which
+// never matches, so the tool loaded, printed nothing and exited 0. Same shape as tools/serve.js.
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  return resolve(process.argv[1]).toLowerCase() === fileURLToPath(import.meta.url).toLowerCase();
+}
+
+if (isMainModule()) {
   const rows = await run();
   const summary = report(rows);
   const nonZeroStill = rows.filter((r) => r.still > 0.001);
