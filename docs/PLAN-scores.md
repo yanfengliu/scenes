@@ -11,8 +11,8 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 
 ```json
 {
-  "cellDistanceMax": 0.0825,
-  "ssimMin": 0.436
+  "cellDistanceMax": 0.0783,
+  "ssimMin": 0.4509
 }
 ```
 
@@ -53,3 +53,5 @@ The animation adds a third: the shot is one frame, and the scene moves. `npm run
 | 5 (before critic) | 2026-09-05 | 0.0812 | 0.4389 | 318 | 3.7 ms | the landing shading into the bend as the photo does |
 | 5 (after critic) | 2026-09-06 | 0.0813 | 0.4385 | 316 | 2.6 ms | the animation gate given a motion bound that a fourteen-fold sway fails, the swaying strands and petals taken out of the shadow pass (they cast still shadows), CI trimmed to three frames; animation spread over 7 frames 0.0001 cell and 0.0005 SSIM, motion 0.18 levels |
 | 5 (done, user's flicker fixed) | 2026-09-06 | 0.0811 | 0.4411 | 316 | 3.2 ms | eight requested multisamples and a 1.2x supersample resolved down, for the shimmer the user reported while orbiting; the scores moved because the same resolve runs in the scored shot, which is what the page does too |
+| loop iteration 1 (before critic) | 2026-09-10 | 0.0769 | 0.4548 | 317 | | the machiya's plinth and house 1's eave split near/far, house 1's top roof lowered 17 cm off the photo's sky, the mezzanine and dormer darkened, the annex roof's tiles warm instead of blue-grey, the far houses' lower walls resampled, a plaster band added along the near house front |
+| loop iteration 1 (done, after critic) | 2026-09-10 | 0.0768 | 0.4559 | 317 | 6.8 ms | the near eave's rafters lightened (the critic found the split's boundary is a diagonal in photo space, so the cell it was meant to fix was rafters, not fascia), the plaster band moved off the annex window's top rail and out of the awning check's 1.4 cm margin; thresholds tightened from 0.0825/0.436. Draw calls are the shot's 317; `npm run perf` reports 325 at 1920x1080 and 6.8 ms median, measured with about 40 other node and chromium processes on the machine, so that time is an upper bound and not comparable with the earlier rows |

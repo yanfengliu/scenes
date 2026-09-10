@@ -296,7 +296,11 @@ export const RIGHT_MACHIYA = {
 };
 // Left house 1 is a low-mezzanine machiya: its top roof sits at about 6.4 m with sky above it.
 // The eave roof runs to photo u 0.18, the top roof overhangs the far end of the shorter mezzanine wall.
-export const LEFT_HOUSE_1 = { front: -3.4, back: -10, groundZ0: -6.0, upperZ0: -7.5, roofZ0: -12.0, eaveZ0: -9.6, z1: 3.0, eaveY: 4.2, eaveTop: 4.9, upperTop: 6.25, roofUnder: 6.25, roofEave: 6.6 };
+// The top roof's eave line was 17 cm high: its trace crossed (u 0.144, v 0.114) where the photo has cloud
+// (#cfbfb5) and (u 0.057, v 0.071) where the photo has sky (#949ca3). At 6.43 the same line passes through
+// (u 0.103, v 0.114), which is where the photo's roof edge is. upperTop and roofUnder drop with it so the
+// slab keeps its thickness and the mezzanine wall stays under it.
+export const LEFT_HOUSE_1 = { front: -3.4, back: -10, groundZ0: -6.0, upperZ0: -7.5, roofZ0: -12.0, eaveZ0: -9.6, eaveSplitZ: -7.6, z1: 3.0, eaveY: 4.2, eaveTop: 4.9, upperTop: 6.08, roofUnder: 6.08, roofEave: 6.43 };
 // Roofs along the left house fronts step down with the terraces. Each is a slab given by its outer
 // edge (near and far ends along z) and the rise of its inner edge, sloping up away from the street.
 export const LEFT_ANNEX_ROOF = { xOuter: -4.0, xInner: -7.5, zNear: -6.0, yNear: 3.4, zFar: -13.4, yFar: 1.7, rise: 2.2 };
@@ -375,14 +379,24 @@ export const COLORS = {
   woodLight: 0x9a7a5c,
   sudare: 0xb09070,
   tileLeft: 0x7a8088,
-  tileRight: 0x7e97ba,
+  tileAnnex: 0x947d63, // the annex lean-to's tiles are warm brown in the photo, not the blue-grey of house 1's roofs: cells (0.10,0.432) #8f6946, (0.15,0.477) #937d6a, (0.19,0.477) #a1846b over the band the roof fills (u 0.06-0.23, v 0.42-0.50)
+  tileRight: 0x7e97ba, // its band reads #8499b5 in the photo against #72798b in the render, but lifting it to 0x87a3c8 or 0x8fb0dc moved both scores by less than 0.0001: the roof spans cells that want +30% and cells that want -13%, so this is a shading gradient across the slope, not a wrong sample
   eaveUnder: 0x71747b,
   noren: 0xbfc3ca,
   balcony: 0x6b5a52,
-  house1Upper: 0x393737,
+  house1Upper: 0x1f1e1e, // mezzanine boards and the dormer, cells (0.02,0.023) #23252b, (0.02,0.114) #0f0d0d, (0.06,0.114) #25201c; the old 0x393737 was sampled over the sudare's lit band below them, and the rig lifts a dark albedo another 30%
   house1Hip: 0x5b4e45,
   eaveEdge: 0x6e5f52,
-  leftRoofEdge: 0x8b6c54,
+  // House 1's eave band, split at LEFT_HOUSE_1.eaveSplitZ. The eave is seen nearly edge-on, so that split
+  // is a diagonal in photo space and not a vertical line: it crosses the fascia (the outer edge, x = -4.35)
+  // at u 0.041 and the rafter line (x = -3.9) at u 0.087. Cell (0.02,0.341) #ad8a6b is the near half;
+  // (0.06,0.341) #ba9674 straddles the two, which is why it is the band's worst cell either way. Moving
+  // the split to -8.7 to put the fascia boundary at u 0.10 was measured and cost 0.0001 cell and 0.0007 SSIM.
+  leftRoofEdge: 0xa07c5e, // the near half's eave edge and underside
+  // The near half's exposed rafters: the photo's eave underside at u 0.02-0.09 is a lit warm band with the
+  // rafters barely readable against it, and dark bars there pulled cell (0.063, 0.341) to #816653.
+  eaveNearRafter: 0x9a8770,
+  eaveFar: 0x604a3a, // the far half, where the photo runs into shadow: cells (0.10,0.341) #6c4e3a, (0.15,0.341) #38241c, (0.15,0.386) #583d2d
   house3Lower: 0x6f5a49,
   rightGroundFar: 0x63605f,
   shrubDeep: 0x1e2416,
@@ -402,12 +416,19 @@ export const COLORS = {
   annexFarUpper: 0xa08b72,
   canopy: 0x979899,
   steps: 0x96959a,
-  landing: 0x76818d,
+  landing: 0x76818d, // the landing slabs, the lit far-street slabs and the right terrace's paved bands.
+  // The photo's own landing box (0.30,0.80)-(0.45,0.86) reads #a19d9f, 45 levels lighter, but lifting this
+  // toward it makes both scores worse. At z = -21 the landing's right edge is at x = 2.5 and the photo's
+  // street edge there is at x = -2.0, so about 4.5 m of paving stands where the photo has the machiya row
+  // that lines the far street, and the same slabs answer for lit stone at (0.354, 0.75) and for buildings
+  // at (0.438, 0.75). See the 2026-09-10 devlog; the row is iteration 2's content, and this colour is
+  // right only until then.
   farStreet: 0x4a4950,
   sideSteps: 0x4a4e4f,
   terrace: 0x3e4448,
   fence: 0x64605a,
-  plinth: 0x57595b,
+  plinth: 0x4c4f53, // the near half of the machiya's base band, boxes (0.87,0.71)-(0.95,0.79) #515457 and (0.92,0.76)-(1.0,0.84) #3e4348
+  plinthFar: 0x363432, // its far half runs into the shade of the bend: (0.66,0.555)-(0.78,0.60) #2f2b28, (0.83,0.63)-(0.90,0.70) #3c4243
   fenceTiles: 0x6c7a7c,
   pot: 0x36302e,
   shrub: 0x465746,
@@ -421,7 +442,7 @@ export const COLORS = {
   platform: 0x8a8d92,
   farRoof: 0x87887b,
   farWall: 0xacafac,
-  farWallLow: 0x4e4a3f, // below the far roofs the photo is dark, cells (0.354, 0.659) and (0.313, 0.682)
+  farWallLow: 0x776f5f, // below the far roofs; over the band the walls actually fill the photo reads #aaa18d at (0.313,0.659), #b18962 at (0.313,0.705) and #8b8e92 at (0.354,0.705), so the old 0x4e4a3f (taken at (0.354,0.659), the one dark cell there) was 55 levels low
   groundBase: 0x3a3a36,
   fog: 0xdccfc4,
 };

@@ -171,6 +171,10 @@ const api = {
   },
   resumeAnimation: anim.resume,
   animationTime: anim.time,
+  // The same clamp the frame loop applies after the controls have run. Exposed so a tool that poses the
+  // camera directly (tools/views.js) gets the correction a user's drag would get, instead of a view from
+  // inside a wall that no one can actually reach.
+  clampCamera,
   describe() {
     return {
       renderer: rendererName(),
