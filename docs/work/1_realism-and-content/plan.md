@@ -37,7 +37,7 @@ Per iteration, all of them, before the integration owner pushes:
 
 ## Implementation steps
 
-- [ ] Iteration 1, contrast and placement: close the measured cells above and build `tools/views.js`. Target: cell distance at or below 0.077, SSIM at or above 0.45, or the measured ceiling reported with what stops it.
+- [x] Iteration 1, contrast and placement (merged cb9a17c): close the measured cells above and build `tools/views.js`. Target: cell distance at or below 0.077, SSIM at or above 0.45, or the measured ceiling reported with what stops it.
 - [ ] Iteration 2, content: retire the block-out the orbit sweep shows. The corner house at the bend, the far houses as machiya with tiles and lattices, roof undersides with rafters, the right roof mass as tiles, the dormer body, the paved bands.
 - [ ] Iteration 3, sky and atmosphere: the photo's banded cirrus and its orange undersides, the glare's shape, cloud contrast, and haze with depth.
 - [ ] Iteration 4, the cherry's depth: dark limbs visible through the canopy, a shadowed magenta interior against backlit edges, strand structure, card variety.
@@ -47,4 +47,8 @@ Per iteration, all of them, before the integration owner pushes:
 
 ## Outcome
 
-Pending. Each integrated iteration is recorded here with its revision, scores, and what the sweep showed.
+Iteration 1, merged as cb9a17c. Cell distance 0.0812 to 0.0768 and SSIM 0.4401 to 0.4559, both targets met; thresholds tightened to 0.0783 and 0.4509. The twenty worst cells fall 26% in summed distance. `tools/views.js` now renders seven poses to `out/views/`.
+
+Two findings shape iteration 2. The brief's reading of cells (0.44,0.75) and (0.56,0.75) was wrong: they are landing slabs, and at z -21 the paving's right edge sits at x 2.5 where the photo's street edge is at x -2.0, so about 4.5 m of paving stands where the photo has the machiya row. Four attempts on the paving all lost, because the fix is the row itself. And the views found the top platform's face standing as a bare grey slab across the head of the stairs, invisible from the photo view and glaring from the landing.
+
+`tileRight` is a measured dead end for colour work: it is the pan tiles' S-section, so lifting its hex moves nothing. The cross-machine SSIM noise floor is 0.0010, measured on identical code.
