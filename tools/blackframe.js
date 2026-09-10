@@ -47,6 +47,8 @@
 // over part of the frame is invisible to it, and it visits the sizes listed below rather than all of
 // them: the fix it guards is a runtime probe precisely because no list of sizes can be complete.
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
 
@@ -206,8 +208,14 @@ export function faults(row, limit = LIMIT) {
   return out;
 }
 
+// True only when node was started with THIS file. The form that was here,
+// `import.meta.url === \`file:///${process.argv[1].replace(/\\/g, '/')}\``, is wrong everywhere but
+// Windows: a POSIX argv[1] of /home/runner/... builds file:////home/runner/... with four slashes, which
+// never matches, so the tool loaded, printed nothing and exited 0. It did exactly that on every CI run
+// until 2026-09-09. Same shape as the guard in tools/serve.js, which was always right.
 function isMainModule() {
-  return import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`;
+  if (!process.argv[1]) return false;
+  return resolve(process.argv[1]).toLowerCase() === fileURLToPath(import.meta.url).toLowerCase();
 }
 
 if (isMainModule()) {
@@ -215,8 +223,14 @@ if (isMainModule()) {
   // It exists for CI, where every render goes through SwiftShader at minutes per frame and the suite
   // already sits close to its ceiling. The first entry is the size the user's report came from, so a
   // trimmed run still covers the case this gate was written for.
-  const count = Number(process.env.BLACKFRAME_VIEWS || VIEWS.length);
-  const { rows, renderer } = await run({ views: VIEWS.slice(0, Math.max(1, count)), gpu: process.env.BLACKFRAME_GPU !== '0' });
+  const count = Math.max(1, Math.min(VIEWS.length, Number(process.env.BLACKFRAME_VIEWS) || VIEWS.length));
+  const views = VIEWS.slice(0, count);
+  // Say what is covered, so a trimmed run cannot be read later as a full one.
+  console.log(
+    `views: ${count} of ${VIEWS.length}${count < VIEWS.length ? ` (BLACKFRAME_VIEWS=${process.env.BLACKFRAME_VIEWS})` : ''} `
+    + `-- ${views.map((v) => `${v.width}x${v.height}@${v.ratio}`).join(', ')}, each measured on load and after a resize`,
+  );
+  const { rows, renderer } = await run({ views, gpu: process.env.BLACKFRAME_GPU !== '0' });
   console.log(`renderer: ${renderer}`);
   console.log('\nview                    when                          buffer       samples  dark%  worstBlk  lumaStd  vsDirect');
   for (const r of rows) {
@@ -237,5 +251,5 @@ if (isMainModule()) {
     }
     process.exit(1);
   }
-  console.log(`blackframe: ${rows.length} size/ratio combinations all rendered the scene on ${renderer}`);
+  console.log(`blackframe: ${rows.length} size/ratio combinations from ${count} of ${VIEWS.length} views all rendered the scene on ${renderer}`);
 }

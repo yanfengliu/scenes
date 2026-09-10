@@ -2,6 +2,30 @@
 
 Each retired lesson's gate is listed with the mutation that made it go red, the failure it produced, and where the evidence lived before retirement. A gate that was never seen red proves nothing.
 
+## npm test: every gate proves it ran (2026-09-10)
+
+- Claim (in the gate's own header, `tools/test.js`): a tool that exits 0 having done nothing is indistinguishable here from a tool that passed, so the `GATES` table pairs each of the seven gates with a line that only its finished success path prints. `npm test` captures each tool's output and fails, naming the tool and the missing text, when that line is absent — whatever the exit status says.
+- Origin: `blackframe`, `record`, `paintcheck` and `shimmer` guarded their main block with ``import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` ``. That is true on Windows and false on every POSIX `argv[1]`: `file:///` joined to `/home/runner/work/scenes/scenes/tools/blackframe.js` gives `file:////home/...` with four slashes, against node's `file:///home/...`. So on CI each tool imported its own module, ran nothing and exited 0. `blackframe` and `record` are in `npm test`, and CI reported them green from the day each landed, 2026-09-06, until 2026-09-09. In run 34306122575, job 102323064914: `== tools/blackframe.js ==` at 03:57:12.599, `== tools/record.js ==` at 03:57:12.893, `== thresholds ==` at 03:57:13.191, `PASS` on the same millisecond. The two gates together took 0.6 s of a 45m38s run, printing nothing; on this machine's GPU they take 19 s and 18 s, and on the runner's SwiftShader they take minutes.
+- Mutation: the pre-fix guard put back in `tools/blackframe.js`. The old expression is true on Windows, so reproducing the defect here meant feeding it the `argv[1]` a Linux runner has — `isMainModule` became `const runnerArgv1 = process.argv[1].replace(/^[A-Za-z]:/, '').replace(/\\/g, '/');` followed by the old comparison against `` `file:///${runnerArgv1}` ``. Run on its own, `node tools/blackframe.js` then printed nothing and exited 0 — the CI defect exactly. Then `node tools/test.js` from a clean `out/`.
+- Failure produced: exit 1 at the sixth gate, after shot (58 s), compare (1 s), placement (35 s), animation (998 s) and nudge (164 s) had passed and printed their markers:
+
+```
+== tools/blackframe.js ==
+
+FAIL: tools/blackframe.js exited 0 after 0 s without producing evidence that it ran.
+  expected its summary line to contain: "blackframe:"
+  it printed 0 character(s) of output (nothing at all)
+  A gate that exits 0 having run nothing is reported here as a pass, so the marker is
+  the evidence. Check the main-module guard at the bottom of the tool first: the form
+  `import.meta.url === `file:///${process.argv[1]...}`` is false on every POSIX argv[1]
+  and silently skips the whole main block. Fix the tool, or, if it now prints a
+  different summary line, update GATES in tools/test.js.
+```
+
+- Restored, the same suite from a clean `out/` printed `blackframe: 12 size/ratio combinations from 6 of 6 views all rendered the scene on ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 ...)`, then `-- tools/blackframe.js: ok in 19 s`, then `record: 847 frames driven by real input over 12 s ..., worst frame 5 of 25 probes dark (limit 12)` and `PASS`. Seven gates, exit 0: shot 63 s, compare 1 s, placement 30 s, animation 811 s, nudge 163 s, blackframe 19 s, record 18 s.
+- The guard itself is checked separately, because a truth table is not a gate: evaluating both forms against a Windows-shaped and a POSIX-shaped `argv[1]` with node's own `path.win32`/`path.posix` and `fileURLToPath(url, { windows })` gives old true/false and new true/true. That is what the fix rests on; the marker check is what notices when a future guard, or anything else, silences a tool again.
+- Bound: **it proves a marker was printed, not that the gate's checks are right.** A tool that printed its summary line and skipped half its work passes this, and the marker is a plain substring, so a tool that renames its summary line goes red until `GATES` is updated. It covers the seven tools in `GATES` and nothing else — `paintcheck` and `shimmer` are not in `npm test`, so their identical guards are covered by the same fix and by nothing that runs. `record` under `RECORD=0` prints `record: skipped by RECORD=0 ...`, which satisfies the marker on purpose: the check separates a decision in the log from silence, not a run from a skip.
+
 ## blackframe: the frame is there, at every window size (2026-09-06)
 
 - Claim (in the gate's own header, `tools/blackframe.js`): every gate in the repo runs at one viewport and device pixel ratio, and the post chain can hand back a black frame from the *size* alone. For six window size and ratio combinations, including non-round ratios, measured once on load and once after a resize, the gate fails when the frame is more than 20% near black, when one tile of a 12x12 grid over it is essentially all black, when its luminance is flat, or when the composer has kept less than 35% of the light the same view shows through `renderer.render(scene, camera)` with no post chain at all.

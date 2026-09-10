@@ -15,6 +15,13 @@ jobs:
     # minutes short of the end, partway through nudge. Ninety is room under that contention, not an
     # expectation. The animation gate is the one to look at first if this ever needs trimming; it is the
     # largest share by far, and it is already down to three frames here.
+    #
+    # Those 66 minutes did not include blackframe or record: both had a main-module guard that is false on
+    # any POSIX argv[1], so on this runner they loaded, printed nothing and exited 0 from the day each
+    # landed (2026-09-06) until 2026-09-09. In run 34306122575, job 102323064914, the two banners are
+    # 0.294 s apart with nothing between them. They run now, which is real added time, so both are trimmed
+    # below and `npm test` prints each gate's own elapsed seconds to keep the next estimate on
+    # measurements rather than memory.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -30,25 +37,42 @@ jobs:
       # libraries the runner does not ship.
       - run: npx playwright install --with-deps chromium
 
-      # shot, compare, placement and animation. The runner has no GPU, so every render goes through
-      # SwiftShader, which is what tools/lib/browser.js asks for anyway: the scored shot has always used
-      # it so the numbers do not move with the graphics driver.
+      # shot, compare, placement, animation, nudge and blackframe. The runner has no GPU, so every render
+      # goes through SwiftShader, which is what tools/lib/browser.js asks for anyway: the scored shot has
+      # always used it so the numbers do not move with the graphics driver.
       #
       # npm run perf is deliberately NOT run here. It measures frame time on the machine it runs on, and
       # a shared runner without a GPU produces numbers unrelated to the budget in AGENTS.md; asserting
       # them would fail forever and tell nobody anything.
-      # Three frames instead of seven: the animation gate shoots 1200x1100 through shadows and bloom on
-      # a software renderer, which is minutes per frame on a shared runner. Three still spans the cycle.
-      # Two of the blackframe gate's six size/ratio combinations, for the same reason: each one loads the
-      # page and builds the scene again, and on SwiftShader that is minutes. The two kept are the size
-      # the user's report came from (1280x720 at a device pixel ratio of 1.5) and the size every other
-      # gate uses, and each is measured twice, on load and after a resize. The gate asks for the GPU and
-      # will not get one here, so what it proves on this runner is that the chain is sound on SwiftShader;
-      # the driver behaviour it was written for needs a machine with a GPU to see.
+      #
+      # ANIMATION_FRAMES=3, three frames instead of seven: the animation gate shoots 1200x1100 through
+      # shadows and bloom on a software renderer, which is minutes per frame on a shared runner. Three
+      # still spans the cycle, and the gate prints "spread over 3 frames" so the log says what it covered.
+      #
+      # BLACKFRAME_VIEWS=1, one of the gate's six sizes: each view loads the page and builds the scene
+      # again, and one view measured on load and after a resize costs 73 s locally on SwiftShader. Gate
+      # for gate this runner was 3.7x to 4.8x slower than that machine in run 34306122575, so that is 5 to
+      # 6 minutes here and half an hour for all six. The view kept is 1280x720 at a device pixel ratio of
+      # 1.5, the size the user's report came from and the only one no other gate visits; the second view,
+      # 1200x1100 at ratio 1, is the size `shot` renders, and a black frame there fails `compare` anyway.
+      # The gate asks for the GPU and will not get one, so what it proves here is that the chain is sound
+      # on SwiftShader; the driver behaviour it was written for needs a machine with a GPU to see. It
+      # prints the views it ran.
+      #
+      # RECORD=0, the record gate off: it drives a 3007x1957 drawing buffer through 12 s of real mouse
+      # input, and every one of those input events waits on a renderer that is mid-frame. Forced onto
+      # SwiftShader locally (RECORD_GPU=0) it had not finished after 19 minutes and was stopped, and even
+      # RECORD_SECONDS=3 had not finished after 16 -- the page alone takes 31 s to become ready at that
+      # buffer size there, against 3.6 s on a GPU. This runner is slower again. And the fault it exists
+      # for is a GPU driver behaviour that SwiftShader
+      # does not have, so those minutes would prove nothing -- the gate says so itself, in its bound in
+      # docs/learning/gate-proofs.md. It stays in the local suite, where the machine has a GPU. The skip
+      # prints one line saying it was skipped and why, so it can never be mistaken for a gate that ran.
       - run: npm test
         env:
           ANIMATION_FRAMES: 3
-          BLACKFRAME_VIEWS: 2
+          BLACKFRAME_VIEWS: 1
+          RECORD: 0
 
       - if: failure()
         uses: actions/upload-artifact@v4

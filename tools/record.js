@@ -14,7 +14,10 @@
 //
 // BOUNDS: the probe is a grid, so a dark region smaller than its spacing is missed; it records luminance,
 // so a bright fault is invisible; and it drives one scripted gesture sequence, which is not every gesture.
+// It also needs frames to look at: under MIN_FRAMES the run fails rather than passing on an empty trace.
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene } from './lib/browser.js';
 
@@ -27,6 +30,13 @@ export const GRID = 5; // GRID x GRID single-pixel probes per frame
 // 12 sits between them with room on both sides, and it is a per-FRAME limit rather than an average
 // because the fault is a flicker: averaged over a recording it disappears into the good frames.
 export const WORST_FRAME_LIMIT = 12;
+
+// A recording with almost nothing in it is not evidence. This gate's claim is about frames DURING a
+// gesture sequence, and `worst frame 0 of 25 probes dark` reads exactly the same whether the scene never
+// went dark or the recorder never got a frame to look at. On a GPU the 12 s sequence yields about a
+// thousand frames, so this floor is far under any healthy run; it is here to turn "did not run" into a
+// failure instead of a pass.
+export const MIN_FRAMES = 30;
 
 export async function record({
   width = 2005, height = 1305, ratio = 1.5, seconds = 12, gpu = true,
@@ -127,19 +137,45 @@ export async function record({
   }
 }
 
-if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
+// True only when node was started with THIS file. The form that was here,
+// `import.meta.url === \`file:///${process.argv[1].replace(/\\/g, '/')}\``, is wrong everywhere but
+// Windows: a POSIX argv[1] of /home/runner/... builds file:////home/runner/... with four slashes, which
+// never matches, so the tool loaded, printed nothing and exited 0. It did exactly that on every CI run
+// until 2026-09-09. Same shape as the guard in tools/serve.js, which was always right.
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  return resolve(process.argv[1]).toLowerCase() === fileURLToPath(import.meta.url).toLowerCase();
+}
+
+if (isMainModule()) {
   const arg = (name, fallback) => {
     const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
     return hit ? Number(hit.split('=')[1]) : fallback;
   };
-  const opts = { width: arg('width', 2005), height: arg('height', 1305), ratio: arg('ratio', 1.5), seconds: arg('seconds', 12) };
+  // Env knobs so `npm test`, which passes no arguments, can still be trimmed or switched off from a
+  // workflow: RECORD_SECONDS shortens the gesture sequence, RECORD_GPU=0 forces SwiftShader (the same
+  // switch BLACKFRAME_GPU and PERF_GPU give), and RECORD=0 skips the gate. The skip PRINTS, because a
+  // gate that goes quiet is the defect this whole file was audited for.
+  if (process.env.RECORD === '0') {
+    console.log('record: skipped by RECORD=0. This gate drives a 3007x1957 drawing buffer, and the fault');
+    console.log('  it exists for is a GPU driver behaviour that SwiftShader does not have, so on a runner');
+    console.log('  with no GPU it costs many minutes to prove nothing. It runs in the local suite.');
+    process.exit(0);
+  }
+  const opts = {
+    width: arg('width', 2005),
+    height: arg('height', 1305),
+    ratio: arg('ratio', 1.5),
+    seconds: arg('seconds', Number(process.env.RECORD_SECONDS) || 12),
+    gpu: process.env.RECORD_GPU !== '0',
+  };
   const { trace, firstBad, shot, renderer, errors } = await record(opts);
   mkdirSync('out', { recursive: true });
   writeFileSync('out/record.json', JSON.stringify({ opts, renderer, trace }, null, 2));
   if (shot) writeFileSync('out/record-firstbad.png', shot);
 
   console.log(`renderer ${renderer}`);
-  console.log(`${opts.width}x${opts.height} @ ${opts.ratio}, ${trace.length} frames recorded`);
+  console.log(`${opts.width}x${opts.height} @ ${opts.ratio}, ${opts.seconds} s of gestures, ${trace.length} frames recorded`);
   if (errors.length) console.log(`page errors: ${errors.join(' | ')}`);
 
   // Every stretch where the frame was fully dark, with what the chain was doing at the time.
@@ -174,6 +210,11 @@ if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
     console.log('A frame that goes dark under ordinary camera movement is the defect a user reported as flickering and as rectangular blackouts.');
     process.exit(1);
   }
+  if (trace.length < MIN_FRAMES) {
+    console.log(`\nFAIL: ${trace.length} frame(s) recorded over ${opts.seconds} s of gestures, under the ${MIN_FRAMES} this gate needs to mean anything.`);
+    console.log(`A recording this short cannot tell a scene that never went dark from a recorder that never caught it dark, so a pass here would be a pass for the wrong reason. Renderer ${renderer} at ${opts.width}x${opts.height} @ ${opts.ratio} is producing frames slower than the gestures. Give it a GPU, raise --seconds=, or switch the gate off on purpose with RECORD=0.`);
+    process.exit(1);
+  }
   const worstForced = trace.reduce((a, f) => Math.max(a, f.darkForced), 0);
-  console.log(`record: ${trace.length} frames driven by real input, worst frame ${worstForced} of ${GRID * GRID} probes dark (limit ${WORST_FRAME_LIMIT})`);
+  console.log(`record: ${trace.length} frames driven by real input over ${opts.seconds} s on ${renderer}, worst frame ${worstForced} of ${GRID * GRID} probes dark (limit ${WORST_FRAME_LIMIT})`);
 }
