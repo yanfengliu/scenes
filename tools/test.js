@@ -1,7 +1,7 @@
-// npm test: shot -> compare -> placement checks -> the animation's own frames -> the frame's stability
-// under a small camera move -> the frame is actually there, at several window sizes and device pixel
-// ratios -> the frame while the camera is driven by real input -> assert the scores against the
-// thresholds in docs/PLAN-scores.md.
+// npm test: shot -> compare -> placement checks -> what the street keeps clear, overhead and at ground
+// level -> the animation's own frames -> the frame's stability under a small camera move -> the frame is
+// actually there, at several window sizes and device pixel ratios -> the frame while the camera is driven
+// by real input -> assert the scores against the thresholds in docs/PLAN-scores.md.
 //
 // `nudge` and `blackframe` are the two halves of one question and neither can answer the other's. Nudge
 // scores how much the frame *changes*, so a frame that is entirely black is the most stable frame there
@@ -32,6 +32,10 @@ const GATES = [
   ['tools/shot.js', ['renderer:']],
   ['tools/compare.js', ['cell color distance', 'grayscale SSIM']],
   ['tools/placement.js', ['placement:']],
+  // Two markers, one per check, because this tool runs two independent checks off one page load and a
+  // single marker would let a run that did half the work report as a pass. Neither string can be matched
+  // by an earlier line: the tool's own set listing prints "walkable street:", not "clearance street:".
+  ['tools/clearance.js', ['clearance headroom:', 'clearance street:']],
   ['tools/animation.js', ['spread over ']],
   ['tools/nudge.js', ['nudge:']],
   ['tools/blackframe.js', ['blackframe:']],

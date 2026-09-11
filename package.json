@@ -11,6 +11,7 @@
     "perf": "node tools/perf.js",
     "probe": "node tools/probe.js",
     "placement": "node tools/placement.js",
+    "clearance": "node tools/clearance.js",
     "animation": "node tools/animation.js",
     "inspect": "node tools/inspect.js",
     "shimmer": "node tools/shimmer.js",

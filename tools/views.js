@@ -1,5 +1,5 @@
-// npm run views: render a fixed orbit sweep to out/views/<pose>.png at 1200x1100, plus a labelled
-// out/views/index.png. The integration owner looks at these every iteration, because the compare gate
+// npm run views: render a fixed orbit sweep to out/views/<pose>.png at 1200x1100, and list what it wrote
+// in out/views/index.txt. The integration owner looks at these every iteration, because the compare gate
 // sees one framing and a scene can be right there and wrong from every other angle.
 //
 // It is a DIAGNOSTIC, not a gate: it fails only when the page errors, never on what the pixels show. It
@@ -8,9 +8,24 @@
 // that worked. Bound on the duplicate check: it is byte-exact, so two poses a millimetre apart still read
 // as distinct — it catches a pose that was never applied, not a pose that barely moved.
 //
-// index.png is a 400 px contact sheet. It answers "is there one of each", never "is each one right":
-// look at the PNGs at their own 1200x1100, and quote the sha256 this tool prints for the file you looked
-// at, so re-running it strands the review instead of the review inheriting new pixels.
+// There is no contact sheet. There was one, a labelled 400 px index.png, and it went because an aggregate
+// view answers "is there one of each" and never "is each one right": the poses are reviewed one at a time
+// at their own 1200x1100, which is what both recorded sweep reviews did and what this file's own header
+// already told them to do. What replaces it is the manifest — each pose's path, sha256 and mean luminance
+// — so a review is bound to the bytes it looked at and re-running this tool strands that review instead
+// of the review silently inheriting new pixels.
+//
+// EVERY IMAGE OPERATION IN PAGE JAVASCRIPT RUNS ON A SECOND, BLANK PAGE, and that is not tidiness. (The
+// screenshots themselves stay on the scene page, obviously — that is where the scene is. What moved is
+// everything that decodes, resamples or composes a file AFTERWARDS.)
+// The scene page holds a requestAnimationFrame loop that renders 1200x1100 through the post chain, which
+// under SwiftShader takes about five seconds a frame; every `await` inside a page.evaluate there queues
+// behind a whole frame. Measured on this machine (out/scratch/views-stall.log): a no-op evaluate on the
+// scene page costs 4.96 s, one 120 px decodeImage of a pose costs 80.71 s, and the seven of them that the
+// black-frame check needs cost 792 s — thirteen minutes, after the last pose had been written, with
+// nothing printed. The argument size is not the cause: the same no-op carrying a 1.4 MB data URL costs
+// 4.74 s. On a blank page there is no loop to queue behind. Anything added here that decodes, resamples
+// or composes an image belongs on `inspector`, not on `page`.
 //
 // Bound: it POSES THE CAMERA DIRECTLY (position and orbit target through window.__scene) and never
 // touches the mouse, so it is blind to everything that lives in the input path — damping, the wheel, a
@@ -26,7 +41,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
-import { decodeImage, fileToDataUrl, pngDataUrlToBuffer } from './lib/image.js';
+import { decodeImage } from './lib/image.js';
 import * as L from '../src/layout.js';
 
 const OUT_DIR = 'out/views';
@@ -95,8 +110,6 @@ export const POSES = [
   },
 ];
 
-const SHEET = { cols: 3, cell: 400, label: 30, pad: 8 };
-
 export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
   let server = null;
   let browser = null;
@@ -119,14 +132,21 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
       console.warn('note: window.__scene.clampCamera is not exposed; poses are rendered unclamped, so one may sit where a drag could not put it');
     }
     mkdirSync(outDir, { recursive: true });
-    // The sheet is written last. Delete any older one first, so a run that dies partway leaves no sheet
-    // rather than a previous run's sheet sitting beside new frames, correctly named and captioned and
-    // from a different build.
+    // The manifest is written last. Delete any older one first, so a run that dies partway leaves no
+    // index rather than a previous run's index sitting beside new frames and describing a different
+    // build. index.png is no longer written at all; this removes one an older build left behind.
+    // What this does NOT do is delete the pose PNGs: a run that dies at pose 4 leaves three frames from
+    // the run before it beside four new ones. The missing index.txt is the only thing that says so, so a
+    // directory with no index.txt in it is a directory whose frames cannot be trusted to be one sweep.
     rmSync(`${outDir}/index.png`, { force: true });
+    rmSync(`${outDir}/index.txt`, { force: true });
     if (!quiet) console.log(`renderer: ${info.renderer}; clock pinned at t = ${CLOCK}`);
 
     let clampFired = false;
+    let n = 0;
     for (const pose of POSES) {
+      const poseStarted = Date.now();
+      n++;
       // The pose goes through the same objects the frame loop uses, in the loop's own order:
       // camera.position, controls.target, controls.update(), clampCamera(). Clamp LAST, as in main.js —
       // update() re-applies the polar and distance limits, so an update placed after the clamp can undo
@@ -173,8 +193,12 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
         console.warn(`WARNING: ${pose.name} exists to be corrected by the frame clamp and was not — either the clamp is not running or the pose has become reachable, and either way this run proves nothing about the clamp`);
       }
       if (!quiet) {
+        // The elapsed seconds are the progress signal for the slow half of this tool: a pose that is
+        // simply slow and a pose that has hung look the same without them.
         console.log(
-          `${pose.name.padEnd(26)} eye (${fmt(shot.position)})  target (${fmt(shot.target)})  ${shot.distance.toFixed(1)} m${notes.length ? `  [moved by: ${notes.join(' + ')}]` : ''}  ${pose.what}`,
+          `[${n}/${POSES.length}] ${pose.name.padEnd(26)} ${((Date.now() - poseStarted) / 1000).toFixed(1)} s  `
+          + `eye (${fmt(shot.position)})  target (${fmt(shot.target)})  ${shot.distance.toFixed(1)} m`
+          + `${notes.length ? `  [moved by: ${notes.join(' + ')}]` : ''}  ${pose.what}`,
         );
       }
     }
@@ -184,65 +208,49 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
     // all rendered the same frame look exactly like six poses that worked. Neither is a page error, so
     // neither would be caught above. Measure both, and print each file's digest so a review of these
     // images is bound to the bytes it actually looked at rather than to the filename.
+    //
+    // On `inspector`, the blank page, for the reason in this file's header: the same seven decodes cost
+    // 792 s on the scene page and print nothing while they do it.
+    const inspector = await browser.newPage({ viewport: { width: 200, height: 200 }, deviceScaleFactor: 1 });
+    inspector.setDefaultTimeout(ACTION_TIMEOUT_MS);
     const seen = new Map();
+    const inspectStarted = Date.now();
     for (const r of rendered) {
+      const started = Date.now();
       const bytes = readFileSync(r.file);
       r.digest = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
-      const small = await decodeImage(page, r.file, { width: 120, height: Math.round((120 * L.SHOT.height) / L.SHOT.width) });
+      const small = await decodeImage(inspector, r.file, { width: 120, height: Math.round((120 * L.SHOT.height) / L.SHOT.width) });
       let sum = 0;
       for (let i = 0; i < small.data.length; i += 4) sum += 0.299 * small.data[i] + 0.587 * small.data[i + 1] + 0.114 * small.data[i + 2];
       r.meanLuma = (sum / (small.data.length / 4));
+      if (!quiet) {
+        console.log(`${r.name.padEnd(26)} sha256 ${r.digest}  ${(bytes.length / 1e6).toFixed(2)} MB  mean luma ${r.meanLuma.toFixed(1)}  (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+      }
       if (r.meanLuma < 6) console.warn(`WARNING: ${r.name} has a mean luminance of ${r.meanLuma.toFixed(1)} — that frame is black, and this tool cannot tell a black render from a render that never happened`);
       const twin = seen.get(r.digest);
       if (twin) console.warn(`WARNING: ${r.name} is byte-identical to ${twin} — two poses produced the same frame, so at least one pose was not applied`);
       else seen.set(r.digest, r.name);
     }
-    if (!quiet) for (const r of rendered) console.log(`${r.name.padEnd(22)} sha256 ${r.digest}  mean luma ${r.meanLuma.toFixed(1)}`);
+    if (!quiet) console.log(`inspected ${rendered.length} frames in ${((Date.now() - inspectStarted) / 1000).toFixed(1)} s on a blank page`);
 
-    const sheet = await page.evaluate(
-      async ({ items, sheet }) => {
-        const cols = Math.min(sheet.cols, items.length);
-        const rows = Math.ceil(items.length / cols);
-        const cellW = sheet.cell;
-        const cellH = Math.round((sheet.cell * items[0].height) / items[0].width);
-        const canvas = document.createElement('canvas');
-        canvas.width = cols * (cellW + sheet.pad) + sheet.pad;
-        canvas.height = rows * (cellH + sheet.label + sheet.pad) + sheet.pad;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#101014';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.textBaseline = 'top';
-        for (let i = 0; i < items.length; i++) {
-          const bmp = await createImageBitmap(await (await fetch(items[i].url)).blob());
-          const x = sheet.pad + (i % cols) * (cellW + sheet.pad);
-          const y = sheet.pad + Math.floor(i / cols) * (cellH + sheet.label + sheet.pad);
-          ctx.drawImage(bmp, x, y, cellW, cellH);
-          ctx.fillStyle = '#f2f2f4';
-          ctx.font = 'bold 14px sans-serif';
-          ctx.fillText(items[i].name, x + 2, y + cellH + 4);
-          ctx.fillStyle = '#a9a9b4';
-          ctx.font = '12px sans-serif';
-          ctx.fillText(items[i].caption, x + 2, y + cellH + 19);
-        }
-        return canvas.toDataURL('image/png');
-      },
-      {
-        items: rendered.map((r) => ({
-          url: fileToDataUrl(r.file),
-          name: r.name,
-          caption: `eye ${r.position.map((n) => n.toFixed(1)).join(', ')}`,
-          width: L.SHOT.width,
-          height: L.SHOT.height,
-        })),
-        sheet: SHEET,
-      },
-    );
-    const sheetBytes = pngDataUrlToBuffer(sheet);
-    writeFileSync(`${outDir}/index.png`, sheetBytes);
-    const sheetDigest = createHash('sha256').update(sheetBytes).digest('hex').slice(0, 12);
-    if (!quiet) console.log(`wrote ${rendered.length} views to ${outDir}/ at ${L.SHOT.width}x${L.SHOT.height}, plus ${outDir}/index.png (sha256 ${sheetDigest})`);
+    // The manifest, which is what a review quotes. Plain text on purpose: it cannot be looked AT, so it
+    // cannot become the thing that gets reviewed instead of the frames.
+    // One digest over all seven, so a review can quote ONE value and re-running the tool strands it.
+    // Comparing seven 12-character digests by eye is the check nobody actually performs.
+    const sweepDigest = createHash('sha256').update(rendered.map((r) => `${r.name} ${r.digest}`).join('\n')).digest('hex').slice(0, 12);
+    const manifest = [
+      `# npm run views — sweep ${sweepDigest}`,
+      `# ${new Date().toISOString()}; renderer: ${info.renderer}; clock pinned at t = ${CLOCK}; ${L.SHOT.width}x${L.SHOT.height}`,
+      '# Review each frame at its own resolution and quote the sweep digest above, or a frame\'s own sha256;',
+      '# re-running this tool replaces the bytes and strands that review rather than letting it inherit new',
+      '# pixels. The sweep digest is over the seven frame digests, so it moves when any frame moves and is',
+      '# the only line here that does not change between two runs of an unchanged tree.',
+      ...rendered.map((r) => `${r.name.padEnd(26)} ${r.digest}  luma ${r.meanLuma.toFixed(1).padStart(5)}  eye ${r.position.map((v) => v.toFixed(2)).join(', ')}  ${resolve(r.file)}`),
+    ].join('\n');
+    writeFileSync(`${outDir}/index.txt`, `${manifest}\n`);
+    if (!quiet) console.log(`\nwrote ${rendered.length} views to ${outDir}/ at ${L.SHOT.width}x${L.SHOT.height}, sweep digest ${sweepDigest}, listed in ${outDir}/index.txt:`);
+    if (!quiet) for (const r of rendered) console.log(`  ${resolve(r.file)}  sha256 ${r.digest}`);
+    if (!quiet) console.log('there is no contact sheet: look at each frame at its own size (see this file\'s header)');
     if (!quiet) console.log('these poses are set directly; npm run record is the one that drives the controls');
   } catch (err) {
     failure = err;
