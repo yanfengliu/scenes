@@ -33,6 +33,28 @@ export function mortarOf(mean) {
   return darker(mean, 0.82);
 }
 
+// Two sRGB hexes blended per channel, t = 0 giving `a` and t = 1 giving `b`.
+export function mixHex(a, b, t) {
+  const ch = (shift) => Math.round(((a >> shift) & 255) * (1 - t) + ((b >> shift) & 255) * t);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+// The sRGB hex that, used as an InstancedMesh per-instance color, makes an instance of a material whose
+// map averages to `base` display as `target` instead. three reads the per-instance color as sRGB and
+// multiplies the material's diffuse by it in linear space, so this is the linear ratio re-encoded to
+// sRGB. It can only darken: a target above the base clamps to no change, so `base` must be the lightest
+// colour the set carries.
+export function scaleHex(target, base) {
+  const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const toSrgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+  const ch = (shift) => {
+    const b = toLinear(((base >> shift) & 255) / 255);
+    const ratio = b > 1e-6 ? Math.min(1, toLinear(((target >> shift) & 255) / 255) / b) : 1;
+    return Math.round(toSrgb(ratio) * 255);
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
 export function buildPaving(b) {
   const rand = mulberry32(2024);
   const slab = slabGeometry(0.08, 0.015);
@@ -158,23 +180,43 @@ export function buildPaving(b) {
   // ---- landing, lower street and the far street on the height field ------------------------------
   const slopeAt = (z) => (L.streetY(z + 0.05) - L.streetY(z - 0.05)) / 0.1;
   const onStreet = (cx, cz) => ({ y: L.streetY(cz) + 0.005, euler: [-Math.atan(slopeAt(cz)), 0, 0] });
+  // The landing's shading runs ACROSS the street, not along it. The photo has lit stone in the middle
+  // (#b1b2ba over (0.35,0.80)-(0.43,0.855)), a bluer band where it meets the machiya row (#5a6d7e over
+  // (0.39,0.73)-(0.425,0.775)) and a warm dark band in the left retaining wall's own shadow (#5e4535 over
+  // (0.29,0.775)-(0.33,0.82), #716359 over (0.30,0.825)-(0.34,0.87)). Neither band is a tint of the lit
+  // stone, so each slab carries its own colour and the set's material holds the lightest of the three.
+  // A hard split into two sets of slabs was tried first and read as a ragged sawtooth tear across the
+  // paving at u 0.33-0.45: at 0.9 m to a slab a boundary is a staircase, and only a ramp is a gradient.
+  // Both ramps are measured off the photo. At v 0.795 it runs from #b1b1b7 at x = -3.07 to #6b7a8b at
+  // x = -1.29, which is the row's own front line, so the blue band is 1.8 m wide; and from #684f40 at
+  // x = -3.93 to that same #b1b1b7, with the landing's left edge at x = -4.25, so the wall's shadow is
+  // 0.9 m wide. A first pass at 2.6 m and 1.1 m carried the blue over cells the photo has as lit stone
+  // and cost 0.14 at (0.354, 0.750) alone.
+  const ROW_RAMP = 1.8; // metres out from the row's front line over which the blue band fades
+  const LEFT_RAMP = 0.9; // metres in from the landing's left edge over which the wall's shadow fades
+  const landingColor = (cx, cz) => {
+    const toRow = Math.min(1, Math.max(0, (L.farRowFrontX(cz) - cx) / ROW_RAMP));
+    const fromLeft = Math.min(1, Math.max(0, (cx - (L.streetCenterX(cz) - 3.5)) / LEFT_RAMP));
+    return scaleHex(mixHex(C.landingLeft, mixHex(C.landingShade, C.landingSlab, toRow), fromLeft), C.landingSlab);
+  };
   const landing = [];
-  gridSlabsAlongStreet(landing, S.stairsEndZ, -22, 7.0, onStreet, 0.9, 0.6);
+  gridSlabsAlongStreet(landing, S.stairsEndZ, -22, 7.0, onStreet, 0.9, 0.6, () => true, () => 1, landingColor);
   // Beyond the bend the street's left third stays in the light (photo u 0.33-0.38 at v 0.68-0.73) while its
   // middle is in shadow, and it runs on behind the corner house.
   const farStreet = [];
   const farStreetLit = [];
   gridSlabsAlongStreet(farStreet, -22, -42, 5.2, onStreet, 0.9, 0.6, (cx, cz) => cx > L.streetCenterX(cz) - 1.2);
   gridSlabsAlongStreet(farStreetLit, -22, -42, 5.2, onStreet, 0.9, 0.6, (cx, cz) => cx <= L.streetCenterX(cz) - 1.2);
-  const landingMean = balancedMean(C.landing, mortarOf(C.landing), 0.05);
+  const landingMean = balancedMean(C.landingSlab, mortarOf(C.landingSlab), 0.05);
+  const farLitMean = balancedMean(C.landing, mortarOf(C.landing), 0.05);
   const farMean = balancedMean(C.farStreet, mortarOf(C.farStreet), 0.05);
   b.add(instanced('landing slabs', slab, surface('stone', landingMean, { seed: 15, instancedUv: true }), landing), 'landing slabs');
   b.add(instanced('far street slabs', slab, surface('stone', farMean, { seed: 16, instancedUv: true }), farStreet), 'far street slabs');
-  b.add(instanced('far street lit slabs', slab, surface('stone', landingMean, { seed: 21, instancedUv: true }), farStreetLit), 'far street lit slabs');
-  ribbon(b, 'landing', S.stairsEndZ, -22, 7.0, mortarOf(C.landing));
+  b.add(instanced('far street lit slabs', slab, surface('stone', farLitMean, { seed: 21, instancedUv: true }), farStreetLit), 'far street lit slabs');
+  ribbon(b, 'landing', S.stairsEndZ, -22, 7.0, mortarOf(C.landingSlab));
   ribbon(b, 'far street', -22, -42, 5.2, mortarOf(C.farStreet));
 
-  function gridSlabsAlongStreet(items, zNear, zFar, width, place, colWidth, rowDepth, keep = () => true) {
+  function gridSlabsAlongStreet(items, zNear, zFar, width, place, colWidth, rowDepth, keep = () => true, shadeOf = null, colorOf = null) {
     // Rows follow the street's centre line, which shifts left through the bend.
     const rows = Math.max(1, Math.round((zNear - zFar) / rowDepth));
     const d = (zNear - zFar) / rows;
@@ -194,10 +236,13 @@ export function buildPaving(b) {
         const cx = (sx0 + sx1) / 2;
         if (!keep(cx, cz)) continue;
         const { y, euler } = place(cx, cz);
-        // The landing darkens toward its far end, where the photo's street runs into the shade of the
-        // bend (cells at v 0.75 read #323840 against #4a4950 at v 0.70).
-        const shade = 1 - 0.32 * Math.min(1, Math.max(0, (-cz - 14.5) / 7));
-        items.push({ position: [cx, y, cz], euler, scale: [sx1 - sx0 - JOINT, 1, d - JOINT], tint: shade + jitter(rand, 0.05), uv: [rand() * 4, rand() * 4] });
+        // The far street darkens toward the bend (cells at v 0.75 read #323840 against #4a4950 at v 0.70).
+        // The landing passes its own `shadeOf` and a `colorOf`: since iteration 2 its shading runs across
+        // the street rather than along it, and it is carried per slab rather than by a scalar tint.
+        const shade = shadeOf ? shadeOf(cx, cz) : 1 - 0.32 * Math.min(1, Math.max(0, (-cz - 14.5) / 7));
+        const item = { position: [cx, y, cz], euler, scale: [sx1 - sx0 - JOINT, 1, d - JOINT], tint: shade + jitter(rand, 0.05), uv: [rand() * 4, rand() * 4] };
+        if (colorOf) item.color = colorOf(cx, cz);
+        items.push(item);
       }
     }
   }
@@ -259,7 +304,11 @@ export function buildPaving(b) {
   }
   b.add(instanced('platform slabs', slab, surface('stone', C.platform, { seed: 19, instancedUv: true }), platformTop), 'platform slabs');
   b.add(instanced('platform coping', slab, surface('stone', C.platform, { seed: 20, instancedUv: true }), coping), 'platform coping');
-  b.box('platform', { x0: S.x0, x1: S.x1, y0: L.PLATFORM_Y - 5, y1: L.PLATFORM_Y - 0.01, z0: 0, z1: 8 }, mortarOf(C.platform));
+  // The mortar body under the top landing. Its near face is held 6 cm behind z = 0, where walls.js lays
+  // the ashlar of `platform front wall`: at z0 = 0 the two were coplanar and this flat slab won the depth
+  // test over every stone, which is the bare grey wall `npm run views` pose 5 shows across the head of
+  // the stairs. Nothing here is in the photo view, which is why no score ever moved for it.
+  b.box('platform', { x0: S.x0, x1: S.x1, y0: L.PLATFORM_Y - 5, y1: L.PLATFORM_Y - 0.01, z0: 0.06, z1: 8 }, mortarOf(C.platform));
 }
 
 // The mortar body under a paved ribbon on the height field, with side skirts.

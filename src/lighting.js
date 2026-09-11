@@ -130,7 +130,17 @@ function skyEnvironment(renderer) {
 // The wind is patched into each material's own vertex shader, not into three's depth material, so a
 // swaying mesh would cast a still shadow. The canopy's cards and strands and the petals are excluded for
 // that reason as well as for their cost.
-const NO_CAST = /^(sky|hill|mountains|near ridge|ground base|far plots|hillside|cherry blossoms|cherry strands|petals|evergreen|shrub|left plant|weeds|moss|sun|fill|far roof|corner house|bend|noren)/;
+// `far row` is here for the same reason as `far roof` and `corner house`: its colours are photo means
+// over the band it fills, so they already contain whatever the real row does to the light around it, and
+// a cast shadow on top of that counts the same darkness twice. The photo's own paving beside it is lit
+// stone (box (0.355,0.715)-(0.37,0.725) reads #899fb2); what the render puts in that box is the warm
+// left plot, not paving, so that box is evidence about the photo and not about the render.
+// The cost is that the row is a solid object that throws no shadow, which is wrong from any angle, and
+// the photo's own darkening of the paving beside it is carried by `landingShade` in src/paving.js
+// instead. Measured both ways on the same tree: casting, 0.0760 / 0.4632; not casting, 0.0758 / 0.4659,
+// and 7 draw calls and 22k triangles cheaper. That cell delta is twice iteration 1's noise floor, so it
+// is real but small, and this is a trade and not a free win.
+const NO_CAST = /^(far row|sky|hill|mountains|near ridge|ground base|far plots|hillside|cherry blossoms|cherry strands|petals|evergreen|shrub|left plant|weeds|moss|sun|fill|far roof|corner house|bend|noren)/;
 const CAST_SIZE = 1.6;
 const CAST_BOX = { x0: -14, x1: 14, y0: -14, y1: 14, z0: 6, z1: -34 };
 

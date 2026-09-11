@@ -157,11 +157,15 @@ function cherry(b, rand) {
   const wood = [taperedTube(trunk, 0.44, 0.3, 10, 9)];
   // Where the photo shows something in front of the canopy, no blossom nearer than it is kept: the
   // trunk bare between the roofed wall and the crown (u 0.615 to 0.665, v 0.53 to 0.66), and the lamp
-  // post standing in front of the lowest strands (u 0.487 to 0.515, v 0.58 to 0.76).
+  // post standing in front of the lowest strands.
+  // The lamp box follows `LAMP`, so re-reading the lamp off the photo in iteration 2 moved it: its box
+  // now covers the lamp's own extent (v 0.695 to 0.83, not the plan's 0.58 to 0.76) and its clip plane
+  // sits at the lamp's new depth of 15.6 m rather than the old 22.1 m. This is the one other consumer of
+  // `LAMP` besides `LANDMARK_MARKS`.
   const lampDepth = L.worldToUV(L.rayHitGround(L.LAMP.u, L.LAMP.v1, L.streetY)).depth;
   const clearBoxes = [
     { u0: 0.615, u1: 0.665, v0: 0.53, v1: 0.66, depth: 18.5 },
-    { u0: 0.487, u1: 0.515, v0: 0.58, v1: 0.76, depth: lampDepth + 0.3 },
+    { u0: L.LAMP.u - 0.014, u1: L.LAMP.u + 0.014, v0: L.LAMP.v0 - 0.01, v1: L.LAMP.v1, depth: lampDepth + 0.3 },
     // The blue sign hangs in front of the canopy's far left edge (photo 0.33, 0.58).
     { u0: 0.305, u1: 0.355, v0: 0.545, v1: 0.615, depth: 16.5 },
   ];
@@ -176,6 +180,52 @@ function cherry(b, rand) {
     (p.x > M.front - 0.4 && p.z > M.z0 - 0.5 && p.z < M.z1 + 0.5 && p.y < topRoofY(p.x) + 0.25) ||
     (p.x > M.eaveEdge - 0.2 && p.x < M.front && p.y > 3.4 && p.y < eaveRoofY(p.x, p.z) + 0.25 && p.z > M.eaveZ0 - 0.3 && p.z < M.z1) ||
     (p.x > 1.6 && p.x < 3.7 && p.y > 0.2 && p.y < 2.9 && p.z > -15.2 && p.z < -5.4);
+  // The air a person on the street stands in, which nothing was holding the canopy out of. Every other
+  // bound on a blossom is the photo's blossom MASK, and a mask is a 2D silhouette: a strand falling
+  // straight down the photo camera's own ray stays inside that silhouette the whole way to the paving, so
+  // the mask cannot tell a blossom four metres over the street from one at head height. It let the canopy
+  // hang to 1.71 m over the landing, and `npm run views` pose 5, an eye 1.70 m over that same paving,
+  // looked into a single 0.375 m card 0.36 m away that filled the left third of the frame with flat pink.
+  // The clear boxes above are photo rectangles for things that stand IN FRONT of the canopy; they are not
+  // this rule. The one that follows `LAMP` happened to carve a tunnel through this same volume until
+  // iteration 2 re-read the lamp off the photo, which is why the blob appeared then, and putting that box
+  // back would be luck rather than a fix.
+  // The volume is HEADROOM metres of air over the street's own surface, over a band of the street's own
+  // width plus 0.35 m each side, carried along the bend by `streetCenterX`.
+  // That band is NOT the same set as the one `src/main.js` clamps the camera into, and the two only meet
+  // where it matters. `CORRIDOR` there is a FIXED x range (-3.15 to 1.65) that does not bend, its x clamp
+  // fires only for z in (-15, 4) or inside `ROOF_ZONE` (z > RIGHT_MACHIYA.z0 - 0.5 = -21.5), and past
+  // z = -21.5 there is no lateral clamp at all. HALF = 2.4 with `streetCenterX` = -0.75 reproduces
+  // CORRIDOR's own range exactly while the street runs straight (z >= -20) and drifts left with the bend
+  // after that, so past -21.5 a camera could stand outside this band. Measured, that costs nothing here:
+  // the canopy's whole z extent is -20.41 to -9.05 (out/scratch/census-after.json), so there is not one
+  // blossom past -21.5 for a camera to walk into. If the cherry ever reaches into the bend, this band and
+  // that clamp have to be reconciled rather than assumed equal.
+  // The 0.35 is CORRIDOR's own margin in main.js, copied so the two agree; it is not sized for the wind.
+  // It does happen to cover it: the wind offset has no y term at all (animation.js returns
+  // `vec3(s, 0.0, c * 0.4)`), so a card cleared here cannot sway back DOWN into the volume, and its x and
+  // z terms reach only 0.085 m and 0.034 m, well inside 0.35.
+  // Bounds, so this is not read as more than it is.
+  //  - It is a floor over the STREET: a card can still hang low over the right walkway, over the left
+  //    plots, or past z = -36.
+  //  - It clears card CENTRES. A card is a quad up to about 0.44 m across, so visible pink reaches
+  //    roughly HEADROOM minus half of that, about 2.2 m rather than the 2.41 m the centres measure.
+  //  - It promises nothing about a camera flown UP. `clampCamera` has a floor and no ceiling, and both of
+  //    its x branches are themselves gated on height, so a camera can sit at any height inside the canopy.
+  //    Worked from CAMERA.fovDeg = 60 and controls.maxPolarAngle = 0.58 PI (14.4 degrees of look-up, so
+  //    the frame's top edge is 44.4 degrees above the eye), here is the nearest a 0.375 m card can be and
+  //    still be in frame, and what it then covers of the frame's height: an eye 0.45 m over the street
+  //    (the floor clamp's own minimum) 2.79 m and 12%; an eye at 1.70 m, 1.00 m and 32%; an eye at 2.20 m,
+  //    0.29 m and 114%. The rule's guarantee is the middle row -- a person STANDING on the street meets no
+  //    card nearer than about a metre, against the 0.26 m and 125% of frame the reported blob covered.
+  //    Fly to 2.2 m and the fringe is in your face again, and no floor can prevent that, because the
+  //    fringe has to be somewhere.
+  // HEADROOM is bounded from above by the photo and not chosen for comfort: cell (0.438, 0.659) is the
+  // photo's own lowest lavender strands (#bcb5dd) and the blossom that fills it sits 2.47 to 2.84 m over
+  // the street, so a 3.0 m floor emptied that cell and cost 0.093 of cell distance in it alone.
+  const HEADROOM = 2.4;
+  const HALF = (S.x1 - S.x0) / 2 + 0.35;
+  const overStreet = (p) => p.z < 4 && p.z > -36 && p.y < L.streetY(p.z) + HEADROOM && Math.abs(p.x - L.streetCenterX(p.z)) < HALF;
   const branches = [];
   const ends = [
     [0.8, 0.28, 12.5],
@@ -228,7 +278,25 @@ function cherry(b, rand) {
     if (uv.depth < 1 || solid(p)) return false;
     if (!canopyMaskAt(uv.u, uv.v, 0) && !(canopyMaskAt(uv.u, uv.v, 1) && rand() < 0.35)) return false;
     if (cleared(uv)) return false;
-    cards.push(cardItem(rand, p, size, cardColor(rand, canopyColorAt(uv.u, uv.v), bloss.mean, { hue: 0.012, sat: 0.08, light: 0.05, scale: 1.05, pinkOnly: true }), rand() < 0.5 ? EYE : null));
+    const card = cardItem(rand, p, size, cardColor(rand, canopyColorAt(uv.u, uv.v), bloss.mean, { hue: 0.012, sat: 0.08, light: 0.05, scale: 1.05, pinkOnly: true }), rand() < 0.5 ? EYE : null);
+    // The headroom is applied HERE, after the card has been drawn from the PRNG and not before, and it is
+    // deliberately not one of the tests above. `cardColor` takes three numbers from this module's stream,
+    // the `rand() < 0.5` argument one and `cardItem` three more on either branch, so rejecting a card
+    // earlier renumbers every blossom after it. Measured at the SAME headroom of 2.4 m, so the arms differ
+    // by how the rule is written and not by how much it removes: as an early return, 0.0753 / 0.4696 and
+    // 176 of 528 cells moved, 70 of the 85 that moved by more than 0.002 nowhere near the street and the
+    // worst of them 0.0928 at (0.813, 0.205), high in the canopy; written this way, 0.0749 / 0.4733 and
+    // 17 cells moved, every one of them in the band the rule touches. That is 0.0037 of SSIM, and it is an
+    // upper bound on the reseed alone because the early-return arm also cut the strand loop short.
+    // What the delta then contains is the blossoms removed AND the stems that end with them: returning
+    // false leaves `lastKept` where it was, so the strand's tube stops at its last blossom above the
+    // headroom and a strand that keeps almost nothing is dropped whole. That is why the strand loop below
+    // needs no test of its own, and why triangles fall by more than the cards alone.
+    // The control: with HEADROOM low enough never to fire, this file renders `out/render.png` byte for
+    // byte identical to the base tree's (sha256 058d48caff40eade...), so the restructure adds nothing of
+    // its own. Run that control again before believing any small delta from a change in here.
+    if (overStreet(p)) return false;
+    cards.push(card);
     return true;
   };
 

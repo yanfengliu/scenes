@@ -133,11 +133,19 @@ export function buildWalls(b) {
   b.add(leftPot, 'left pot');
 
   // ---- platform: the front wall at the head of the stairs and the sides -----------------------------
+  // Unchanged, and it has to stay HERE and stay exactly this: `stackedStones` draws from this module's
+  // shared `rand`, so moving this call past the two walls below it, or altering how many stones it lays,
+  // renumbers their stones, and both of those are in the photo view. Measured: with this call in place
+  // 0.0748 / 0.4753, with it moved to the end of the function 0.0752 / 0.4699 — 0.0054 of SSIM, five
+  // times iteration 1's noise floor, from nothing but a different draw of the same stones.
+  // What this wall was missing is added after the pot below, from a PRNG of its own so it cannot do the
+  // same thing to anything else: a skirt under it and a coping over it.
+  const platTop = L.PLATFORM_Y - 0.02;
   const platFront = stackedStones(rand, {
     from: [S.x1, 0],
     to: [S.x0, 0],
     outward: [0, -1],
-    top: () => L.PLATFORM_Y - 0.02,
+    top: () => platTop,
     bottom: () => -0.4,
     course: 0.36,
     depth: 0.5,
@@ -220,6 +228,22 @@ export function buildWalls(b) {
   const pot = new THREE.Mesh(jar, surface('glaze', C.pot, { seed: 40 }));
   pot.position.set(potHit.x, potHit.y - 0.5, potHit.z);
   b.add(pot, 'pot');
+
+  // ---- platform: the skirt and coping the retaining wall at the head of the stairs was missing --------
+  // The wall itself is above, in its original place. What `npm run views` pose 5 shows from the foot of
+  // the stairs is this wall filling the head of the street, and until iteration 2 it was one flat grey
+  // slab: the mortar body in paving.js had its near face at z = 0 as well, exactly coplanar with these
+  // stones, and won the depth test over every one of them. That body is 6 cm back now. These two courses
+  // finish what it uncovered: a skirt carrying the stone down past the first tread, where the mortar used
+  // to show, and a coping standing a little proud of the paving, the way the left stone wall's top course
+  // does. Nothing here is in the photo view, so no score moves for any of it.
+  // Their own PRNG, so that adding them cannot renumber a stone anywhere else in this module.
+  const platRand = mulberry32(391);
+  const platLine = { from: [S.x1 + 0.1, 0], to: [S.x0 - 0.1, 0], outward: [0, -1], style: 'ashlar' };
+  const platSkirt = stackedStones(platRand, { ...platLine, top: () => -0.4, bottom: () => -1.4, course: 0.34, depth: 0.5, tintAmount: 0.07 });
+  b.add(instanced('platform front skirt', ashlar, surface('stone', ashlarMean(C.stoneBlocks), { seed: 49, instancedUv: true }), platSkirt), 'platform front skirt');
+  const platCap = stackedStones(platRand, { ...platLine, top: () => platTop + 0.2, bottom: () => platTop - 0.02, course: 0.22, depth: 0.6, tintAmount: 0.05 });
+  b.add(instanced('platform front coping', ashlar, surface('stone', ashlarMean(C.stoneBlocksTop), { seed: 50, instancedUv: true }), platCap), 'platform front coping');
 }
 
 // A small gabled tile cap along a wall running in z: one low-profile pan tile on each slope per 0.29 m

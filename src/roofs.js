@@ -221,7 +221,7 @@ function fenceRoof(b, rand, geos) {
 // `halfPlanes` is a list of signed functions of a plane position (a Vector3, before the lift off the
 // plane): tiles and caps are kept only where every one is >= 0, and the board polygon is clipped to the
 // same half-planes, which is how pieces meet along a hip or valley. `ridgeKeep(p)` limits the ridge tiles.
-function tileRoof(b, rand, geos, name, corners, opts) {
+export function tileRoof(b, rand, geos, name, corners, opts) {
   let [oN, iN, iF, oF] = corners.map((c) => (c.isVector3 ? c : new THREE.Vector3(c.x, c.y, c.z)));
   // Orient the roof so its normal points up: if the eave-to-ridge edge would give a downward normal,
   // walk the eave the other way (keeps the basis right-handed).

@@ -11,8 +11,8 @@ The margin covers rasterization differences between machines (anti-aliasing, Swi
 
 ```json
 {
-  "cellDistanceMax": 0.0783,
-  "ssimMin": 0.4509
+  "cellDistanceMax": 0.0763,
+  "ssimMin": 0.4703
 }
 ```
 
@@ -55,3 +55,5 @@ The animation adds a third: the shot is one frame, and the scene moves. `npm run
 | 5 (done, user's flicker fixed) | 2026-09-06 | 0.0811 | 0.4411 | 316 | 3.2 ms | eight requested multisamples and a 1.2x supersample resolved down, for the shimmer the user reported while orbiting; the scores moved because the same resolve runs in the scored shot, which is what the page does too |
 | loop iteration 1 (before critic) | 2026-09-10 | 0.0769 | 0.4548 | 317 | | the machiya's plinth and house 1's eave split near/far, house 1's top roof lowered 17 cm off the photo's sky, the mezzanine and dormer darkened, the annex roof's tiles warm instead of blue-grey, the far houses' lower walls resampled, a plaster band added along the near house front |
 | loop iteration 1 (done, after critic) | 2026-09-10 | 0.0768 | 0.4559 | 317 | 6.8 ms | the near eave's rafters lightened (the critic found the split's boundary is a diagonal in photo space, so the cell it was meant to fix was rafters, not fascia), the plaster band moved off the annex window's top rail and out of the awning check's 1.4 cm margin; thresholds tightened from 0.0825/0.436. Draw calls are the shot's 317; `npm run perf` reports 325 at 1920x1080 and 6.8 ms median, measured with about 40 other node and chromium processes on the machine, so that time is an upper bound and not comparable with the earlier rows |
+| loop iteration 2 (before critic) | 2026-09-10 | 0.0754 | 0.4672 | 328 | | the machiya row that lines the right side of the far street, the landing repainted across the street, the lamp post re-read off the photo, and the platform's retaining wall unburied at the head of the stairs |
+| loop iteration 2 (done, after critic) | 2026-09-10 | 0.0748 | 0.4753 | 326 | 6.1 ms | the critic found the landing's two slab sets reading as a sawtooth tear and an unmeasured PRNG reseed of two walls in the photo view: the landing became one set with a per-slab ramp across the street, and the platform wall went back to its original place with its new courses on a PRNG of their own. Thresholds tightened from 0.0783/0.4509. Draw calls are the shot's 326; `npm run perf` reports 336 at 1920x1080 |

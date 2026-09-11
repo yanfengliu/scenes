@@ -68,7 +68,14 @@ export const LEFT_POT = { u: 0.22, v: 0.85 };
 export const STEPS = { bottom: { u: 0.22, v: 1.0 }, top: { u: 0.55, v: 0.85 } };
 export const FAR_STREET = { u0: 0.35, u1: 0.55, v0: 0.7, v1: 0.78 };
 export const PERSON = { u: 0.52, v: 0.76, height: 0.06 };
-export const LAMP = { u: 0.5, v0: 0.6, v1: 0.75 };
+// The lamp post, re-read off the photo in iteration 2: its black shaft runs from the top of the lantern
+// head at v 0.695 down to its plinth at v 0.83, at u 0.498 (crop u 0.44-0.60, v 0.60-0.92 at 9x). The
+// plan's v 0.60-0.75 put its base 0.1 of the frame too high, which drops it onto the street at z = -20
+// instead of z = -14: 6 m too far away, and 2 m inside the machiya row the photo shows there.
+// Two other things read LAMP and both move with it: `LANDMARK_MARKS` below draws its line on the
+// overlay, and `src/vegetation.js` clears blossom in front of the lamp, which takes that box's own
+// extent and its clip depth from here (22.1 m before, 15.6 m now).
+export const LAMP = { u: 0.498, v0: 0.695, v1: 0.83 };
 
 // Boxes and points drawn on out/overlay.png so each landmark can be checked against its photo position.
 export const LANDMARK_MARKS = [
@@ -314,6 +321,86 @@ export function canopyOuterY(z) {
 // u 0.13-0.20, v 0.50-0.57): its extent along the street and how far up the slope it reaches.
 export const LEFT_AWNING = { zNear: -6.0, zFar: -7.5, depth: 0.7, lift: 0.1 };
 
+// The machiya row that lines the right side of the far street, from the foot of the stairs into the
+// bend. `frontLine` is the row's street-facing base as [z, x] pairs: the boundary between the photo's
+// paving and the row's dark base, found by sampling across it at six rows with
+// `npm run inspect -- sample` and dropping each crossing onto the street's height field with
+// `rayHitGround` (the boxes are in the 2026-09-10 iteration 2 devlog). The landing's slabs run about
+// 4.5 m past this line at z = -21 and the row stands on them.
+// Everything behind the front line is a block-out estimate. The photo sees the row nearly end-on, so it
+// pins the front line, the eave line and the colours, and nothing else.
+// The far end of `frontLine` is the photo's measurement and the render's street disagreeing, and it is
+// `farRowFrontX` below, not this table, that resolves them: the table stays the photo's reading and the
+// function floors it, so the row cannot walk into the road. Read that comment before changing either.
+export const FAR_ROW = {
+  frontLine: [
+    [-15.0, -1.26],
+    [-16.83, -1.6],
+    [-20.11, -2.09],
+    [-23.15, -3.19],
+    [-27.24, -4.68],
+    [-30.84, -5.83],
+    [-34.0, -6.9],
+  ],
+  // The near end stops 1.4 m short of the person on the landing (whose feet are at z = -15.17), so the row
+  // stands behind both the person and the lamp post that the photo shows in front of it. Its half-hip
+  // reaches 1.1 m further forward still, to z = -15.5.
+  zNear: -16.6,
+  zFar: -30.5,
+  hipRun: 1.1, // the near end is half-hipped, not a flat gable
+  hipDrop: 1.0,
+  hipStart: 1.5, // only the roof behind this drops: in front of it the photo has dark shopfront, not tile
+  // One bay's frontage. The eave is level along a bay and steps down at its far end, so the row's eave
+  // line follows the street in steps rather than one ramp. Short bays on purpose: the street drops 0.35 m
+  // for every metre along it, so a 3 m bay leaves its far end 1 m higher over the street than its near
+  // end, which lifted the row into the photo's canopy cells at v 0.59.
+  unit: 1.6,
+  litEnd: -21.0, // beyond this the tiles take the shaded colour, as the photo's own band does
+  base: 0.55, // the darker band where the fronts meet the paving (photo v 0.775-0.80 at u 0.43-0.505)
+  eave: 2.5, // the eave line above the street at the bay's near end; its outer lip hangs 0.1 m under it
+  eaveOut: 0.4, // how far that lip oversails the wall line, out over the street
+  // The row is modelled as the single street-facing slope the photo shows, not as a whole machiya with a
+  // ridge: the photo's canopy hangs in front of everything above v 0.63 here, and a first pass with a
+  // ridge 3.4 m over the eave put dark roof into cells (0.604, 0.523) and (0.604, 0.568) where the photo
+  // has blossom, costing 0.26 and 0.23 of cell distance in those two alone.
+  roofRise: 0.75, // how much the slope rises from the lip to the back of the row
+  depth: 2.6, // how far the row reaches back from the street
+  litRun: 1.5, // the slope's lit band, from the lip back; beyond it the tiles take the shaded colour
+  sink: 0.5, // how far its base runs below the street, so no gap opens on the slope
+  // How near the street's own centre line the row's front may come. See `farRowFrontX` below.
+  keepOff: 1.5,
+};
+// The row's street-facing base at depth z: the photo's measured boundary, with a floor under it.
+// The floor is there because `frontLine` is the PHOTO's street edge dropped onto the RENDER's street and
+// the two bend at different rates -- at z = -27 the photo's far street is off at about x = -5.0 while
+// `streetCenterX` is at -2.29 -- so the measured line walks off the left side of the render's paving.
+// Measured against the paved band's left edge (paving.js lays 7.0 m of it down to z = -22 and 5.2 m past
+// that), the strip of street left visible beside the row ran 2.69 m at z = -16.6, 2.02 at -21.2, 0.91 at
+// -22.8, 0.25 at -27.4 and -0.06 at -30.5: the eave lip hung past the paving from z = -26 and the base
+// itself from z = -29.9. From the photo view the row occludes itself there and none of it costs a point;
+// from an orbit it is a building standing in the road, which is what `npm run views` exists to catch.
+// The floor is written against `streetCenterX` and NOT against the paving's own edge, because the centre
+// line is continuous while the paved band steps 0.9 m at z = -22, and a step there would put a kink in
+// the row's front. It starts biting at z = -21.409.
+// It is NOT invisible to the photo view, and the measured cost is small rather than zero. Projected
+// through `worldToUV`, the eave lip moves right by 0.005 of frame at z = -22.5, 0.011 at -24, 0.019 at
+// -26 and 0.028 at -30.5 -- 34 px of a 1200 px frame, all at v about 0.65. It also bites inside the
+// landing's own z range, and `landingColor` in paving.js reads this function, so one row of scored slabs
+// changes colour with it. On its own the floor scores 0.0748 / 0.4746 against the base's 0.0748 / 0.4753
+// and moves 12 of 528 cells, worst -0.0170 at (0.396, 0.705).
+// Bound, and read this one before quoting the fix. What the floor removes is the row CROSSING the paving:
+// before it, the eave lip hung past the band's left edge from z = -26 and the base itself from -29.9, so
+// there was no road left on the photo's side at all. It does NOT make the row front onto the street. The
+// paved band is 5.2 m wide and the row is 2.6 m deep, so the row stands as an island with paving on both
+// sides, and it did before too. Like for like at z = -25.9, wall line first and clear of the eave in
+// brackets: before, 0.46 m (0.06) of paving in front of it and 2.14 m behind; now 1.10 m (0.70) in front
+// and 1.50 m behind. The island is there because the render's band is wider than the photo's street and
+// the row was put on it to hide the excess. Only re-cutting STREET.bendRate to the photo's fixes that,
+// and when it is re-cut this floor stops biting on its own and the measurement takes over again.
+export function farRowFrontX(z) {
+  return Math.max(interpolateZ(FAR_ROW.frontLine, z), streetCenterX(z) - FAR_ROW.keepOff);
+}
+
 // Depths (metres along the optical axis) chosen for frontal elements.
 export const DEPTHS = {
   cherry: 18,
@@ -416,13 +503,28 @@ export const COLORS = {
   annexFarUpper: 0xa08b72,
   canopy: 0x979899,
   steps: 0x96959a,
-  landing: 0x76818d, // the landing slabs, the lit far-street slabs and the right terrace's paved bands.
-  // The photo's own landing box (0.30,0.80)-(0.45,0.86) reads #a19d9f, 45 levels lighter, but lifting this
-  // toward it makes both scores worse. At z = -21 the landing's right edge is at x = 2.5 and the photo's
-  // street edge there is at x = -2.0, so about 4.5 m of paving stands where the photo has the machiya row
-  // that lines the far street, and the same slabs answer for lit stone at (0.354, 0.75) and for buildings
-  // at (0.438, 0.75). See the 2026-09-10 devlog; the row is iteration 2's content, and this colour is
-  // right only until then.
+  // Since iteration 2 this is no longer the landing's own slabs: those carry `landingSlab`, `landingShade`
+  // and `landingLeft` below. What is left on it is the lit far-street slabs, the right terrace's paved
+  // bands, and the hemisphere light's ground tint in src/lighting.js, so changing it still moves the rig
+  // under every material in the scene. It fits the far street: the photo reads #788592 over
+  // (0.34,0.70)-(0.40,0.74), a box the render now fills mostly with the machiya row, so that is a check
+  // of the photo and not of the render.
+  landing: 0x76818d,
+  // The far machiya row. Every one is `npm run inspect -- sample` over the band that part of the row
+  // fills in the photo; the boxes are in the 2026-09-10 iteration 2 devlog.
+  farRowTile: 0xafaedb, // the row's roof where the sun still reaches it, box (0.425,0.635)-(0.500,0.680)
+  farRowTileFar: 0x7d8ca3, // the same roof further back and further into the bend, box (0.500,0.675)-(0.560,0.712)
+  farRowFront: 0x40393c, // the dark timber shopfronts, box (0.430,0.728)-(0.500,0.775)
+  farRowFrontFar: 0x464147, // their continuation into the bend, box (0.393,0.700)-(0.428,0.738)
+  farRowBase: 0x48535e, // the base band where the fronts meet the paving, box (0.430,0.775)-(0.505,0.800)
+  // The landing's own three colours, new in iteration 2. Every slab is a mix of them by where it lies
+  // across the street (src/paving.js), and `landingSlab` is the lightest, because a per-instance colour
+  // in three can only darken. Iteration 1 measured a lift like this and lost 0.004 of SSIM, because the
+  // same slabs then had to answer for the machiya row's dark timber at (0.438, 0.75) as well; the row
+  // answers for that now.
+  landingSlab: 0xaeaeb3, // the lit slabs: (0.335,0.755)-(0.38,0.795) #a5a9b5, (0.35,0.80)-(0.43,0.855) #b1b2ba, (0.33,0.86)-(0.47,0.90) #b3aaa5
+  landingShade: 0x687888, // the band against the row: (0.39,0.73)-(0.425,0.775) #5a6d7e, (0.415,0.78)-(0.47,0.825) #758292
+  landingLeft: 0x6f5c4f, // the warm dark in the left retaining wall's own shadow: (0.29,0.775)-(0.33,0.82) #5e4535, (0.30,0.825)-(0.34,0.87) #716359, (0.275,0.87)-(0.32,0.91) #756a60, (0.30,0.735)-(0.335,0.775) #7a5e4e
   farStreet: 0x4a4950,
   sideSteps: 0x4a4e4f,
   terrace: 0x3e4448,
@@ -455,13 +557,24 @@ export const PLACEMENT_CHECKS = [
   { name: 'cherry trunk', u: 0.635, v: 0.585, mesh: 'cherry trunk' },
   { name: 'cherry blossoms', u: 0.58, v: 0.35, mesh: 'cherry blossoms' },
   { name: 'cherry lower canopy', u: 0.44, v: 0.6, mesh: 'cherry blossoms' },
-  { name: 'far street', u: 0.47, v: 0.72, mesh: 'far street' },
+  // The far street's own paving. It was checked at (0.47, 0.72) from phase 3, when the street was modelled
+  // 7 m wide; the photo's paving there ends at u 0.375 and everything right of it is the machiya row, so
+  // that point asked for paving where the photo has buildings. Sampled: (0.355-0.37, 0.715-0.725) reads
+  // #899fb2, lit stone, and (0.38-0.395, 0.715-0.725) reads #364351, already the row's shadow side.
+  // Bound: this point is on a narrow strip and it is a check of the ROW as much as of the street, which is
+  // on purpose — the row's front line, the bend rate and the street width are the three things that would
+  // silently close the far street off again. Re-measured after `farRowFrontX` gained its floor: the ray
+  // lands at x = -3.673, z = -23.155, the paved band's left edge there is x = -4.044 (u 0.3734) and the
+  // row's eave lip is now at x = -3.344 (u 0.3953), so the strip is 0.700 m wide and the point sits
+  // 12.3 px of a 1200 px frame from the row and 14 px from the band's edge. Before the floor the lip was
+  // at x = -3.592 (u 0.3875) and that margin was 3.0 px, not the 9 px this comment used to claim.
+  { name: 'far street', u: 0.385, v: 0.735, mesh: 'far street' },
   { name: 'evergreen', u: 0.3, v: 0.29, mesh: 'evergreen' },
   { name: 'far roof', u: 0.2, v: 0.33, mesh: 'far roof' },
   { name: 'hill', u: 0.72, v: 0.13, mesh: 'hill' },
   { name: 'mountains', u: 0.25, v: 0.27, mesh: 'mountains' },
   { name: 'person', u: 0.52, v: 0.76, mesh: 'person' },
-  { name: 'lamp post', u: 0.5, v: 0.7, mesh: 'lamp post' },
+  { name: 'lamp post', u: 0.498, v: 0.79, mesh: 'lamp post' },
   { name: 'pot', u: 0.85, v: 0.75, mesh: 'pot' },
   { name: 'shrub', u: 0.755, v: 0.575, mesh: 'shrub' },
   { name: 'left plant', u: 0.21, v: 0.84, mesh: 'left plant' },
@@ -471,6 +584,13 @@ export const PLACEMENT_CHECKS = [
   { name: 'awning', u: 0.14, v: 0.545, mesh: 'awning' },
   { name: 'annex door 1', u: 0.11, v: 0.77, mesh: 'annex door 1' },
   { name: 'stairs', u: 0.4, v: 0.93, mesh: 'stair treads' },
+  // The far machiya row, at two of the photo positions the compare gate ranked worst before it existed.
+  // Bound of both: `placement.js` matches on a name PREFIX, and the row's tiles are two shared instanced
+  // meshes rather than one per roof, so `far row tiles far` is satisfied by any shaded tile anywhere on
+  // the row and `far row front` by either half's body. They catch the row disappearing, being occluded,
+  // or moving off these positions; they cannot tell one part of it from another.
+  { name: 'far row front', u: 0.465, v: 0.755, mesh: 'far row front' },
+  { name: 'far row hip', u: 0.52, v: 0.697, mesh: 'far row tiles far' },
 ];
 
 // ---- Grounding gate ----------------------------------------------------------------------------
@@ -492,4 +612,25 @@ export const GROUNDING_CHECKS = [
   { name: 'left pot', mesh: 'left low wall', tolerance: 0.4 },
   { name: 'far roof c house lower', mesh: 'far plots left', tolerance: 0.8, sink: 3.5 },
   { name: 'evergreen trunks', mesh: 'hillside', tolerance: 0.8, sink: 2.5 },
+  // The far machiya row's two base bands. Read the bound before trusting these two.
+  // Each band is one mesh spanning a slope, so `box.min.y` is its FAR end and only that end can be asked
+  // about; `x`/`z` put the ray there, at a fixed point rather than under the mesh. Both the band's base
+  // and the paving under it are built from `streetY`, so the gap they measure is `FAR_ROW.sink` plus a
+  // fraction of a step of slope, by construction — about 0.51 and 0.54 m against a window of
+  // [-0.4, 0.9]. What they catch is the row losing its ground entirely, or the paving under it moving;
+  // what they do NOT catch is the row shifting sideways (the ray's x is fixed and the landing is 7.5 m
+  // wide), or every ring but the lowest being lifted or tilted (`min.y` is a whole-mesh minimum), or a
+  // wrong `sink` anywhere in [0, 0.9]. They are weak checks and they are named after what they are.
+  // The ground named is the paved ribbon's own name, which by prefix also matches the slabs above it.
+  // `far row base far`'s ray moved from x = -4.39 to -3.24 when `farRowFrontX` gained its floor. At
+  // z = -30.4 the row's footprint went from -5.689..-3.089 to -4.538..-1.938, and -4.39 sat 0.148 m inside
+  // its near edge — close enough that a further nudge to `keepOff` would have walked the ray out from
+  // under the mesh it is asking about, with nothing going red. -3.24 is the footprint's middle, 1.3 m from
+  // either edge, which is the margin the check had before. The paved band there runs -5.638 to -0.438, so
+  // the ray still lands on `far street`.
+  // Bound both of these share with the placement checks: the ground is matched by name PREFIX, so
+  // `far street` is satisfied by the ribbon, by `far street slabs` and by `far street lit slabs` alike,
+  // and `landing` by the ribbon or its slabs. They cannot tell which of those the ray hit.
+  { name: 'far row base', mesh: 'landing', tolerance: 0.4, sink: 0.9, x: -0.95, z: -21.2 },
+  { name: 'far row base far', mesh: 'far street', tolerance: 0.4, sink: 0.9, x: -3.24, z: -30.4 },
 ];
