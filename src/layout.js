@@ -310,6 +310,11 @@ export const RIGHT_MACHIYA = {
 export const LEFT_HOUSE_1 = { front: -3.4, back: -10, groundZ0: -6.0, upperZ0: -7.5, roofZ0: -12.0, eaveZ0: -9.6, eaveSplitZ: -7.6, z1: 3.0, eaveY: 4.2, eaveTop: 4.9, upperTop: 6.08, roofUnder: 6.08, roofEave: 6.43 };
 // Roofs along the left house fronts step down with the terraces. Each is a slab given by its outer
 // edge (near and far ends along z) and the rise of its inner edge, sloping up away from the street.
+// Where the annex wall's light stretch starts. The near stretch of the same wall is the dark one: the rays
+// through (0.104, 0.705) and (0.104, 0.659) meet the wall plane at z = -6.28 and -6.36, where the photo is
+// the near door's rust red (#773019, #884a2e), while the rays that wanted the light colour meet it at
+// z = -8.07 and -9.41. Lighting the whole stretch cost 0.087 of cell distance at (0.104, 0.705) alone.
+export const LEFT_ANNEX_LIT_Z = -7.3;
 export const LEFT_ANNEX_ROOF = { xOuter: -4.0, xInner: -7.5, zNear: -6.0, yNear: 3.4, zFar: -13.4, yFar: 1.7, rise: 2.2 };
 export const LEFT_CANOPY = { xOuter: -2.9, xInner: -6.5, zNear: -5.5, yNear: 3.3, zFar: -13.7, yFar: -0.6, rise: 2.2 };
 // Height of the canopy's outer edge at z, its line continued past both ends.
@@ -451,16 +456,31 @@ export const COLORS = {
   eaveDark: 0x3a3330,
   evergreen: 0x3d4b3e,
   woodDark: 0x352d24,
-  woodBase: 0x1c1814,
+  // The machiya's dark base band, near and far. Eighteen cells carry it: the eleven near ones average
+  // #322c26 in the photo against #211a15 in the render, the seven far ones #3d3430 against #2d2622, and
+  // fifteen of the eighteen ask for lighter. Box (0.95,0.72)-(1.00,0.79) #4f4e51, (0.66,0.55)-(0.95,0.63)
+  // #3a352e. The three that ask for darker sit at u 0.979, where the photo runs near black (#080908).
+  woodBase: 0x2b2721,
   woodMid: 0x706763,
-  woodUpperRight: 0x5c5046,
+  // The machiya's upper boarded wall. The old 0x5c5046 came from box (0.90,0.17)-(1.00,0.24), the band's
+  // LOWEST and lightest strip; over the whole band the wall fills, (0.84,0.095)-(1.00,0.235) reads #47403a
+  // and the eight cells it is in front of average #362f29 in the photo against #504136 in the render.
+  // Iteration 1's three causes: this is the sample box across a lit and a dark region, again.
+  woodUpperRight: 0x3e3a35,
   rightGround: 0x5a5250,
   topRoofRight: 0xb9b6b3,
   topEaveUnder: 0x161616,
   tileLeftLight: 0x8f9093,
   stoneBlocks: 0x8a7b6f,
-  stoneBlocksTop: 0xb19d8b,
-  lowWall: 0x8f8c84,
+  stoneBlocksTop: 0xd8cabb, // the left stone wall's top course, box (0.00,0.50)-(0.05,0.55) #ccbdb0; cell (0.021,0.523) is #d1c2b6 against #a38f80
+  // The low plaster wall and its tiled cap. Over the band the wall fills, (0.085,0.815)-(0.34,0.905) reads
+  // #635946 in the photo; the nine cells it is in front of average #776b5e against #8d867f in the render.
+  // Only its far end (0.354, 0.841) wants lighter; every cell from u 0.10 to 0.32 wants darker and warmer.
+  lowWall: 0x7e7568,
+  // The low wall's near stretch, z > -6.5. Its four cells read #745644, #574d34, #685e51 and #5e5d51 in
+  // the photo: the wall runs into the shopfronts' own shade there, and the far stretch (z -6.5 to -13.85,
+  // which is where its cap's light band shows) is 40 levels lighter. The cap keeps `lowWall`.
+  lowWallNear: 0x645a48,
   gutter: 0x7d7772,
   woodWarm: 0x7b6b5c,
   woodLight: 0x9a7a5c,
@@ -469,8 +489,18 @@ export const COLORS = {
   tileAnnex: 0x947d63, // the annex lean-to's tiles are warm brown in the photo, not the blue-grey of house 1's roofs: cells (0.10,0.432) #8f6946, (0.15,0.477) #937d6a, (0.19,0.477) #a1846b over the band the roof fills (u 0.06-0.23, v 0.42-0.50)
   tileRight: 0x7e97ba, // its band reads #8499b5 in the photo against #72798b in the render, but lifting it to 0x87a3c8 or 0x8fb0dc moved both scores by less than 0.0001: the roof spans cells that want +30% and cells that want -13%, so this is a shading gradient across the slope, not a wrong sample
   eaveUnder: 0x71747b,
+  // The ground-floor eave's fascia and the shallow soffit behind it. The photo's band under the tile
+  // edge is a thin dark line, not the grey slab `eaveUnder` painted: sampled straight under the tile
+  // edge it reads #505153 at (0.762,0.412)-(0.78,0.428), #474541 at (0.842,0.432)-(0.86,0.448) and
+  // #4b4846 at (0.965,0.462)-(0.995,0.478).
+  rightEaveFascia: 0x4b4846,
   noren: 0xbfc3ca,
-  balcony: 0x6b5a52,
+  // The balcony rail. In the photo it is DARK timber standing in front of a lit band, box
+  // (0.87,0.205)-(1.00,0.255) #4a413d; the render had it the other way round, a light rail over a dark
+  // wall, because `rightUpperBand` did not exist and the rail's cells were being asked to carry the band's
+  // own light. It was measured at 0x887b6e (worth 0.142 against 0x6b5a52 while the band was missing) and
+  // goes back dark now that the band is there.
+  balcony: 0x5a514c,
   house1Upper: 0x1f1e1e, // mezzanine boards and the dormer, cells (0.02,0.023) #23252b, (0.02,0.114) #0f0d0d, (0.06,0.114) #25201c; the old 0x393737 was sampled over the sudare's lit band below them, and the rig lifts a dark albedo another 30%
   house1Hip: 0x5b4e45,
   eaveEdge: 0x6e5f52,
@@ -486,20 +516,72 @@ export const COLORS = {
   eaveFar: 0x604a3a, // the far half, where the photo runs into shadow: cells (0.10,0.341) #6c4e3a, (0.15,0.341) #38241c, (0.15,0.386) #583d2d
   house3Lower: 0x6f5a49,
   rightGroundFar: 0x63605f,
+  // The far koshi lattice, split at y = 2.1 m. Its six cells are two populations, not one: at y 2.23 to
+  // 2.63 the photo reads #7a7c87, #5a5c5f and #7e838a and at y 1.62 to 1.99 it reads #564039, #1e1916 and
+  // #4e453c. One colour over the whole band was 40 levels wrong at both ends: (0.729, 0.432) rendered
+  // #524a46 against #7a7c87 and (0.854, 0.523) #7c797b against #4e453c.
+  // These two are NOT those means (which are #71747b and #41352e) and not any one box. They are fitted:
+  // each cell mixes slats with the wall behind them and with the noren beside them, so the value that
+  // scores best is darker than the photo reads. 0x7a7e8a was tried for the upper band and is worse
+  // (0.600 against 0.564 over the six cells), which is how these were chosen. An independent critic
+  // caught the earlier version of this comment calling them the arithmetic mean.
+  latticeFarUpper: 0x6b6e78,
+  latticeFarLower: 0x3a332e,
+  // The lit band running along under the balcony's floor, box (0.85,0.255)-(1.00,0.300) #9a8369. It is
+  // the brightest thing on that wall in the photo and the render had nothing there: a v-ladder at
+  // u 0.885-0.915 reads #635b5a at v 0.24, #b19c82 at 0.26 and #d7c4a1 at 0.28, and at u 0.955-0.985
+  // #231812 at 0.24 and #8f7c61 at 0.28. Dropped onto the wall plane x = 5.0 that band is y 4.85..5.30,
+  // which is where the balcony's own floor sits once it is raised off 4.9.
+  rightUpperBand: 0x9a8369,
   shrubDeep: 0x1e2416,
   shrubLit: 0x7c958b, // the planter shrub's lit top, cell (0.771, 0.659)
   doorRed: 0x6f3219, // the annex's near door, cells (0.104, 0.75) and (0.104, 0.795)
+  // The annex's koshi window. Its slats were the scene's generic near-black `SLAT`, and the photo has a
+  // lit warm lattice there: the two cells it fills read #917655 at (0.104, 0.614) and #884a2e at
+  // (0.104, 0.659) against #574a40 and #4a3c34, wanting 1.7x and 1.8x on red. Set by eye off those two
+  // cells rather than sampled, because the window is 40 px wide in the photo and no box holds only slats.
+  annexLattice: 0x5a3f26,
   house1Wall: 0x39241c,
   house3Wall: 0xbcae9c,
   plant: 0x4a5230,
   shrubDark: 0x2a3320,
   plaster: 0xcfc6b8,
-  stoneWallLeft: 0x857c72,
-  stoneWallRight: 0x4d5559,
-  sideStepTop: 0x76818e,
+  stoneWallLeft: 0x8e8983, // box (0.13,0.88)-(0.24,0.98) #8b8580; its seven cells average #837d79 against #7c7269
+  // The right retaining wall, the fence's stone core and the ribbon skirts. The old 0x4d5559 came from box
+  // (0.60,0.80)-(0.70,0.95), which is mostly the main stairs in their own shadow, not the wall. The wall's
+  // own face reads #677277 at (0.65,0.815)-(0.70,0.87), #65737a at (0.70,0.845)-(0.75,0.90) and #6f7b83 at
+  // (0.73,0.88)-(0.775,0.935), and the fence's core above it #778086 at (0.755,0.865)-(0.79,0.905).
+  // Its base and its near end are darker (#3a4549 over (0.66,0.90)-(0.72,0.96)), so this is one colour on a
+  // ramp and the value here is the mean the twenty-five cells of the four meshes ask for, not the face's.
+  stoneWallRight: 0x5c6465,
+  // The retaining wall's mortar BODY, which from the photo camera shows its top strip (x 1.35 to 2.1, at
+  // terrace height) and its own shaded face at x = 1.35 -- not the stone faces that catch the light.
+  // Lifting it with the stones cost +0.086 over its eleven cells while the stones and the fence cores
+  // gained 0.17, so the two are split and this one keeps the darker value they shared before.
+  stoneWallRightShade: 0x4d5559,
+  // The side steps' treads, top of the flight and bottom. The photo's flight is LIGHT and blue-grey at
+  // its head and warm and dark at its foot -- boxes (0.62,0.64)-(0.67,0.68) #777f8b, (0.59,0.69)-(0.66,0.77)
+  // #5a584c and (0.58,0.78)-(0.63,0.81) #504e4a -- and `paving.js` ramped its tint the other way, 1.0 at
+  // the lowest step down to 0.62 at the highest. That is why one flat warm mean fixed four cells in
+  // iteration 3's inherited work and cost the fifth: (0.646, 0.659), the head of the flight, went to
+  // #595853 against a photo of #78818d.
+  sideStepTop: 0x7a828e,
+  sideStepMid: 0x66665c, // the middle stop, its box's #5a584c lifted by eye until the flight's middle cells stopped over-darkening (0x6f6f63 scored 0.436 over the six, 0x66665c 0.420)
+  sideStepFoot: 0x55534e,
+
   annex: 0x7a6650,
+  // The annex's near stretch (z -6.0 to -10.2) only. The photo there is a light plaster shopfront panel,
+  // not board: its three cells read #887d76, #a19892 and #978c87 against #7a6552, #766659 and #755b49.
+  // `annex` itself stays where it is, because `left annex far` and the door canopy's boards share it and
+  // the far stretch's own cells sit within 0.06 of the photo already.
+  annexLit: 0x989183,
+  // The annex lean-to roof's far end. `tileAnnex` was sampled over u 0.06 to 0.23 at v 0.42 to 0.50 and
+  // fits seven of its eight cells within 0.093; the eighth, (0.229, 0.477), is the roof's last two metres
+  // and reads #66543e in the photo against #988a7b. The ray at u 0.229 meets the roof's outer edge at
+  // z = -11.49 and the one at u 0.188, which is right, at z = -9.98.
+  tileAnnexFar: 0x60503f,
   annexLower: 0x55483f,
-  annexFarLower: 0x3a2f28,
+  annexFarLower: 0x201a15, // all three of its cells ask for the same 0.55x: (0.271,0.750) #29221e, (0.271,0.795) #291e18, (0.271,0.841) #382c22 against #514137, #45362d, #5f4e44
   annexFarUpper: 0xa08b72,
   canopy: 0x979899,
   steps: 0x96959a,
@@ -514,6 +596,15 @@ export const COLORS = {
   // fills in the photo; the boxes are in the 2026-09-10 iteration 2 devlog.
   farRowTile: 0xafaedb, // the row's roof where the sun still reaches it, box (0.425,0.635)-(0.500,0.680)
   farRowTileFar: 0x7d8ca3, // the same roof further back and further into the bend, box (0.500,0.675)-(0.560,0.712)
+  // The far row's shopfronts. Sampled from the photo's own row, which is what `npm run views` says the
+  // render did not have: boxes (0.437,0.700)-(0.447,0.760) #1b1417 for the near-black corner posts,
+  // (0.458,0.705)-(0.487,0.755) #4f3a33 for the warm boards between them, and (0.440,0.723)-(0.452,0.742)
+  // #241818 for the dark doorways. The lattice is set by eye between the post and the board, because at
+  // 20 m a slat is 4 px in the photo and no box holds only slats.
+  farRowPost: 0x1b1417,
+  farRowRail: 0x4f3a33,
+  farRowLatticeSlat: 0x35292a,
+  farRowDoor: 0x241818,
   farRowFront: 0x40393c, // the dark timber shopfronts, box (0.430,0.728)-(0.500,0.775)
   farRowFrontFar: 0x464147, // their continuation into the bend, box (0.393,0.700)-(0.428,0.738)
   farRowBase: 0x48535e, // the base band where the fronts meet the paving, box (0.430,0.775)-(0.505,0.800)
@@ -528,9 +619,45 @@ export const COLORS = {
   farStreet: 0x4a4950,
   sideSteps: 0x4a4e4f,
   terrace: 0x3e4448,
+  // The right walkway's flagstones. `architecture.js` had one flat band here in `terrace`, and over the
+  // twenty cells that band is the first mesh under, the photo's mean and the render's agreed to five
+  // levels (#3f464b against #393e45) while the mean cell distance was still 0.0969: all of the error was
+  // the structure a flat plane has none of. These three are the photo's own cell means grouped by the
+  // depth each cell's ray meets the terrace at, which is why the ramp runs along z and not across x:
+  //   z -4.86  #293138   the near end, under the step and in its shadow (see `walkwayNear` for why the
+  //                       colour there is not this dark: only a sliver of one slab row is in frame here)
+  //   z -5.27  #53606a   the lit band
+  //   z -5.91  #535759
+  //   z -7.06  #2b2f32   into the machiya's own shade
+  //   z -8.75  #302c2a
+  // Within a row the photo's spread is the kerb and the planting bed at about 0.35 m of x per cell, which
+  // no colour on this mesh can carry; across rows it is a 40-level ramp, which is what these fit.
+  // The three below are the STONE's own colours, not those cell means: the walkway is seen at 35 degrees, so
+  // each slab's front edge and the joint in front of it cover about a tenth of what the cell sees and they
+  // are unlit (the sun is behind the scene), which is why the cell reads darker than the stone. A first
+  // pass used 0.08 m slabs with 0.02 m joints, where that share is a quarter, and its cells came back
+  // 25 to 50 percent dark with the stone itself measured on target (`npm run probe` at (0.877, 0.896)
+  // read #556271 against a target of #53606a while the cell around it read #444e5b).
+  walkwayLit: 0x5a6773,
+  // The near stretch, which is the one part of this surface the photo cannot see: the frame's bottom edge
+  // reaches only z = -4.665 on this terrace, inside the row centred at -4.45, and `near` is zero from the
+  // next row back. So this colour moves no scored cell and is answerable only to the sweep and to physics.
+  // It was 0x262c34 for one round -- a linear ratio of 0.19 against `walkwayLit`, removing 81% of the
+  // light -- and an independent critic measured what this rig can actually do: with the shares at
+  // ambient 0.78, sun 0.18, sky 0.14, ground 0.10 and fill 0.06, the deepest CAST shadow here removes
+  // 14%. Painting five times that reads as paint, and pose 4 showed it stepping 80 levels of luma at one
+  // slab joint. 0x47525d is a linear 0.60: deeper than a cast shadow, because the near end of this
+  // walkway is the recess under a 1.34 m eave and this scene has no ambient occlusion, and shallow enough
+  // to belong to the same lighting as everything beside it.
+  walkwayNear: 0x47525d,
+  walkwayFar: 0x2d3036,
   fence: 0x64605a,
   plinth: 0x4c4f53, // the near half of the machiya's base band, boxes (0.87,0.71)-(0.95,0.79) #515457 and (0.92,0.76)-(1.0,0.84) #3e4348
-  plinthFar: 0x363432, // its far half runs into the shade of the bend: (0.66,0.555)-(0.78,0.60) #2f2b28, (0.83,0.63)-(0.90,0.70) #3c4243
+  // Its far half runs into the shade of the bend: (0.66,0.555)-(0.78,0.60) #2f2b28, (0.83,0.63)-(0.90,0.70)
+  // #3c4243. The old 0x363432 rendered #4c4743, 45 percent light, because the rig lifts a dark albedo --
+  // the same thing `house1Upper` records. Two of its three cells ask for 0.45x and the third, (0.813,
+  // 0.659), for 1.25x, so this is the mean of a ramp and the near cell pays for it.
+  plinthFar: 0x241f1c,
   fenceTiles: 0x6c7a7c,
   pot: 0x36302e,
   shrub: 0x465746,
@@ -584,6 +711,18 @@ export const PLACEMENT_CHECKS = [
   { name: 'awning', u: 0.14, v: 0.545, mesh: 'awning' },
   { name: 'annex door 1', u: 0.11, v: 0.77, mesh: 'annex door 1' },
   { name: 'stairs', u: 0.4, v: 0.93, mesh: 'stair treads' },
+  // The right walkway's flagstones. The ray lands at x = 3.38, z = -5.27 on the terrace, which is inside
+  // the paved range (x 2.15 to 4.94) with 1.2 m of margin on the near side and 1.5 m on the far. Bound:
+  // `placement.js` matches on a name PREFIX, so this is satisfied by any slab in the set, and the band
+  // under them is named `right walkway`, which this prefix does not match. There is no useful grounding
+  // check to pair with it -- the only thing under the slabs is that band, and a prefix of `right walkway`
+  // matches the slabs themselves, so the gap it measured would be zero by construction.
+  { name: 'right walkway', u: 0.938, v: 0.932, mesh: 'right walkway slabs' },
+  // The foliage over the near fence. The ray meets the fence's own face at x = 2.25, y = 2.13, z = -6.16,
+  // and the leaves stand 0.1 to 0.4 m in front of it, so this fails if they move behind the boards again
+  // (which is where the first pass put them) or if the fence grows toward the street. Bound: `Raycaster`
+  // hits the card QUAD and the leaf texture is alpha-tested, so a transparent corner satisfies it.
+  { name: 'fence spill', u: 0.771, v: 0.659, mesh: 'fence spill leaves' },
   // The far machiya row, at two of the photo positions the compare gate ranked worst before it existed.
   // Bound of both: `placement.js` matches on a name PREFIX, and the row's tiles are two shared instanced
   // meshes rather than one per roof, so `far row tiles far` is satisfied by any shaded tile anywhere on

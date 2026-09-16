@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import * as L from './layout.js';
 import { surface } from './instancing.js';
+import { mortarOf } from './paving.js';
 
 const C = L.COLORS;
 const S = L.STREET;
@@ -41,7 +42,10 @@ function rightSide(b) {
   // the landing widens to the right.
   b.bandSolid('right paving', -15.3, -40, (z) => L.rightTerraceY(z), (z) => L.rightTerraceY(z) - 6, S.x1, T.xInner, C.landing, 12);
   // The walkway band starts 5 cm behind the fence core's stone line so the stones stand proud of it.
-  b.bandSolid('right walkway', 0, -15.3, (z) => L.rightTerraceY(z), (z) => L.rightTerraceY(z) - 8, T.xInner + 0.05, T.xOuter, C.terrace, 10);
+  // Since iteration 3 it is the mortar BODY under `right walkway slabs` (src/paving.js), which pave it
+  // from the fence's foot to the machiya plinth; past the plinth the band is all there is, and nothing
+  // there is ever seen. Its colour is the flagstones' own mean darkened, so the joints read as joints.
+  b.bandSolid('right walkway', 0, -15.3, (z) => L.rightTerraceY(z), (z) => L.rightTerraceY(z) - 8, T.xInner + 0.05, T.xOuter, mortarOf(C.walkwayLit), 10);
   b.bandSolid('right walkway far', -15.3, -40, (z) => L.rightTerraceY(z), (z) => L.rightTerraceY(z) - 8, T.xInner, T.xOuter, C.landing, 12);
 
   // The right machiya's roof mass under its tiles: the dark eave block whose tile ends catch the light

@@ -420,12 +420,43 @@ function groundPlants(b, rand) {
   const shrubBase = L.rightTerraceY(shrubZ);
   cluster(rand, shrub, new THREE.Vector3(3.7, shrubBase + 1.45, shrubZ), { x: 0.6, y: 1.45, z: 0.85 }, 130, 0.28, C.shrub, leaf.mean, C.shrubLit);
   b.add(instanced('shrub leaves', cardGeometry, leafMat, shrub.filter((it) => it.position[1] > shrubBase + 0.1), { uvOffsets: false }), 'shrub leaves');
+  // Foliage spilling over the NEAR fence, which is what the photo has at (0.771, 0.659): that ray meets
+  // the fence's own face at x = 2.25, y = 2.13, z = -6.16, where the fence top is 2.36, so the green there
+  // is a plant in the planter hanging over the rail. `shrub leaves` above stands 4 m behind it at
+  // z = -10.4 and `fence 0` occludes it, which is why that cell rendered the boards (#5c544e) against a
+  // photo of #7c958b and survived iteration 1.
+  //
+  // It stands ON the checked ray rather than near it, and the placement check below is what forced that.
+  // Three passes missed: centred at x = 2.28 every leaf was inside the boards (2.15 to 2.35) and the cell
+  // did not move one level; at 2.12 with a 0.95 m z radius only half the cards were in front of them; and
+  // at 2.02 the cluster was 0.06 m too LOW where the ray crosses it, because the ray climbs as it goes
+  // (it is at y 2.42 at x 2.01 and y 2.09 at x 2.29). What settled it was solving the ellipsoid against
+  // the ray instead of nudging. Substituting each ray into it and minimising over depth: the checked ray
+  // reaches f = 0.22 at depth 6.5 m (the ellipsoid's surface is f = 1, so it passes 0.47 of a radius from
+  // the centre), and the `shrub` check's ray at (0.755, 0.575) -- which a taller version of this cluster
+  // did start occluding, and the gate caught that too -- only f = 2.41, which is 0.55 of a radius beyond
+  // the surface, about 0.17 m against a card's 0.12 m half-extent.
+  // It does not hang over the street: the street's right edge is x = 1.3 and the nearest leaf centre is
+  // at 1.82, and `npm run clearance` reports the paved band's runs unchanged.
+  // Its PRNG is its own, so it renumbers no plant, weed or tuft built after it.
+  const spill = [];
+  const spillZ = -6.5;
+  const spillRand = mulberry32(7714);
+  // It takes `shrubLit` top AND bottom rather than `shrub`: `shrubLit` IS the photo's own reading of this
+  // cell, and the darker `shrub` the planter shrub grows from is its shaded interior 4 m further back.
+  cluster(spillRand, spill, new THREE.Vector3(2.12, L.rightBedY(spillZ) + 0.5, spillZ), { x: 0.3, y: 0.3, z: 1.4 }, 160, 0.22, C.shrubLit, leaf.mean, C.shrubLit);
+  b.add(instanced('fence spill leaves', cardGeometry, leafMat, spill, { uvOffsets: false }), 'fence spill leaves');
   // A small potted plant on the walkway beside the big pot, and the potted plant on the left low wall
   // (that pot is built with the walls).
   const potSpot = L.uvToWorld(0.805, 0.83, 8);
   const potBase = L.rightTerraceY(potSpot.z);
   const smallPot = new THREE.Mesh(new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(0.14, 0), new THREE.Vector2(0.18, 0.2), new THREE.Vector2(0.2, 0.26), new THREE.Vector2(0.17, 0.26), new THREE.Vector2(0.16, 0.04), new THREE.Vector2(0, 0.04)], 14), surface('glaze', C.pot, { seed: 48 }));
-  smallPot.position.set(potSpot.x, potBase, potSpot.z);
+  // +0.006 puts it on the flagstones rather than 5 mm inside them: `right walkway slabs` lays its tops at
+  // rightTerraceY + 0.005 and this pot stands at x 3.07, z -7.11, which is inside the paved field. The
+  // `small pot` grounding check cannot catch that -- its ground is matched by name prefix and
+  // `right walkway slabs` starts with `right walkway`, so the slabs now answer for the band under them,
+  // and its sink allowance is 0.3 m either way.
+  smallPot.position.set(potSpot.x, potBase + 0.006, potSpot.z);
   b.add(smallPot, 'small pot');
   const shrub2 = [];
   cluster(rand, shrub2, new THREE.Vector3(potSpot.x, potBase + 0.5, potSpot.z), { x: 0.32, y: 0.3, z: 0.32 }, 36, 0.18, C.shrubDeep, leaf.mean);

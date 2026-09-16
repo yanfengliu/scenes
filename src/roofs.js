@@ -6,7 +6,7 @@ import * as L from './layout.js';
 import { mulberry32, jitter } from './random.js';
 import { instanced, surface, panTileGeometry, ridgeTileGeometry, eaveCapGeometry, basisAlong } from './instancing.js';
 import { steppedRoofCorners } from './primitives.js';
-import { darker } from './paving.js';
+import { darker, mixHex, scaleHex } from './paving.js';
 import { makeMaterial } from './materials.js';
 
 const C = L.COLORS;
@@ -75,7 +75,10 @@ export function buildRoofs(b) {
 
   // The annex lean-to and its door canopy, both stepping down the street. The small white awning lies
   // over the canopy's lower rows near the door (built with the facades).
-  tileRoof(b, rand, geos, 'annex roof', steppedRoofCorners(L.LEFT_ANNEX_ROOF), { color: C.tileAnnex, fasciaColor: C.eaveEdge, boardColor: C.house1Wall, rafterColor: C.house1Wall });
+  // The lean-to's tiles darken over its last two metres: see `tileAnnexFar` in src/layout.js. The ramp is
+  // on z alone and is applied per tile, so it costs no draw call and no random draw.
+  const annexTileColor = (p) => scaleHex(mixHex(C.tileAnnex, C.tileAnnexFar, Math.min(1, Math.max(0, (-p.z - 11.4) / 1.0))), C.tileAnnex);
+  tileRoof(b, rand, geos, 'annex roof', steppedRoofCorners(L.LEFT_ANNEX_ROOF), { color: C.tileAnnex, fasciaColor: C.eaveEdge, boardColor: C.house1Wall, rafterColor: C.house1Wall, colorOf: annexTileColor });
   tileRoof(b, rand, geos, 'door canopy', steppedRoofCorners(L.LEFT_CANOPY), { color: C.canopy, fasciaColor: darker(C.canopy, 0.75), boardColor: C.annex, rafterColor: C.annex });
 
   // House 3's short roof on the photo's eave line; its wall stands 0.1 m behind the eave and the roof
@@ -88,16 +91,29 @@ export function buildRoofs(b) {
   });
 
   // Right machiya: the deep ground-floor eave seen from above, and the top roof over the upper floor.
-  // The same surface the block-out slab had (its top ran from 4.15 at the edge to 4.8 at the wall).
-  const eaveTop0 = M.eaveTop - 0.35;
-  const drop = M.eaveDrop;
+  // The block-out slab this replaced ran from 4.15 at the edge to 4.8 at the wall, and the tiles kept its
+  // line until iteration 3 measured where the photo's tile field actually ends. Ladders of small boxes
+  // straight down the photo, beside `npm run probe` at the same positions, put the tile edge about 0.035
+  // of frame BELOW the render's at every column: at u 0.771 the photo is still tile (#95a5c4) at v 0.40
+  // and dark by 0.42 where the render's tiles stop at 0.375; at u 0.85 tile (#869ab1) at 0.42 against
+  // 0.385; at u 0.979 tile (#90afd3) at 0.43 against 0.42. The correction is not one number, because the
+  // eave is seen nearly end-on: 0.28 m of drop at z = -6 and 0.41 m at z = -12 fit all three, which is
+  // 0.19 m off the outer edge plus 0.33 m more of `drop` along the street.
+  const eaveTop0 = M.eaveTop - 0.54;
+  const drop = M.eaveDrop + 0.33;
+  // The fascia and soffit that hang under that edge. They used to reach 0.54 m below the roof plane in
+  // `eaveUnder` grey, which from above is a band three times the thickness the photo shows and covers the
+  // noren's own top. The photo has tiles, the scalloped cap row, one dark line and then the cloth, so the
+  // assembly now hangs 0.18 m and the line is the photo's own colour. Lowering the edge without this would
+  // have put the eave's underside through the noren.
   tileRoof(b, rand, geos, 'right eave', [v(M.eaveEdge, eaveTop0, M.z1), v(M.front + 0.2, M.eaveTop + 0.3, M.z1), v(M.front + 0.2, M.eaveTop + 0.3 - drop, M.eaveZ0), v(M.eaveEdge, eaveTop0 - drop, M.eaveZ0)], {
     color: C.tileRight,
-    fasciaColor: C.eaveUnder,
+    fasciaColor: C.rightEaveFascia,
+    fasciaHeight: 0.22,
     boardColor: C.eaveUnder,
     rafterColor: C.woodDark,
     capColor: darker(C.tileRight, 0.85),
-    soffit: { offset: 0.32, thickness: 0.22, color: C.eaveUnder },
+    soffit: { offset: 0.06, thickness: 0.12, color: C.rightEaveFascia },
   });
   const topEave = M.roofY + M.roofThickness + 0.02;
   const topRidgeX = 9.0;
@@ -259,12 +275,22 @@ export function tileRoof(b, rand, geos, name, corners, opts) {
       const onPlane = oN.clone().addScaledVector(along, a).addScaledVector(upslope, s);
       if (!keeps(onPlane)) continue;
       const p = onPlane.clone().addScaledVector(normal, 0.02 + r * 0.004);
-      tiles.push({ position: [p.x, p.y, p.z], basis, tint: 1 + jitter(rand, 0.06), uv: [rand(), rand()] });
+      const item = { position: [p.x, p.y, p.z], basis, tint: 1 + jitter(rand, 0.06), uv: [rand(), rand()] };
+      // `colorOf` is optional and draws nothing, so a roof that does not pass it lays the same tiles from
+      // the same stream as before. It gets the tile's point ON the roof plane, before the 2 cm lift.
+      if (opts.colorOf) item.color = opts.colorOf(onPlane);
+      tiles.push(item);
       if (r === 0 && opts.caps !== false && inside(a, 0, 0.05)) {
         const onEave = oN.clone().addScaledVector(along, a);
         if (!keeps(onEave)) continue;
+        // `colorOf` is handed the point ON the plane, so take it before the lift: `addScaledVector`
+        // mutates in place and returns the same vector, so passing `onEave` afterwards would hand it the
+        // lifted point. Harmless for the annex roof's 1 m ramp and not harmless for a sharp threshold.
+        const onPlaneEave = onEave.clone();
         const q = onEave.addScaledVector(normal, 0.045);
-        caps.push({ position: [q.x, q.y, q.z], basis, tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] });
+        const cap = { position: [q.x, q.y, q.z], basis, tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] };
+        if (opts.colorOf) cap.color = opts.colorOf(onPlaneEave);
+        caps.push(cap);
       }
     }
   }

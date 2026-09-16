@@ -48,7 +48,10 @@ export function buildFacades(b) {
   // over house 3's near part: the photo shows house 3's roof and plaster below the canopy's far tiles at
   // u 0.27 to 0.31, and carrying the wall on to the roofs' end costs 0.0005 of cell distance there.
   const annexEnd = t2.z1;
-  b.bandSolid('left annex', -6.0, plasterZ, (z) => Math.min(annexEave(z), canopyAtWall(z)) - 0.06, () => 0.9, H.back, H.front, surface('wood', C.annex, { seed: 74 }), 8);
+  // Split at `LEFT_ANNEX_LIT_Z`: the near stretch is the dark board the photo's near door stands in, the far one
+  // the light plaster shopfront panel. bandSolid draws no randoms, so the split renumbers nothing.
+  b.bandSolid('left annex', -6.0, L.LEFT_ANNEX_LIT_Z, (z) => Math.min(annexEave(z), canopyAtWall(z)) - 0.06, () => 0.9, H.back, H.front, surface('wood', C.annex, { seed: 74 }), 4);
+  b.bandSolid('left annex lit', L.LEFT_ANNEX_LIT_Z, plasterZ, (z) => Math.min(annexEave(z), canopyAtWall(z)) - 0.06, () => 0.9, H.back, H.front, surface('wood', C.annexLit, { seed: 74 }), 6);
   b.bandSolid('left annex far', plasterZ, t2.z1, (z) => annexEave(z) - 0.06, () => 0.9, H.back, H.front, surface('wood', C.annex, { seed: 74 }), 4);
   b.box('left annex lower', { x0: H.back, x1: H.front, y0: t2.y - 2, y1: 0.9, z0: -9.5, z1: -6.0 }, surface('wood', C.annexLower, { seed: 98 }), { metric: true });
   b.box('left annex lower far', { x0: H.back, x1: H.front, y0: t2.y - 2, y1: -0.7, z0: annexEnd, z1: -9.5 }, surface('wood', C.annexFarLower, { seed: 99 }), { metric: true });
@@ -70,7 +73,7 @@ export function buildFacades(b) {
   b.quadSlab('annex eave ledge', [{ x: AR.xOuter, y: annexEave(plasterZ), z: plasterZ }, { x: H.front + 0.02, y: annexEave(plasterZ), z: plasterZ }, { x: H.front + 0.02, y: annexEave(t2.z1), z: t2.z1 }, { x: AR.xOuter, y: annexEave(t2.z1), z: t2.z1 }], 0.08, C.tileLeft);
   // A koshi lattice window under the awning, where the photo shows dark slats (u 0.08-0.16, v 0.58-0.66);
   // its top rail stays under the canopy, which meets the wall at 2.6 m at the window's far end.
-  lattice(b, rand, unit, 'annex window', H.front, 1.75, 2.4, -7.6, -6.2, 0.07, 0.03, SLAT, 1);
+  lattice(b, rand, unit, 'annex window', H.front, 1.75, 2.4, -7.6, -6.2, 0.07, 0.03, C.annexLattice, 1);
   // The doors stand on the annex's terrace; from the photo camera the near door's upper half shows above
   // the low wall beyond the stone wall's end (dark red-brown at u 0.08 to 0.14, v 0.74 to 0.80), and a
   // narrow one stands beside it on the near board wall.
@@ -105,6 +108,11 @@ export function buildFacades(b) {
   const SLAT_NEAR = 0x3a3330;
   const SLAT_FAR = 0x4a4744;
   const groundBack = balancedMean(C.rightGround, SLAT_NEAR, 0.5);
+  // Iteration 1 read cells (0.813,0.523) and (0.854,0.523) as this 0.7 inflating the wall behind the far
+  // lattice to (157,154,158) so the bright wall shows through. Measured in iteration 3, it does not: at
+  // 0.45 the wall drops to (120,117,117) and the render does not move one level, because at this grazing
+  // angle the slats cover the wall completely -- `right house ground far` is not the first hit under a
+  // single one of the 528 cells. Whatever those two cells want, it is SLAT_FAR itself, not this number.
   const groundBackFar = balancedMean(C.rightGroundFar, SLAT_FAR, 0.7);
   b.box('right house ground', { x0: M.front, x1: M.back, y0: -3.5, y1: M.eaveTop - 0.22, z0: M.baseSplitZ, z1: M.z1 }, surface('plaster', groundBack, { seed: 80 }), { metric: true });
   b.box('right house ground far', { x0: M.front, x1: M.back, y0: -3.5, y1: M.eaveTop - 0.22, z0: M.z0, z1: M.baseSplitZ }, surface('plaster', groundBackFar, { seed: 81 }), { metric: true });
@@ -116,7 +124,14 @@ export function buildFacades(b) {
   b.box('right house base', { x0: M.front - 0.05, x1: M.front + 0.3, y0: M.plinthTop, y1: M.baseTop, z0: M.baseSplitZ, z1: M.z1 }, surface('wood', C.woodBase, { seed: 83 }), { metric: true });
   b.box('right house base far', { x0: M.front - 0.05, x1: M.front + 0.3, y0: M.plinthTop, y1: M.baseTopFar, z0: M.z0, z1: M.baseSplitZ }, surface('wood', C.woodBase, { seed: 84 }), { metric: true });
   lattice(b, rand, unit, 'right lattice near', M.front - 0.01, M.baseTop + 0.03, M.eaveTop - 0.7, M.baseSplitZ + 0.15, M.z1 - 0.15, 0.07, 0.03, SLAT_NEAR);
-  lattice(b, rand, unit, 'right lattice far', M.front - 0.01, M.baseTopFar + 0.03, M.eaveTop - 0.7, M.z0 + 0.2, M.baseSplitZ - 0.15, 0.07, 0.03, SLAT_FAR);
+  // Two bands, split at 2.1 m: see `latticeFarUpper` for the two populations the photo has here. The
+  // UPPER call keeps the shared `rand` and the lower one gets a PRNG of its own, because `lattice` draws
+  // twice per slat and the slat count comes from the z range alone -- so the upper call draws exactly what
+  // the single call drew, and nothing after it here (the shoji, the balcony, the fence posts, the lamp)
+  // is renumbered. Splitting a lattice VERTICALLY is free that way; splitting it along z would not be.
+  const latticeFarSplitY = 2.1;
+  lattice(b, rand, unit, 'right lattice far', M.front - 0.01, latticeFarSplitY, M.eaveTop - 0.7, M.z0 + 0.2, M.baseSplitZ - 0.15, 0.07, 0.03, C.latticeFarUpper);
+  lattice(b, mulberry32(4471), unit, 'right lattice far low', M.front - 0.01, M.baseTopFar + 0.03, latticeFarSplitY, M.z0 + 0.2, M.baseSplitZ - 0.15, 0.07, 0.03, C.latticeFarLower);
   // Upper floor: dark boards balanced against the shoji windows, and the balcony rail in front.
   const shojiFraction = 0.15;
   const upperWall = balancedMean(C.woodUpperRight, SHOJI, shojiFraction);
@@ -124,7 +139,12 @@ export function buildFacades(b) {
   for (const zc of [-5.0, -8.4]) {
     shoji(b, rand, unit, `shoji ${zc}`, M.front - 0.005, 5.05, 6.35, zc - 0.7, zc + 0.7);
   }
-  balconyRail(b, rand, unit, M.front, 4.9, M.upperZ0 + 0.2, M.z1 - 0.2);
+  // The lit band under the balcony, and the balcony itself raised onto its top edge. At 4.9 the balcony's
+  // floor projected to v 0.291 at u 0.90 and v 0.29 at u 0.979, while the photo's near-black floor line
+  // is at v 0.247 and its lit band below it at v 0.255-0.29 -- the whole assembly sat about 0.4 m low,
+  // which is why cell (0.979,0.250) rendered a lit shoji panel (#96897c) where the photo is #56432f.
+  b.bandSolid('right upper band', M.upperZ0, M.z1, () => 5.3, () => 4.85, M.front - 0.03, M.front + 0.02, surface('plaster', C.rightUpperBand, { seed: 102 }), 6);
+  balconyRail(b, rand, unit, M.front, 5.3, M.upperZ0 + 0.2, M.z1 - 0.2);
 
   // ---- the fence: vertical boards with dark posts on the planter's stone core, jogging back at the steps ----
   const F = L.RIGHT_FENCE;

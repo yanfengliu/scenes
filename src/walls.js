@@ -119,7 +119,14 @@ export function buildWalls(b) {
   const T = L.LEFT_LOW_WALL_THICKNESS;
   const wallX1 = S.x0 + 0.05;
   const wallX0 = wallX1 - T;
-  b.bandSolid('left low wall', capZ0, capZ1, (z) => L.leftCapY(z), (z) => L.leftCapY(z) - wallH, wallX0, wallX1, surface('plaster', C.lowWall, { seed: 34 }));
+  // Split at z = -6.5: over the near stretch the photo's wall runs into the shopfronts' shade (its cells
+  // read #745644 and #574d34 at v 0.841) and over the far one it catches the light (#828072, #a89f97).
+  // Neither bandSolid draws from `rand`, so the split renumbers no stone in this module.
+  const LOW_WALL_SPLIT_Z = -6.5;
+  const lowWallFace = (name, z0, z1, hex) =>
+    b.bandSolid(name, z0, z1, (z) => L.leftCapY(z), (z) => L.leftCapY(z) - wallH, wallX0, wallX1, surface('plaster', hex, { seed: 34 }));
+  lowWallFace('left low wall', capZ0, LOW_WALL_SPLIT_Z, C.lowWallNear);
+  lowWallFace('left low wall far', LOW_WALL_SPLIT_Z, capZ1, C.lowWall);
   tiledCap(b, rand, 'left wall cap', { zNear: capZ0, zFar: capZ1, xRidge: (wallX0 + wallX1) / 2, halfWidth: T / 2 + 0.05, rise: 0.05, topY: (z) => L.leftCapY(z) + 0.02, color: C.lowWall, seed: 35 });
 
   // The potted plant's pot: a small flower pot seated on the cap's ridge.
@@ -170,7 +177,7 @@ export function buildWalls(b) {
     style: 'rubble',
   });
   b.add(instanced('right retaining wall stones', rubble, surface('rubble', rubbleMean(C.stoneWallRight), { seed: 38, instancedUv: true }), rightStones), 'right retaining wall stones');
-  b.bandSolid('right retaining wall', 0, -15.3, wallTop, (z) => L.streetY(z) - 0.6, S.x1 + MORTAR_SETBACK, RT.xInner, mortarOf(C.stoneWallRight), 60);
+  b.bandSolid('right retaining wall', 0, -15.3, wallTop, (z) => L.streetY(z) - 0.6, S.x1 + MORTAR_SETBACK, RT.xInner, mortarOf(C.stoneWallRightShade), 60);
 
   // ---- the fence's core: a stone-faced wall on the planter strip, jogging back around the side steps ----
   const F = L.RIGHT_FENCE;

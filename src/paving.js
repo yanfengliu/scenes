@@ -262,8 +262,13 @@ export function buildPaving(b) {
     const y = -1.65 + (i + 1) * sideRise;
     for (let c = 0; c < zCols; c++) {
       const zc = Z.z0 + (c + 0.5) * zw;
-      const shade = 1 - (i / (sideSteps - 1)) * 0.38;
-      sideTreads.push({ position: [x0 + sideTread / 2 + JOINT / 2, y, zc], scale: [sideTread + JOINT, 1, zw - JOINT], tint: shade + jitter(rand, 0.04), uv: [rand() * 4, rand() * 4] });
+      // The photo's flight is light and blue-grey at its head and warm and dark at its foot, which is the
+      // opposite of the tint ramp this used to carry (1.0 at the lowest step down to 0.62 at the highest).
+      // Three stops, per slab rather than as a scalar tint, because the middle is warm and neither end is.
+      // See `sideStepTop` in src/layout.js. The draws are unchanged, so no slab after this is renumbered.
+      const t = i / (sideSteps - 1);
+      const target = t < 0.5 ? mixHex(C.sideStepFoot, C.sideStepMid, t * 2) : mixHex(C.sideStepMid, C.sideStepTop, (t - 0.5) * 2);
+      sideTreads.push({ position: [x0 + sideTread / 2 + JOINT / 2, y, zc], scale: [sideTread + JOINT, 1, zw - JOINT], tint: 1 + jitter(rand, 0.04), color: scaleHex(target, C.sideStepTop), uv: [rand() * 4, rand() * 4] });
     }
     // The riser 1 cm behind the tread's nosing and 2 cm proud of the body below.
     sideRisers.push({ position: [x0 + 0.035, y - sideRise / 2, (Z.z0 + Z.z1) / 2], scale: [0.05, sideRise - 0.01, Z.z1 - Z.z0], tint: 1 + jitter(rand, 0.04), uv: [rand() * 4, 0] });
@@ -309,6 +314,104 @@ export function buildPaving(b) {
   // test over every stone, which is the bare grey wall `npm run views` pose 5 shows across the head of
   // the stairs. Nothing here is in the photo view, which is why no score ever moved for it.
   b.box('platform', { x0: S.x0, x1: S.x1, y0: L.PLATFORM_Y - 5, y1: L.PLATFORM_Y - 0.01, z0: 0.06, z1: 8 }, mortarOf(C.platform));
+
+  rightWalkway(b);
+}
+
+// ---- the right walkway: flagstones on the terrace in front of the machiya -------------------------
+// `src/architecture.js` still lays the band this stands on; that band is now the mortar body under these
+// slabs. The photo has a field of cut flagstones with joints running from the fence's foot to the
+// machiya's plinth, and the render had one flat plane: see `walkwayLit` in src/layout.js for the measured
+// ramp and for why a flat plane at the right mean still cost 0.0969 a cell.
+//
+// The slabs stop at x = 4.94, the machiya plinth's own front face, because nothing past it is ever seen:
+// the band runs on to x = 9.0 under the house and stays the mortar body there.
+//
+// Its PRNG is its own and it is built last, so adding it renumbers no slab, stone or tile before it --
+// `stackedStones`, `tileRoof` and the slab builders all draw from a module-level stream, and iteration 2
+// measured a bare reseed of two walls at 0.0004 of cell distance and 0.0054 of SSIM.
+function rightWalkway(b) {
+  const T = L.RIGHT_TERRACE;
+  const rand = mulberry32(3117);
+  // Thin, and with a narrower joint than the rest of the paving: these are flagstones bedded flush, and
+  // at 35 degrees a slab's own front edge is the widest dark thing in the cell. See `walkwayLit`.
+  const slab = slabGeometry(0.03, 0.008);
+  const joint = 0.015;
+  const x0 = T.xInner + 0.05;
+  const x1 = L.RIGHT_MACHIYA.front - 0.06;
+  const zNear = 0.2;
+  const zFar = -15.3;
+  const colWidth = 0.95;
+  const rowDepth = 0.62;
+  const slopeAt = (z) => (L.rightTerraceY(z + 0.05) - L.rightTerraceY(z - 0.05)) / 0.1;
+  const clamp01 = (t) => Math.min(1, Math.max(0, t));
+  // Along z, not across x: the ramp is the photo's, and the photo's spread within a row is the kerb and
+  // the bed, which are 0.35 m of x per cell and cannot be a colour on this mesh. The one exception is the
+  // near inner corner, which is two cells wide and 40 levels darker than the row it is in.
+  //
+  // `near` is a BAND with a sharp far edge and a softer near one, and the two are set by different things.
+  // The FAR edge sits at the joint between the row centred at z = -4.45 and the one at -5.07, which is the
+  // edge of what the photo sees rather than a line the photo located: the frame's bottom edge reaches only
+  // z = -4.665 here, inside the first of those rows, so every row from -5.07 back is lit and the cells say
+  // nothing about the rows in front of them. 0.45 m is narrower than the 0.62 m row pitch on purpose --
+  // those two rows carry cells that want opposite colours (see `walkwayLit`) and a wider ramp puts an
+  // intermediate value on one of them; three positions of it were measured and are in the devlog.
+  // The NEAR edge exists only to stop the far one being a half-plane: the first version had none, and
+  // painted 4.96 m of the walkway, 32% of it, in one step at a slab joint, which no scored gate can see
+  // and `npm run views` pose 4 can. It is a staircase and not a gradient -- its 1.0 m falls on a single
+  // row centre, so the band goes 0, 0.53, 1.0 over the rows at z = -3.21, -3.83 and -4.45 -- and it is
+  // now 1.24 m of walkway rather than 2.48 or 4.96. Only the last of those three rows is in the photo
+  // frame at all, and only its far 0.095 m, so widening or narrowing this edge moves no scored cell:
+  // measured, the cells are identical either side of it.
+  //
+  // There is no corner term. One was written for cells (0.813, 0.977) and (0.854, 0.977), where the photo
+  // is #14191d and #181e22 against #35424d one cell to their right, and it never reached them: `near` is
+  // zero on the row those cells are filled by, so the term fired only on rows in front of the frame. It
+  // painted a black wedge into the sweep for no scored gain and it is gone.
+  const walkColor = (cz) => {
+    const near = Math.min(clamp01((cz + 5.05) / 0.45), clamp01((-cz - 3.3) / 1.0));
+    const far = clamp01((-cz - 6.0) / 1.1);
+    return scaleHex(mixHex(mixHex(C.walkwayLit, C.walkwayNear, near), C.walkwayFar, far), C.walkwayLit);
+  };
+  const items = [];
+  const cols = Math.max(1, Math.round((x1 - x0) / colWidth));
+  const w = (x1 - x0) / cols;
+  const rows = Math.max(1, Math.round((zNear - zFar) / rowDepth));
+  const d = (zNear - zFar) / rows;
+  for (let r = 0; r < rows; r++) {
+    const cz = zNear - (r + 0.5) * d;
+    // The terrace falls 2.3 m between z = -14.8 and -15.3, and a row centred in that drop is laid at 78
+    // degrees with a 0.27 m hole in front of it. Rows are skipped rather than `zFar` moved, so every other
+    // row keeps its exact z and the ramp above stays aligned to them.
+    if (Math.abs(slopeAt(cz)) > 1.0) continue;
+    // The near row is clipped to the band under it, which starts at z = 0: unclipped it overhangs by
+    // 0.19 m into nothing. It is behind the photo camera, so no score has ever moved for it.
+    const zA = Math.min(0, cz + d / 2);
+    const zB = cz - d / 2;
+    if (zA - zB < 0.1) continue;
+    const rowZ = (zA + zB) / 2;
+    const rowD = zA - zB;
+    const stagger = r % 2 ? w / 2 : 0;
+    for (let c = -1; c <= cols; c++) {
+      let sx0 = x0 + c * w + stagger;
+      let sx1 = sx0 + w;
+      if (sx1 <= x0 || sx0 >= x1) continue;
+      sx0 = Math.max(sx0, x0);
+      sx1 = Math.min(sx1, x1);
+      if (sx1 - sx0 < joint + 0.06) continue;
+      const cx = (sx0 + sx1) / 2;
+      items.push({
+        position: [cx, L.rightTerraceY(rowZ) + 0.005, rowZ],
+        euler: [-Math.atan(slopeAt(rowZ)), 0, 0],
+        scale: [sx1 - sx0 - joint, 1, rowD - joint],
+        tint: 1 + jitter(rand, 0.05),
+        color: walkColor(rowZ),
+        uv: [rand() * 4, rand() * 4],
+      });
+    }
+  }
+  const mean = balancedMean(C.walkwayLit, mortarOf(C.walkwayLit), 0.05);
+  b.add(instanced('right walkway slabs', slab, surface('stone', mean, { seed: 23, instancedUv: true }), items), 'right walkway slabs');
 }
 
 // The mortar body under a paved ribbon on the height field, with side skirts.

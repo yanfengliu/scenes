@@ -8,7 +8,7 @@ import { instanced, surface, panTileGeometry, eaveCapGeometry } from './instanci
 import { makeMaterial } from './materials.js';
 import { makeHillTexture } from './textures.js';
 import { buildSky } from './sky.js';
-import { mulberry32 } from './random.js';
+import { mulberry32, jitter } from './random.js';
 import { tileRoof } from './roofs.js';
 import { darker } from './paving.js';
 
@@ -310,6 +310,81 @@ function farMachiyaRow(b) {
   b.add(instanced('far row eave caps', geos.cap, surface('kawara', darker(C.farRowTile, 0.85), { seed: 76, instancedUv: true }), lit.caps), 'far row eave caps');
   b.add(instanced('far row tiles far', geos.tile, surface('kawara', C.farRowTileFar, { seed: 77, instancedUv: true, side: THREE.DoubleSide }), shade.tiles), 'far row tiles far');
   b.add(instanced('far row eave caps far', geos.cap, surface('kawara', darker(C.farRowTileFar, 0.85), { seed: 78, instancedUv: true }), shade.caps), 'far row eave caps far');
+
+  farRowFronts(b, R, units, baseTop);
+}
+
+// The shopfronts on the row's street face. Until iteration 3 the row was one unbroken plank wall with a
+// tiled edge -- `npm run views` called it a plank fence from the photo view and a long low shed from above,
+// and the compare gate cannot tell the difference, because at 20 m a whole frontage is four cells wide.
+// The photo has, at every bay: a near-black corner post, a warm rail across the head of the frontage, a
+// dark doorway in every other bay and a koshi lattice in the rest. Three instanced sets, one per colour.
+//
+// Every piece's street-facing FACE stands exactly 2 cm proud of the row's wall line, which is what `faceX`
+// below is for: a first pass offset each piece's CENTRE and the posts, 0.12 m deep, ended up 5 cm proud
+// while the comment claimed 2. `npm run clearance` measures the row's
+// WALL line for its 0.60 m clear-run rule (the eave, which already hangs 0.40 m further out, is measured
+// against the separate 0.55 m eave rule), so anything built on this face spends that margin directly.
+// Measured both ways against a 0.60 m floor: without these, the narrowest near-half run is 1.10 m at
+// z = -22.25, blocked by `far row base far`; with them it is 0.95 m at z = -29.25, blocked by
+// `far row lattice`. Read that as the minimum MOVING rather than as 0.15 m spent -- no piece here is more
+// than 2 cm proud at any z, and what the 2 cm did was expose a z where the base band's own run was
+// already about 0.97 m. The far-half run and the eave run do not move at all.
+//
+// Bound of that measurement, which the gate's own header does not spell out for this case: the sweep steps
+// z every 0.25 m and a corner post is 0.13 m deep, so five of the ten posts fall between samples and the
+// reported minimum was taken on the five that did not. It is a verdict about the row, not about each post.
+// Nothing here is near the 0.60 m floor, so the bound costs nothing today.
+//
+// Its PRNG is its own. `tileRoof` above draws from this module's `rand` for every tile and cap on the row,
+// so a draw taken here would renumber nothing (it runs last) but a draw taken BEFORE the tile loop would
+// renumber every tile on the row; the private stream removes the question.
+function farRowFronts(b, R, units, baseTop) {
+  const rand = mulberry32(5521);
+  const unit = new THREE.BoxGeometry(1, 1, 1);
+  const PROUD = 0.02;
+  // The x of a piece's CENTRE such that its street-facing face lands PROUD in front of the wall line.
+  const faceX = (fx, thickness) => fx - PROUD + thickness / 2;
+  const posts = [];
+  const rails = [];
+  const slats = [];
+  const doors = [];
+  const at = (z) => L.farRowFrontX(z);
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i];
+    const zc = (u.zNear + u.zFar) / 2;
+    const frontX = at(zc);
+    const baseY = baseTop(zc);
+    const headY = u.eaveY - 0.34;
+    const height = headY - baseY;
+    if (height < 0.6) continue;
+    // A corner post at the bay's near edge, and one more past the last bay so no frontage is left open.
+    for (const pz of i === units.length - 1 ? [u.zNear, u.zFar] : [u.zNear]) {
+      posts.push({ position: [faceX(at(pz), 0.12), (baseY + headY) / 2, pz], scale: [0.12, height, 0.13], tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] });
+    }
+    // The rail across the head of the frontage, under the eave.
+    rails.push({ position: [faceX(frontX, 0.1), headY - 0.09, zc], scale: [0.1, 0.18, u.zNear - u.zFar - 0.14], tint: 1 + jitter(rand, 0.04), uv: [rand(), 0] });
+    // Alternating doorway and lattice. The doorway is a dark panel the height of a door; the lattice is
+    // vertical slats over the rest of the frontage, stopping short of the rail.
+    const span = u.zNear - u.zFar - 0.2;
+    if (i % 2 === 1) {
+      const doorH = Math.min(1.85, height - 0.25);
+      doors.push({ position: [faceX(frontX, 0.03), baseY + doorH / 2, zc], scale: [0.03, doorH, span * 0.72], tint: 1 + jitter(rand, 0.03), uv: [rand(), 0] });
+    } else {
+      const y0 = baseY + 0.12;
+      const y1 = Math.min(headY - 0.22, baseY + 1.7);
+      const pitch = 0.12;
+      const n = Math.max(1, Math.floor(span / pitch));
+      const start = zc + (span - n * pitch) / 2 + pitch / 2 - span / 2;
+      for (let k = 0; k < n && y1 > y0; k++) {
+        slats.push({ position: [faceX(frontX, 0.045), (y0 + y1) / 2, start + k * pitch], scale: [0.045, y1 - y0, 0.045], tint: 1 + jitter(rand, 0.06), uv: [rand(), 0] });
+      }
+    }
+  }
+  b.add(instanced('far row posts', unit, surface('wood', C.farRowPost, { seed: 79, instancedUv: true }), posts), 'far row posts');
+  b.add(instanced('far row rails', unit, surface('wood', C.farRowRail, { seed: 80, instancedUv: true }), rails), 'far row rails');
+  b.add(instanced('far row lattice', unit, surface('wood', C.farRowLatticeSlat, { seed: 81, instancedUv: true }), slats), 'far row lattice');
+  b.add(instanced('far row doors', unit, surface('wood', C.farRowDoor, { seed: 82, instancedUv: true }), doors), 'far row doors');
 }
 
 // A closed solid swept along z from a list of rings, each a section polygon in (d, y) offset by the
