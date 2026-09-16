@@ -52,7 +52,7 @@ One expensive gate runs on this machine at a time (a full `npm test`, or `animat
 | lane | owner | outcome | files | waiting on |
 | --- | --- | --- | --- | --- |
 | iteration 3 | worker iter3-right-side, worktree from e580a92 | right-side stone and kawara, two iteration-1 survivors, shopfronts on the far row | src/, PLAN-scores.md, its devlog | the gate slot when it runs a suite |
-| gpu-gates | worker gpu-gates, worktree from 1e3f03b | every gate whose verdict allows it renders on the GPU; shot and compare stay on SwiftShader | tools/, AGENTS.md Gates, gate-proofs | the gate slot, by request to the integration owner |
+| gpu-gates | done: merged 0b81d68, suite green on main at 2 min 46 s | every gate whose verdict allows it renders on the GPU; shot stays on SwiftShader and refuses a GPU | tools/, AGENTS.md Gates, gate-proofs | nothing |
 | integration | this session | merge, suite in the primary checkout, push, CI to a conclusion | the primary checkout | each lane's handoff |
 
 ## Outcome
