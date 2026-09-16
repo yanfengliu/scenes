@@ -12,9 +12,31 @@
 // gate did (see the phase 5 devlog); and an animation that quietly stops moving would pass a score check
 // perfectly. So the gate bounds the mean per-pixel change between neighbouring frames from both sides:
 // too little and the scene has died, too much and it is thrashing.
+//
+// WHAT IS RENDERED AND WHAT IS MEASURED HAS NOT CHANGED SINCE cd50b5c, and must not: every frame is the
+// same 1200x1100 screenshot of the same photo view, resampled to 600x550 by the same decoder, scored by
+// the same two metrics against the same thresholds. Rendering these frames smaller is the obvious saving
+// and it is not available, because this gate does not only compare its frames with each other: it holds
+// the worst of them to `docs/PLAN-scores.md` plus 0.0006 of cell distance and minus 0.0025 of SSIM, which
+// are the SHIPPED FRAME's thresholds and belong to the 1200x1100 contract. The frame at t = 0 is in fact
+// byte-identical to `out/render.png` (sha256 d29b76dd0272… at cd50b5c on SwiftShader), and this scene is
+// full of geometry thinner than a pixel, so alpha-test coverage moves with the render size while those
+// allowances are six times the 0.0001 the animation itself moves the score. At another size the gate
+// would still separate a healthy animation from a fourteen-fold sway, but it would no longer be checking
+// the scored view. What changed on 2026-09-11 is only WHERE two kinds of work run and how many
+// round-trips it takes:
+//   - the eight image decodes moved to a blank page (`openInspector`). They were running on the scene
+//     page, where every `await` queues behind a whole 1200x1100 post-chain frame: the same decode of the
+//     same file in the same process cost 96.1 s there and 0.1 s on the blank page, and this gate was
+//     paying that eight times. It returns the same 1,320,000 bytes either way, measured byte for byte
+//     (out/scratch/decode-purity.mjs).
+//   - hiding the page's chrome, `setTime` and the two-frame wait for the compositor became one evaluate
+//     per sampled time instead of three, which renders exactly the same frames in the same order.
+// Both are timed and printed per frame below, so the next person to ask where the minutes go reads it off
+// the log instead of guessing.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
+import { launch, collectErrors, openScene, openInspector, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
 import { decodeImage } from './lib/image.js';
 import { cellDistance, ssimGray } from './lib/metrics.js';
 import { PHOTO, SHOT } from '../src/layout.js';
@@ -22,6 +44,14 @@ import { PHOTO, SHOT } from '../src/layout.js';
 // Seven frames across the wind's slowest period. ANIMATION_FRAMES trims the list where a run has to be
 // quick (CI): the first, the last and evenly spaced frames between.
 const ALL_TIMES = [0, 1.45, 2.9, 4.35, 5.8, 7.25, 8.7];
+// The floor of two is what stops a one-frame run, which has no interval to measure motion over and would
+// put NaN through every check. It is NOT a floor of three, and an earlier draft of this line made it one
+// on the argument that t = 0 and t = 8.7 are one full period of the wind apart and so nearly the same
+// frame. THAT ARGUMENT IS WRONG and was withdrawn after being measured. Only the slowest of the three
+// wind terms returns to phase at 8.7 s (2*pi/0.72 = 8.727): the 0.85 term is 1.11 rad short of a whole
+// number of cycles there and the 1.63 term 1.62 rad, and the petals wrap on a 7.5 s fall of their own. A
+// two-frame run measures 0.22 levels of motion and passes every check, which is what the tree actually
+// does -- see the measured spacing series in the animation section of docs/learning/gate-proofs.md.
 const wanted = Math.max(2, Math.min(ALL_TIMES.length, Number(process.env.ANIMATION_FRAMES) || ALL_TIMES.length));
 const TIMES = wanted === ALL_TIMES.length ? ALL_TIMES : Array.from({ length: wanted }, (_, i) => ALL_TIMES[Math.round((i * (ALL_TIMES.length - 1)) / (wanted - 1))]);
 // What the animation is allowed to do to the scores. The measured spread at the shipped amplitudes is
@@ -46,6 +76,7 @@ const thresholds = JSON.parse(block[1]);
 // A stale frame from an earlier grid beside a fresh one is a trap for whoever reads the failure.
 rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
+const started = Date.now();
 const server = await startServer({ port: 0, quiet: true });
 const browser = await launch();
 let failure = null;
@@ -57,16 +88,44 @@ try {
   page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   errors = collectErrors(page);
   await openScene(page, `${server.url}/`);
-  await page.addStyleTag({ content: HIDE_UI_CSS });
-  const photo = await decodeImage(page, 'japan.webp', { width: PHOTO.width, height: PHOTO.height });
+  // The blank page every decode runs on; see openInspector's comment for what it costs not to. Its
+  // console errors, page errors and failed requests go into the SAME array as the scene page's, because
+  // a decode that reports a problem without throwing would otherwise be watched by nothing.
+  const inspector = await openInspector(browser, errors);
+  const photo = await decodeImage(inspector, 'japan.webp', { width: PHOTO.width, height: PHOTO.height });
+  let hideUi = HIDE_UI_CSS;
   for (const t of TIMES) {
-    await page.evaluate((time) => window.__scene.setTime(time), t);
-    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    const frameStarted = Date.now();
+    // One evaluate per sampled time, not three. Hiding the page's own chrome was `page.addStyleTag`, a
+    // round-trip of its own, and it is folded into the first time's evaluate here -- `addStyleTag` appends
+    // exactly this element. Then `setTime` pins the clock and renders (src/main.js), and the frame loop
+    // re-renders that same pinned frame twice so the compositor has presented the canvas that
+    // `page.screenshot` is about to capture. Every round-trip to this page waits out a whole 1200x1100
+    // frame, so each one removed is seconds here and a minute on a runner.
+    await page.evaluate(async ({ time, css }) => {
+      if (css) {
+        const style = document.createElement('style');
+        style.textContent = css;
+        document.head.appendChild(style);
+      }
+      window.__scene.setTime(time);
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    }, { time: t, css: hideUi });
+    hideUi = null;
+    const posed = Date.now();
     const path = `${OUT_DIR}/t${t.toFixed(1)}.png`;
     await page.screenshot({ path, type: 'png' });
-    const render = await decodeImage(page, path, { width: PHOTO.width, height: PHOTO.height });
+    const shot = Date.now();
+    const render = await decodeImage(inspector, path, { width: PHOTO.width, height: PHOTO.height });
+    const decoded = Date.now();
     const cells = cellDistance(photo.data, render.data, PHOTO.width, PHOTO.height, 24, 22);
     const ssim = ssimGray(photo.data, render.data, PHOTO.width, PHOTO.height, 64);
+    // Where this gate's minutes go, per frame, so a change to it is argued from the log.
+    console.log(
+      `  t = ${t.toFixed(1)} s rendered in ${((decoded - frameStarted) / 1000).toFixed(1)} s `
+      + `(pose and two frames ${((posed - frameStarted) / 1000).toFixed(1)} s, screenshot ${((shot - posed) / 1000).toFixed(1)} s, `
+      + `decode on the blank page ${((decoded - shot) / 1000).toFixed(1)} s)`,
+    );
     // How much this frame differs from the one before it, averaged over every channel of every pixel.
     let motion = null;
     if (previous) {
@@ -101,6 +160,7 @@ const worstSsim = Math.min(...ssimValues);
 const bestSsim = Math.max(...ssimValues);
 for (const r of rows) console.log(`t = ${r.t.toFixed(1)} s   cell ${r.cellDistance.toFixed(4)}   ssim ${r.ssim.toFixed(4)}${r.motion === null ? '' : `   moved ${r.motion.toFixed(2)} levels`}`);
 console.log(`spread over ${rows.length} frames: cell ${bestCell.toFixed(4)} to ${worstCell.toFixed(4)} (${(worstCell - bestCell).toFixed(4)}), ssim ${worstSsim.toFixed(4)} to ${bestSsim.toFixed(4)} (${(bestSsim - worstSsim).toFixed(4)})`);
+console.log(`scored ${rows.length} frames in ${((Date.now() - started) / 1000).toFixed(0)} s`);
 const motions = rows.map((r) => r.motion).filter((m) => m !== null);
 const meanMotion = motions.reduce((a, b) => a + b, 0) / Math.max(1, motions.length);
 console.log(`motion between neighbouring frames: ${Math.min(...motions).toFixed(2)} to ${Math.max(...motions).toFixed(2)} levels, mean ${meanMotion.toFixed(2)}`);
