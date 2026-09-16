@@ -30,7 +30,7 @@ A global grade was tried in phase 4 and made the scores worse, so the contrast i
 Per iteration, all of them, before the integration owner pushes:
 
 - [ ] Cell distance and SSIM not worse than the thresholds; thresholds tightened to the achieved values minus the recorded margin.
-- [ ] `npm test` green in the primary checkout: shot, compare, placement, clearance, animation, nudge, blackframe, record.
+- [ ] `npm test` green in the primary checkout: import-inert, shot, compare, placement, namerules, clearance, animation, nudge, blackframe, record.
 - [ ] The photo view and the orbit sweep from `tools/views.js` inspected at native resolution by the integration owner, looking for what is wrong rather than for what changed.
 - [ ] One independent critic on the worker's diff and claim, findings resolved, recorded in the worker's detailed devlog section.
 - [ ] Committed to main by pathspec, pushed, and the remote gate watched to a conclusion.
@@ -55,7 +55,7 @@ One expensive gate runs on this machine at a time (a full `npm test`, or `animat
 | gpu-gates | done: merged 0b81d68, suite green on main at 2 min 46 s | every gate whose verdict allows it renders on the GPU; shot stays on SwiftShader and refuses a GPU | tools/, AGENTS.md Gates, gate-proofs | nothing |
 | iteration 4 | done: merged a78ba8f, 0.0640 / 0.5403 | content from the sweep: the hill and mountains as geometry, ground fog bands, the left row's open backs, the right roof mass, the bend; the persistent right-machiya cells treated as shadow and placement | src/, PLAN-scores.md, its devlog | nothing |
 | tools-followups | done: merged 6f12960 | clearance classifies the new walkway slabs and spill leaves as buildings; the sweep lost its digest binding to the scored frame when views moved to the GPU | tools/, AGENTS.md Gates, gate-proofs | nothing |
-| tools-bend-regex | worker tools-bend-regex, worktree from a78ba8f | narrow clearance's bend exemption to what the scene now produces; a gate that lists every name-matching rule's population and fails on an unstated change, retiring the open lesson | tools/, AGENTS.md Gates, gate-proofs, lessons | the gate slot by request |
+| tools-bend-regex | done: merged aefc71f | narrow clearance's bend exemption to what the scene now produces; a gate that lists every name-matching rule's population and fails on an unstated change, retiring the open lesson | tools/, AGENTS.md Gates, gate-proofs, lessons | nothing |
 | iteration 5 | worker iter5-bottom, worktree from cd24269 | the bottom third of the frame (stone, steps, walls, the fence's base and cap), the bottom-right corner as an occluder or a cast shadow rather than a colour, the right-machiya trio as placement and shading, one glare overshoot from iteration 4; cost-neutral on draw calls | src/, PLAN-scores.md, its devlog | the gate slot by request |
 | integration | this session | merge, suite in the primary checkout, push, CI to a conclusion | the primary checkout | each lane's handoff |
 
