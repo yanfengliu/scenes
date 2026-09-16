@@ -176,23 +176,49 @@ export const HEAD_M = 2.0;
 export const KERB_M = 0.35;
 // The height at which an eave stops being something you walk under.
 export const SKY_M = 3.2;
-// Where the walkable street ends. Past here the scene's bend block-out stands across the paving, and
-// `far street slabs` go on to z -42 underneath it — the far houses standing on the far street's own
-// paving, which iteration 2 named as open and did not fix.
+// Where the walkable street ends. Past here the scene's bend block-out reaches over the last of the
+// paving. It used to be much more than that: `far street slabs` ran on to z -42 under three buildings —
+// the far houses standing on the far street's own paving, which iteration 2 named as open and did not
+// fix. Iteration 4 fixed the paving rather than the buildings, ending it at the corner house's own front
+// face, so what is left past this bound is the corner house's ROOF oversailing one paved row. The rows
+// and names are pinned at `BEYOND_ROWS_MAX` below; that is where the numbers are.
 //
-// Be clear about where this number came from: it was CHOSEN AFTER SEEING WHERE THE GATE WENT RED, and on
-// this tree it exempts exactly the same 34 rows that an earlier rule (end the street at the first z built
-// over from edge to edge) exempted. What makes it better is not the answer, which is identical, but that
-// it cannot be widened by building more: that rule got more forgiving the more completely a building
-// blocked the road, and a single 0.25 m row of block-out silenced the 8 m behind it. Everything above
-// this z is asserted, including any z that a building closes from edge to edge — a full closure gives a
-// near-half run of 0 and fails like any other intrusion.
+// Be clear about where this number came from: it was CHOSEN AFTER SEEING WHERE THE GATE WENT RED, and
+// when it was written it exempted exactly the same 34 rows that an earlier rule (end the street at the
+// first z built over from edge to edge) exempted. What makes it better is not the answer, which was
+// identical, but that it cannot be widened by building more: that rule got more forgiving the more
+// completely a building blocked the road, and a single 0.25 m row of block-out silenced the 8 m behind
+// it. Everything above this z is asserted, including any z that a building closes from edge to edge — a
+// full closure gives a near-half run of 0 and fails like any other intrusion.
 //
-// So the exempt region is pinned from both sides, below: no more rows than it has today, and no blockers
-// in it but the three that are there. A NEW building past the bend is red; the known one is not.
+// So the exempt region is pinned from both sides, below: no more rows than it has, and no blockers in it
+// but the one that is there. A NEW building past the bend is red; the known one is not.
 export const STREET_TO_Z = -33.5;
-export const BEYOND_ROWS_MAX = 40; // shipped 34
-export const BEYOND_BLOCKERS = ['corner house body', 'corner house roof', 'bend roof'];
+// HOW BIG THE EXEMPTION IS, and why it is this size rather than the size it was.
+//
+// It was 40 rows and three mesh names, written on 2026-09-10 when `far street slabs` ran to z -42 and
+// 7.5 m of paved road lay under three buildings: 34 rows, 27 of them blocked, by `corner house body`,
+// `corner house roof` and `bend roof`. Iteration 4 ended the paving at the corner house's own front face
+// (`L.FAR_STREET_END`), and what is left past the bound is **3 rows (2026-09-16: z -33.75, -34.00,
+// -34.25), 1 of them blocked, by `corner house roof` alone** — the roof oversailing the last of the
+// paving. The 40 was then five times the unasserted region, which is a hole and not a bound: a whole new
+// building standing across the road inside those 40 rows would have passed on the row count and only
+// failed on its name.
+//
+// 6 is 3 plus a stated margin of 3 rows, which is 0.75 m of paving at Z_STEP. The margin exists because
+// the last row is where the paved band runs out and the sweep's own 0.25 m grid decides which side of
+// the end a row falls on: `FAR_STREET_END` is -34.4 and the last sampled row is -34.25, so a 0.15 m
+// change in the street's end, or a slab grid that rounds the other way, moves the count by one without
+// anything being built. Three rows covers that and nothing larger — extending the paving by a metre is
+// red, which is the direction this is for.
+//
+// Both halves are red-proved rather than argued; the mutations and their failure text are in
+// docs/learning/gate-proofs.md under this gate.
+export const BEYOND_ROWS_MAX = 6; // shipped 3
+// `corner house body` and `bend roof` were dropped with the 40: neither stands over paving any more, so
+// leaving them here would exempt two named buildings from a region they are no longer in. If the paving
+// is ever laid back under them this list is what goes red first.
+export const BEYOND_BLOCKERS = ['corner house roof'];
 const Z_STEP = 0.25;
 const X_STEP = 0.05;
 
@@ -853,7 +879,7 @@ export function report(result) {
       + `${beyond[beyond.length - 1].z.toFixed(2)} and are NOT asserted (limit ${BEYOND_ROWS_MAX}): `
       + `${bad.length} of them leave under ${MIN_STRIP.toFixed(2)} m in the near half, `
       + `${beyond.length - bad.length} are open road, and the structures over them are `
-      + `${blockers.join(', ') || 'none'}. That is the bend's block-out standing on the far street's own `
+      + `${blockers.join(', ') || 'none'}. That is the bend's block-out reaching over the far street's own `
       + 'paving, which is the scene\'s open defect and not this check\'s.',
     );
     if (beyond.length > BEYOND_ROWS_MAX) {

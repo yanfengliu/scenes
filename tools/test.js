@@ -1,7 +1,8 @@
-// npm test: shot -> compare -> placement checks -> what the street keeps clear, overhead and at ground
-// level -> the animation's own frames -> the frame's stability under a small camera move -> the frame is
-// actually there, at several window sizes and device pixel ratios -> the frame while the camera is driven
-// by real input -> assert the scores against the thresholds in docs/PLAN-scores.md.
+// npm test: shot -> compare -> placement checks -> the populations of every rule that selects meshes by
+// name -> what the street keeps clear, overhead and at ground level -> the animation's own frames -> the
+// frame's stability under a small camera move -> the frame is actually there, at several window sizes and
+// device pixel ratios -> the frame while the camera is driven by real input -> assert the scores against
+// the thresholds in docs/PLAN-scores.md.
 //
 // `nudge` and `blackframe` are the two halves of one question and neither can answer the other's. Nudge
 // scores how much the frame *changes*, so a frame that is entirely black is the most stable frame there
@@ -42,6 +43,10 @@ const GATES = [
   ['tools/shot.js', ['renderer:']],
   ['tools/compare.js', ['cell color distance', 'grayscale SSIM']],
   ['tools/placement.js', ['placement:']],
+  // Its marker is printed only on the verdict path. An `--update` run prints "manifest written:" instead,
+  // deliberately: writing the manifest is not checking it, and a marker shared between the two would let
+  // a rewrite satisfy this table.
+  ['tools/namerules.js', ['name rules:']],
   // Two markers, one per check, because this tool runs two independent checks off one page load and a
   // single marker would let a run that did half the work report as a pass. Neither string can be matched
   // by an earlier line: the tool's own set listing prints "walkable street:", not "clearance street:".

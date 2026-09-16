@@ -1,0 +1,626 @@
+{
+ "reason": "Critic round 1: the site scan was blind to whole-name idioms, so it missed clearance's own `o.name === 'cherry trunk'` lookup and placement's exact-name object lookup, and this gate's claim to cover every mesh-name rule was false. The scan now also matches name-bearing comparisons, splits and lookups (17 sites, was 14), and that trunk lookup is registered as a rule of its own (53 rules, was 52). No mesh name changed and no population moved.",
+ "updated": "2026-09-16",
+ "scene": {
+  "meshes": 255,
+  "names": 255,
+  "shadowCasters": 98
+ },
+ "sites": [
+  "src/animation.js  if (!screenScaleUniforms.includes(uniform)) screenScaleUniforms.push(uniform);",
+  "src/animation.js  if (!timeUniforms.includes(uniform)) timeUniforms.push(uniform);",
+  "src/debug.js  const transparent = bg === 'transparent' || /rgba\\(.*,\\s*0\\)$/.test(bg);",
+  "src/lighting.js  if (NO_CAST.test(o.name)) return;",
+  "tools/clearance.js  const CANOPY = (n) => n.startsWith('cherry ') && n !== 'cherry trunk';",
+  "tools/clearance.js  const n = String(name).toLowerCase();",
+  "tools/clearance.js  const unexpected = blockers.filter((b) => !BEYOND_BLOCKERS.includes(b));",
+  "tools/clearance.js  else if (TERRACE.test(n)) terrace.push(o);",
+  "tools/clearance.js  else if (TERRAIN.test(n) || LIVING.test(n)) {",
+  "tools/clearance.js  for (const w of PLANT_WORDS) if (n.includes(w)) return { word: w, kind: 'a growing thing', set: 'LIVING (or CANOPY, which is measured for headroom)' };",
+  "tools/clearance.js  for (const w of SURFACE_WORDS) if (n.includes(w)) return { word: w, kind: 'a walking surface', set: 'WALK or TERRACE' };",
+  "tools/clearance.js  if (LIVING.test(n)) plantsUnmeasured.push(n);",
+  "tools/clearance.js  if (WALK.test(n)) walk.push(o);",
+  "tools/clearance.js  scene.traverse((o) => { if (o.isMesh && o.name === 'cherry trunk') trunkMesh.push(o); });",
+  "tools/placement.js  const ground = hits.find((h) => (h.object.name || '').startsWith(c.mesh));",
+  "tools/placement.js  if (!object && o.isMesh && (o.name || '') === c.name) object = o;",
+  "tools/placement.js  return { ...c, first, ok: first.startsWith(c.mesh) };"
+ ],
+ "rules": {
+  "src/lighting.js NO_CAST": {
+   "what": "excluded from the shadow pass",
+   "source": "/^(far row|sky|hill|mountains|near ridge|ground base|outer ground|far plots|hillside|cherry blossoms|cherry strands|petals|evergreen|shrub|left plant|weeds|moss|sun|fill|far roof|far house|corner house|bend|noren)/",
+   "meshes": 55,
+   "names": [
+    "bend roof",
+    "bend wall",
+    "cherry blossoms",
+    "cherry strands",
+    "corner house body",
+    "corner house roof",
+    "evergreen cards",
+    "evergreen trunks",
+    "far house lips",
+    "far house ridges",
+    "far plots left",
+    "far plots right",
+    "far roof a",
+    "far roof a back",
+    "far roof a house",
+    "far roof a house lower",
+    "far roof b",
+    "far roof b back",
+    "far roof b house",
+    "far roof b house lower",
+    "far roof c",
+    "far roof c back",
+    "far roof c house",
+    "far roof c house lower",
+    "far roof d",
+    "far roof d back",
+    "far roof d house",
+    "far roof d house lower",
+    "far row base",
+    "far row base far",
+    "far row doors",
+    "far row eave caps",
+    "far row eave caps far",
+    "far row front",
+    "far row front far",
+    "far row lattice",
+    "far row posts",
+    "far row rails",
+    "far row tiles",
+    "far row tiles far",
+    "hill",
+    "hillside",
+    "left plant leaves",
+    "moss",
+    "mountains blue",
+    "mountains farthest",
+    "near ridge",
+    "noren",
+    "noren rod",
+    "outer ground",
+    "petals",
+    "shrub 2 leaves",
+    "shrub leaves",
+    "sky",
+    "weeds"
+   ]
+  },
+  "tools/clearance.js WALK": {
+   "what": "the walkable street",
+   "source": "/^(platform|platform slabs|platform coping|stairs|stair treads|stair risers|gutter|gutter floor|gutter curb|landing|landing slabs|far street|far street slabs|far street lit slabs)$/",
+   "meshes": 14,
+   "names": [
+    "far street",
+    "far street lit slabs",
+    "far street slabs",
+    "gutter",
+    "gutter curb",
+    "gutter floor",
+    "landing",
+    "landing slabs",
+    "platform",
+    "platform coping",
+    "platform slabs",
+    "stair risers",
+    "stair treads",
+    "stairs"
+   ]
+  },
+  "tools/clearance.js TERRACE": {
+   "what": "the right terrace",
+   "source": "/^(right paving|right walkway|right walkway far|right walkway slabs|side stair treads|side stair risers|side stair body)$/",
+   "meshes": 7,
+   "names": [
+    "right paving",
+    "right walkway",
+    "right walkway far",
+    "right walkway slabs",
+    "side stair body",
+    "side stair risers",
+    "side stair treads"
+   ]
+  },
+  "tools/clearance.js TERRAIN": {
+   "what": "terrain and backdrop",
+   "source": "/^(sky|mountains (blue|farthest)|near ridge|hill|hillside|far plots (left|right)|ground base|left house 1 ground|right house ground( far)?)$/",
+   "meshes": 11,
+   "names": [
+    "far plots left",
+    "far plots right",
+    "hill",
+    "hillside",
+    "left house 1 ground",
+    "mountains blue",
+    "mountains farthest",
+    "near ridge",
+    "right house ground",
+    "right house ground far",
+    "sky"
+   ]
+  },
+  "tools/clearance.js LIVING": {
+   "what": "plants and the person",
+   "source": "/^(cherry .*|evergreen (trunks|cards)|shrub leaves|shrub 2 leaves|left plant leaves|fence spill leaves|weeds|moss|petals|pot|small pot|left pot|person .*)$/",
+   "meshes": 23,
+   "names": [
+    "cherry blossoms",
+    "cherry strands",
+    "cherry trunk",
+    "evergreen cards",
+    "evergreen trunks",
+    "fence spill leaves",
+    "left plant leaves",
+    "left pot",
+    "moss",
+    "person arm left",
+    "person arm right",
+    "person collar",
+    "person hair",
+    "person head",
+    "person leg left",
+    "person leg right",
+    "person torso",
+    "petals",
+    "pot",
+    "shrub 2 leaves",
+    "shrub leaves",
+    "small pot",
+    "weeds"
+   ]
+  },
+  "tools/clearance.js CANOPY": {
+   "what": "measured for headroom",
+   "source": "(n) => n.startsWith('cherry ') && n !== 'cherry trunk'",
+   "meshes": 2,
+   "names": [
+    "cherry blossoms",
+    "cherry strands"
+   ]
+  },
+  "tools/clearance.js SURFACE_WORDS": {
+   "what": "names that say \"walking surface\"",
+   "source": "['paving', 'pavement', 'slab', 'walkway', 'tread', 'riser', 'flagstone', 'cobble']",
+   "meshes": 12,
+   "names": [
+    "far street lit slabs",
+    "far street slabs",
+    "landing slabs",
+    "platform slabs",
+    "right paving",
+    "right walkway",
+    "right walkway far",
+    "right walkway slabs",
+    "side stair risers",
+    "side stair treads",
+    "stair risers",
+    "stair treads"
+   ]
+  },
+  "tools/clearance.js PLANT_WORDS": {
+   "what": "names that say \"growing thing\"",
+   "source": "['leaf', 'leaves', 'foliage', 'blossom', 'petal', 'shrub', 'bush', 'moss', 'weed', 'flower', 'grass', 'ivy', 'vine', 'fern']",
+   "meshes": 8,
+   "names": [
+    "cherry blossoms",
+    "fence spill leaves",
+    "left plant leaves",
+    "moss",
+    "petals",
+    "shrub 2 leaves",
+    "shrub leaves",
+    "weeds"
+   ]
+  },
+  "tools/clearance.js BEYOND_BLOCKERS": {
+   "what": "exempt past the bend",
+   "source": "['corner house roof']",
+   "meshes": 1,
+   "names": [
+    "corner house roof"
+   ]
+  },
+  "tools/clearance.js trunk lookup": {
+   "what": "the trunk whose low wood is measured",
+   "source": "\"cherry trunk\"",
+   "meshes": 1,
+   "names": [
+    "cherry trunk"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[cherry trunk] first-hit prefix": {
+   "what": "may satisfy the check at (0.635, 0.585)",
+   "source": "\"cherry trunk\"",
+   "meshes": 1,
+   "names": [
+    "cherry trunk"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[cherry blossoms] first-hit prefix": {
+   "what": "may satisfy the check at (0.58, 0.35)",
+   "source": "\"cherry blossoms\"",
+   "meshes": 1,
+   "names": [
+    "cherry blossoms"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[cherry lower canopy] first-hit prefix": {
+   "what": "may satisfy the check at (0.44, 0.6)",
+   "source": "\"cherry blossoms\"",
+   "meshes": 1,
+   "names": [
+    "cherry blossoms"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[far street] first-hit prefix": {
+   "what": "may satisfy the check at (0.385, 0.735)",
+   "source": "\"far street\"",
+   "meshes": 4,
+   "names": [
+    "far street",
+    "far street lit slabs",
+    "far street skirt",
+    "far street slabs"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[evergreen] first-hit prefix": {
+   "what": "may satisfy the check at (0.3, 0.29)",
+   "source": "\"evergreen\"",
+   "meshes": 2,
+   "names": [
+    "evergreen cards",
+    "evergreen trunks"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[far roof] first-hit prefix": {
+   "what": "may satisfy the check at (0.2, 0.33)",
+   "source": "\"far roof\"",
+   "meshes": 16,
+   "names": [
+    "far roof a",
+    "far roof a back",
+    "far roof a house",
+    "far roof a house lower",
+    "far roof b",
+    "far roof b back",
+    "far roof b house",
+    "far roof b house lower",
+    "far roof c",
+    "far roof c back",
+    "far roof c house",
+    "far roof c house lower",
+    "far roof d",
+    "far roof d back",
+    "far roof d house",
+    "far roof d house lower"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[hill] first-hit prefix": {
+   "what": "may satisfy the check at (0.72, 0.13)",
+   "source": "\"hill\"",
+   "meshes": 2,
+   "names": [
+    "hill",
+    "hillside"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[mountains] first-hit prefix": {
+   "what": "may satisfy the check at (0.25, 0.27)",
+   "source": "\"mountains\"",
+   "meshes": 2,
+   "names": [
+    "mountains blue",
+    "mountains farthest"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[person] first-hit prefix": {
+   "what": "may satisfy the check at (0.52, 0.76)",
+   "source": "\"person\"",
+   "meshes": 8,
+   "names": [
+    "person arm left",
+    "person arm right",
+    "person collar",
+    "person hair",
+    "person head",
+    "person leg left",
+    "person leg right",
+    "person torso"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[lamp post] first-hit prefix": {
+   "what": "may satisfy the check at (0.498, 0.79)",
+   "source": "\"lamp post\"",
+   "meshes": 1,
+   "names": [
+    "lamp post"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[pot] first-hit prefix": {
+   "what": "may satisfy the check at (0.85, 0.75)",
+   "source": "\"pot\"",
+   "meshes": 1,
+   "names": [
+    "pot"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[shrub] first-hit prefix": {
+   "what": "may satisfy the check at (0.755, 0.575)",
+   "source": "\"shrub\"",
+   "meshes": 2,
+   "names": [
+    "shrub 2 leaves",
+    "shrub leaves"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[left plant] first-hit prefix": {
+   "what": "may satisfy the check at (0.21, 0.84)",
+   "source": "\"left plant\"",
+   "meshes": 1,
+   "names": [
+    "left plant leaves"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[sign] first-hit prefix": {
+   "what": "may satisfy the check at (0.33, 0.58)",
+   "source": "\"sign\"",
+   "meshes": 3,
+   "names": [
+    "sign",
+    "sign arm",
+    "sign post"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[noren] first-hit prefix": {
+   "what": "may satisfy the check at (0.93, 0.5)",
+   "source": "\"noren\"",
+   "meshes": 2,
+   "names": [
+    "noren",
+    "noren rod"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[right eave] first-hit prefix": {
+   "what": "may satisfy the check at (0.85, 0.365)",
+   "source": "\"right eave tiles\"",
+   "meshes": 1,
+   "names": [
+    "right eave tiles"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[awning] first-hit prefix": {
+   "what": "may satisfy the check at (0.14, 0.545)",
+   "source": "\"awning\"",
+   "meshes": 2,
+   "names": [
+    "awning",
+    "awning edge"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[annex door 1] first-hit prefix": {
+   "what": "may satisfy the check at (0.11, 0.77)",
+   "source": "\"annex door 1\"",
+   "meshes": 3,
+   "names": [
+    "annex door 1",
+    "annex door 1 backing",
+    "annex door 1 lattice"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[stairs] first-hit prefix": {
+   "what": "may satisfy the check at (0.4, 0.93)",
+   "source": "\"stair treads\"",
+   "meshes": 1,
+   "names": [
+    "stair treads"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[right walkway] first-hit prefix": {
+   "what": "may satisfy the check at (0.938, 0.932)",
+   "source": "\"right walkway slabs\"",
+   "meshes": 1,
+   "names": [
+    "right walkway slabs"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[fence spill] first-hit prefix": {
+   "what": "may satisfy the check at (0.771, 0.659)",
+   "source": "\"fence spill leaves\"",
+   "meshes": 1,
+   "names": [
+    "fence spill leaves"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[far row front] first-hit prefix": {
+   "what": "may satisfy the check at (0.465, 0.755)",
+   "source": "\"far row front\"",
+   "meshes": 2,
+   "names": [
+    "far row front",
+    "far row front far"
+   ]
+  },
+  "src/layout.js PLACEMENT_CHECKS[far row hip] first-hit prefix": {
+   "what": "may satisfy the check at (0.52, 0.697)",
+   "source": "\"far row tiles far\"",
+   "meshes": 1,
+   "names": [
+    "far row tiles far"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[cherry trunk] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"cherry trunk\"",
+   "meshes": 1,
+   "names": [
+    "cherry trunk"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[cherry trunk] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"right walkway\"",
+   "meshes": 3,
+   "names": [
+    "right walkway",
+    "right walkway far",
+    "right walkway slabs"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[lamp post] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"lamp post\"",
+   "meshes": 1,
+   "names": [
+    "lamp post"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[lamp post] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"landing slabs\"",
+   "meshes": 1,
+   "names": [
+    "landing slabs"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[person leg left] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"person leg left\"",
+   "meshes": 1,
+   "names": [
+    "person leg left"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[person leg left] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"landing slabs\"",
+   "meshes": 1,
+   "names": [
+    "landing slabs"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[pot] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"pot\"",
+   "meshes": 1,
+   "names": [
+    "pot"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[pot] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"right walkway\"",
+   "meshes": 3,
+   "names": [
+    "right walkway",
+    "right walkway far",
+    "right walkway slabs"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[small pot] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"small pot\"",
+   "meshes": 1,
+   "names": [
+    "small pot"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[small pot] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"right walkway\"",
+   "meshes": 3,
+   "names": [
+    "right walkway",
+    "right walkway far",
+    "right walkway slabs"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[left pot] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"left pot\"",
+   "meshes": 1,
+   "names": [
+    "left pot"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[left pot] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"left low wall\"",
+   "meshes": 2,
+   "names": [
+    "left low wall",
+    "left low wall far"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[far roof c house lower] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"far roof c house lower\"",
+   "meshes": 1,
+   "names": [
+    "far roof c house lower"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[far roof c house lower] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"far plots left\"",
+   "meshes": 1,
+   "names": [
+    "far plots left"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[evergreen trunks] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"evergreen trunks\"",
+   "meshes": 1,
+   "names": [
+    "evergreen trunks"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[evergreen trunks] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"hillside\"",
+   "meshes": 1,
+   "names": [
+    "hillside"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[far row base] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"far row base\"",
+   "meshes": 1,
+   "names": [
+    "far row base"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[far row base] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"landing\"",
+   "meshes": 3,
+   "names": [
+    "landing",
+    "landing skirt",
+    "landing slabs"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[far row base far] object name": {
+   "what": "the object whose base is dropped",
+   "source": "\"far row base far\"",
+   "meshes": 1,
+   "names": [
+    "far row base far"
+   ]
+  },
+  "src/layout.js GROUNDING_CHECKS[far row base far] ground prefix": {
+   "what": "may answer as its ground",
+   "source": "\"far street\"",
+   "meshes": 4,
+   "names": [
+    "far street",
+    "far street lit slabs",
+    "far street skirt",
+    "far street slabs"
+   ]
+  }
+ }
+}
