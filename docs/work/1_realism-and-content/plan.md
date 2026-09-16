@@ -3,7 +3,7 @@
 Status: active
 Owner: Manager session (integration owner)
 Created: 2026-09-10
-Updated: 2026-09-10
+Updated: 2026-09-15
 
 ## Problem and outcome
 
@@ -30,7 +30,7 @@ A global grade was tried in phase 4 and made the scores worse, so the contrast i
 Per iteration, all of them, before the integration owner pushes:
 
 - [ ] Cell distance and SSIM not worse than the thresholds; thresholds tightened to the achieved values minus the recorded margin.
-- [ ] `npm test` green in the primary checkout: shot, compare, placement, animation, nudge, blackframe, record.
+- [ ] `npm test` green in the primary checkout: shot, compare, placement, clearance, animation, nudge, blackframe, record.
 - [ ] The photo view and the orbit sweep from `tools/views.js` inspected at native resolution by the integration owner, looking for what is wrong rather than for what changed.
 - [ ] One independent critic on the worker's diff and claim, findings resolved, recorded in the worker's detailed devlog section.
 - [ ] Committed to main by pathspec, pushed, and the remote gate watched to a conclusion.
@@ -38,7 +38,7 @@ Per iteration, all of them, before the integration owner pushes:
 ## Implementation steps
 
 - [x] Iteration 1, contrast and placement (merged cb9a17c): close the measured cells above and build `tools/views.js`. Target: cell distance at or below 0.077, SSIM at or above 0.45, or the measured ceiling reported with what stops it.
-- [ ] Iteration 2, content: retire the block-out the orbit sweep shows. The corner house at the bend, the far houses as machiya with tiles and lattices, roof undersides with rafters, the right roof mass as tiles, the dormer body, the paved bands.
+- [x] Iteration 2, content (merged 28bd01d, gated 3c646d2): the machiya row and the bare slab; the rest of the block-out carries to a later iteration. Was: retire the block-out the orbit sweep shows. The corner house at the bend, the far houses as machiya with tiles and lattices, roof undersides with rafters, the right roof mass as tiles, the dormer body, the paved bands.
 - [ ] Iteration 3, sky and atmosphere: the photo's banded cirrus and its orange undersides, the glare's shape, cloud contrast, and haze with depth.
 - [ ] Iteration 4, the cherry's depth: dark limbs visible through the canopy, a shadowed magenta interior against backlit edges, strand structure, card variety.
 - [ ] Iteration 5, street life: stone variation and wetness, the drain, moss, two or three more figures, shop goods under the noren, signs, pots, a bicycle, only where the photo view does not regress.
@@ -52,3 +52,9 @@ Iteration 1, merged as cb9a17c. Cell distance 0.0812 to 0.0768 and SSIM 0.4401 t
 Two findings shape iteration 2. The brief's reading of cells (0.44,0.75) and (0.56,0.75) was wrong: they are landing slabs, and at z -21 the paving's right edge sits at x 2.5 where the photo's street edge is at x -2.0, so about 4.5 m of paving stands where the photo has the machiya row. Four attempts on the paving all lost, because the fix is the row itself. And the views found the top platform's face standing as a bare grey slab across the head of the stairs, invisible from the photo view and glaring from the landing.
 
 `tileRight` is a measured dead end for colour work: it is the pan tiles' S-section, so lifting its hex moves nothing. The cross-machine SSIM noise floor is 0.0010, measured on identical code.
+
+Iteration 2, merged as 28bd01d and gated in 3c646d2. Cell distance 0.0768 to 0.0749 and SSIM 0.4559 to 0.4733; thresholds tightened to 0.0763 and 0.4703. The machiya row lining the far street was measured from the photo, the paving-to-building boundary sampled at six heights with each crossing dropped onto the street's height field, which is why four colour attempts in iteration 1 had lost: 4.5 m of bare paving stood where the photo has buildings. The bare slab at the head of the stairs was a mortar face coplanar with the ashlar. Two defects the scored frame cannot see were fixed at a cost of 0.0020 SSIM and kept: blossoms hung to 1.71 m over a street where a standing eye is 1.70 m, because the photo's blossom mask is a 2D silhouette and cannot bound depth; and the row crossed the road by 0.46 m at its last bay. Both are gated by `npm run clearance`, eight assertions in 34 s, every one proved red with measured boundaries, and the gate reproduced its numbers on CI digit for digit. The SSIM margin is 0.0030 against a measured cross-machine noise floor of 0.0010; `HEADROOM = 2.2` is the dial if that proves thin.
+
+The loop's own cost was the next target, because it is paid on every iteration: the suite went from 35 minutes to 12 locally, merged 2026-09-15 as f2719ac, with the scored render byte-identical, by taking image work off the scene page and merging round-trips. CI is estimated at about 32 minutes from about 70, to be read from the next run rather than believed.
+
+Still wrong in the sweep, for iteration 3: the row is a featureless plank wall with no shopfronts; the far houses and mountain cards are flat boxes and strips with hard edges; the hill is a dark speckled slab with a hard silhouette; the right roof mass is one plane and its back walls bare; the ground is one flat plane with fog banding; stone textures repeat about every metre; the person is a billboard; the strands read as hard wires.
