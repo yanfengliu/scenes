@@ -39,7 +39,7 @@ Per iteration, all of them, before the integration owner pushes:
 
 - [x] Iteration 1, contrast and placement (merged cb9a17c): close the measured cells above and build `tools/views.js`. Target: cell distance at or below 0.077, SSIM at or above 0.45, or the measured ceiling reported with what stops it.
 - [x] Iteration 2, content (merged 28bd01d, gated 3c646d2): the machiya row and the bare slab; the rest of the block-out carries to a later iteration. Was: retire the block-out the orbit sweep shows. The corner house at the bend, the far houses as machiya with tiles and lattices, roof undersides with rafters, the right roof mass as tiles, the dormer body, the paved bands.
-- [ ] Iteration 3, re-targeted from the heat map on 2026-09-15 (in flight, worktree from e580a92): the right half and the bottom third, where the error moved after iteration 2, plus two iteration-1 survivors (the annex canopy still tile where the photo has dark wood; the shrub still brown) and shopfronts on the far row. Sky and atmosphere move to iteration 4; the fixed list below shifts by one.
+- [x] Iteration 3, re-targeted from the heat map on 2026-09-15 (merged 2026-09-16): the right half and the bottom third, where the error moved after iteration 2, plus two iteration-1 survivors (the annex canopy still tile where the photo has dark wood; the shrub still brown) and shopfronts on the far row. Sky and atmosphere move to iteration 4; the fixed list below shifts by one.
 - [ ] Iteration 4, the cherry's depth: dark limbs visible through the canopy, a shadowed magenta interior against backlit edges, strand structure, card variety.
 - [ ] Iteration 5, street life: stone variation and wetness, the drain, moss, two or three more figures, shop goods under the noren, signs, pots, a bicycle, only where the photo view does not regress.
 - [ ] Iteration 6, close-up realism: materials at orbit distance, tile and board edges, wood grain, foliage cards that hold up close.
@@ -51,7 +51,7 @@ One expensive gate runs on this machine at a time (a full `npm test`, or `animat
 
 | lane | owner | outcome | files | waiting on |
 | --- | --- | --- | --- | --- |
-| iteration 3 | worker iter3-right-side, worktree from e580a92 | right-side stone and kawara, two iteration-1 survivors, shopfronts on the far row | src/, PLAN-scores.md, its devlog | the gate slot when it runs a suite |
+| iteration 3 | done: merged 2026-09-16, 0.0660 / 0.5286 | right-side stone and kawara, two iteration-1 survivors, shopfronts on the far row | src/, PLAN-scores.md, its devlog | nothing |
 | gpu-gates | done: merged 0b81d68, suite green on main at 2 min 46 s | every gate whose verdict allows it renders on the GPU; shot stays on SwiftShader and refuses a GPU | tools/, AGENTS.md Gates, gate-proofs | nothing |
 | integration | this session | merge, suite in the primary checkout, push, CI to a conclusion | the primary checkout | each lane's handoff |
 
@@ -68,3 +68,7 @@ Iteration 2, merged as 28bd01d and gated in 3c646d2. Cell distance 0.0768 to 0.0
 The loop's own cost was the next target, because it is paid on every iteration: the suite went from 35 minutes to 12 locally, merged 2026-09-15 as f2719ac, with the scored render byte-identical, by taking image work off the scene page and merging round-trips. CI is estimated at about 32 minutes from about 70, to be read from the next run rather than believed.
 
 Still wrong in the sweep, for iteration 3: the row is a featureless plank wall with no shopfronts; the far houses and mountain cards are flat boxes and strips with hard edges; the hill is a dark speckled slab with a hard silhouette; the right roof mass is one plane and its back walls bare; the ground is one flat plane with fog banding; stone textures repeat about every metre; the person is a billboard; the strands read as hard wires.
+
+Iteration 3, merged 2026-09-16. Cell distance 0.0749 to 0.0660 and SSIM 0.4733 to 0.5286; thresholds tightened to 0.0675 and 0.5236, the SSIM margin back to a full 0.005. The brief's twenty worst cells fell 32.8% in summed distance, both iteration-1 survivors closed, the far row has shopfronts, and the largest single win was off the list: the right walkway, a flat plane whose mean was already right and whose texture carried the frame's worst summed error. The critic's measurement of the rig (deepest cast shadow 14%, a painted shadow at 81%) is the finding to remember: a surface can score right and still read as paint, and the sweep is where that shows.
+
+Open for the tools lane, from iteration 3: `clearance`'s TERRACE list classifies the new walkway slabs and the fence's spill leaves as buildings (harmless at their x today; the terrace headroom rays land 5 mm under the walking surface); and with `views` on the GPU and `shot` on SwiftShader, the sweep is bound to the scored frame only by source hashes, a weaker claim than the byte identity it had.
