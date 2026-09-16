@@ -125,6 +125,44 @@ if (recorded.renderSha256 !== renderSha) {
   );
   process.exit(1);
 }
+// And the same claim made about the POST CHAIN. The three checks above bind the score to a scene; this
+// one binds it to the configuration that scene was drawn with. `docs/PLAN-scores.md` records what the
+// FULL chain scores -- rung 0, the 1.2 supersample, every multisample the driver gives -- and a frame
+// drawn at a lesser rung scores differently while looking, in every other field of this sidecar, exactly
+// like the contract. `shot` refuses to leave such a frame on disk; this refuses to score one that
+// reached the disk another way, which is the case a sidecar carried in from another machine or written
+// by an older tool.
+//
+// Bound: this reads a NUMBER THE PAGE REPORTED about itself, so it proves the chain said it was at the
+// top rung and never that the frame is right. It is also blind to the flake it was written for: the
+// 2026-09-17 frame was drawn at rung 0 (docs/devlog/detailed/2026-09-17-shot-rung.md). The verdict
+// numbers that DO separate that frame travel in the sidecar and are copied into out/scores.json below,
+// where a later run can compare them; nothing asserts them, because the light in this scene moves every
+// iteration and a pinned figure here would be one an iteration lane has to raise.
+// `verdict` is checked here and not where it is first read, so a sidecar that carries a `post` without
+// one fails with a sentence instead of a TypeError three hundred lines further down.
+if (!recorded.post || !recorded.post.verdict) {
+  console.error(
+    `FAIL: ${RENDER_TREE_PATH} carries no ${recorded.post ? 'post-chain verdict' : 'post-chain state'}, so `
+    + `there is no record of the configuration ${RENDER_PATH} was drawn at and this score cannot be bound `
+    + 'to one. npm run shot writes that field from window.__scene.describe().post; a sidecar without it '
+    + 'was written by a tool from before 2026-09-17, by a run that was interrupted, or by hand. Run '
+    + 'npm run shot again.',
+  );
+  process.exit(1);
+}
+if (recorded.post.rung !== 0 || recorded.post.fallback || recorded.post.designed !== true) {
+  console.error(
+    `FAIL: ${RENDER_PATH} was drawn at post-chain rung ${recorded.post.rung} (${recorded.post.cost}), a `
+    + `${recorded.post.width}x${recorded.post.height} target at scale ${recorded.post.scale} with `
+    + `${recorded.post.samples} samples${recorded.post.designed === true ? '' : ', which src/post.js does not mark as the chain as designed'}`
+    + ', and the thresholds in docs/PLAN-scores.md are the FULL chain\'s. Scoring this frame would compare '
+    + 'a lesser configuration against numbers it cannot make. The step-down means the top rung did not '
+    + 'survive on this driver at this size; src/post.js prints what it measured. Run npm run shot, which '
+    + 'refuses to leave such a frame on disk.',
+  );
+  process.exit(1);
+}
 const treeNow = sourceTree();
 if (recorded.sourceTree !== treeNow.hash) {
   const changed = diffTrees({ files: recorded.sourceFiles }, treeNow, 'the render', 'the tree on disk');
@@ -135,6 +173,97 @@ if (recorded.sourceTree !== treeNow.hash) {
     + '  Run npm run shot so the render and the score come from one tree.',
   );
   process.exit(1);
+}
+
+// ---- AND THE SAME TREE MUST DRAW THE SAME AMOUNT OF LIGHT -------------------------------------------
+// This is the one check here aimed at the 2026-09-17 flake itself rather than at its neighbour. That run
+// drew a frame every lit surface of which was about 6.5% darker than the three other runs of the same
+// tree, at the same rung, the same size and the same sample count, and the score went 0.05958 -> 0.0632.
+// What separates the two is `verifyComposer`'s own reference render: the scene at 64x64 with no post
+// chain at all, at a clock pinned to 0 because the composer is built before the frame loop starts. It
+// read 57.5 in every good run and would have read 54.6 in that one (measured by removing
+// `scene.environment` from the same scene, out/scratch/reflight.mjs).
+//
+// So: if the last scored run was of THIS tree, its reference luma is the anchor, and a run of the same
+// tree that disagrees is red. No figure is pinned anywhere — the anchor is whatever the previous run of
+// the same source measured, so an iteration lane that changes the scene changes the tree and resets it,
+// and nothing here has to be maintained.
+//
+// THE ANCHOR IS ITS OWN FILE, and that is not tidiness. Putting it in `out/scores.json` wedges the gate:
+// a flaked run with no anchor passes and writes ITS figure, then every correct run after it is red
+// against that stale figure and `process.exit(1)` happens before a new score is written, so the anchor
+// never moves and only a human deleting the file clears it. One flake would red every later run, and the
+// red would always land on the good one. `out/light-anchor.json` is written on the way past whatever the
+// verdict is, so a disagreement is reported ONCE, against the run before it, and the next run compares
+// against this one. (Found by an independent review, 2026-09-17, before it could happen to anyone.)
+//
+// BOUNDS, and they are large enough to state plainly:
+//   - It needs a previous anchor OF THE SAME TREE. A fresh clone has none and CI never has one, so on CI
+//     this check NEVER RUNS. Which case this run took is printed, because a check that cannot tell
+//     "passed" from "did not run" reports the second as the first.
+//   - It would NOT have caught the 2026-09-17 flake, which was the first `npm test` on a freshly merged
+//     main: the previous score was of a different tree, so there would have been no anchor. It catches
+//     the second and later run of a tree, which is every repeat of that flake.
+//   - It says the two runs disagree; it cannot say which of them is right. The message says so.
+//   - The tolerance is 0.15 of a luma level. The measured run-to-run jitter of this figure on the shot
+//     path is ZERO -- 57.5 in all 54 logged `npm run shot` runs that recorded it, across three loops on
+//     this machine, because `shot` never re-tunes and the composer is built before the clock starts, and
+//     the other two runs of the 56 were refused before they wrote one -- so the only floor is the one decimal
+//     the figure is rounded to. 0.15 is that plus a hair, and a twentieth of the 2.9 the defect moved.
+//     A wider limit here would be slack nobody can red-prove.
+//   - It is blind to a change that moves no light: a geometry shift, a colour swap that keeps the mean.
+const LIGHT_TOLERANCE = 0.15;
+const ANCHOR_PATH = 'out/light-anchor.json';
+let anchor = null;
+if (existsSync(ANCHOR_PATH)) {
+  try {
+    const previous = JSON.parse(readFileSync(ANCHOR_PATH, 'utf8'));
+    if (previous && previous.sourceTree === recorded.sourceTree && typeof previous.referenceLuma === 'number') {
+      anchor = previous;
+    }
+  } catch {
+    anchor = null; // a truncated anchor is not evidence about anything; the "did not run" line says so.
+  }
+}
+// Written before the comparison decides anything, so a disagreement cannot repeat against a stale figure.
+mkdirSync('out', { recursive: true });
+writeFileSync(ANCHOR_PATH, `${JSON.stringify({
+  sourceTree: recorded.sourceTree,
+  renderSha256: recorded.renderSha256,
+  referenceLuma: recorded.post.verdict.referenceLuma,
+  meanLuma: recorded.post.verdict.meanLuma,
+  wroteAt: new Date().toISOString(),
+}, null, 1)}\n`);
+if (!anchor) {
+  console.log(
+    `no previous ${ANCHOR_PATH} for scene source tree ${shortHash(recorded.sourceTree)}, so the same-tree `
+    + 'light check did not run this time; this run is now the anchor for the next one',
+  );
+} else {
+  const drift = Math.abs(anchor.referenceLuma - recorded.post.verdict.referenceLuma);
+  if (drift > LIGHT_TOLERANCE) {
+    console.error(
+      `FAIL: two runs of scene source tree ${shortHash(recorded.sourceTree)} disagree about how much light `
+      + 'is in the scene. The previous run of this tree measured a plain-render reference luma of '
+      + `${anchor.referenceLuma} (chain ${anchor.meanLuma}); this render measured `
+      + `${recorded.post.verdict.referenceLuma} (chain ${recorded.post.verdict.meanLuma}), a difference of `
+      + `${drift.toFixed(1)} against a tolerance of ${LIGHT_TOLERANCE}. That figure is src/post.js's own `
+      + '64x64 render of the scene with no post chain and the clock at 0, so the same source must give the '
+      + 'same number: the scene was lit differently in one of these two runs and the scored frame moves '
+      + 'with it (2026-09-17: 0.05958 -> 0.0632 for 2.9 of this figure). Which of the two is right is NOT '
+      + `established by this check, and ${ANCHOR_PATH} has already been moved to THIS run's figure, so the `
+      + 'anchor follows the last run instead of sticking. Note that one flaked run therefore produces TWO '
+      + 'reds and the second lands on a correct render: the flake reds against the run before it, and the '
+      + 'next correct run reds against the flake. The third run is green. Run npm run shot twice more and '
+      + 'see which number comes back twice; '
+      + 'docs/devlog/detailed/2026-09-17-shot-rung.md says how that flake was taken apart.',
+    );
+    process.exit(1);
+  }
+  console.log(
+    `same-tree light check: reference luma ${recorded.post.verdict.referenceLuma} against the previous run `
+    + `of tree ${shortHash(recorded.sourceTree)} at ${anchor.referenceLuma} (tolerance ${LIGHT_TOLERANCE})`,
+  );
 }
 
 const browser = await launch();
@@ -295,6 +424,10 @@ try {
     // between a sweep and a score rather than handing back two hashes. Without it the sweep-to-score
     // pairing — the pairing that tool exists for — could only ever report bare digests.
     sourceFiles: recorded.sourceFiles,
+    // And the configuration the frame was drawn at, carried over for the same reason: a score belongs to
+    // a frame, and a frame belongs to a post-chain rung and to the light the chain measured making it.
+    // Two runs of one tree that score differently are told apart here and nowhere else.
+    post: recorded.post,
     renderSha256: renderSha,
     renderedAt: new Date().toISOString(),
   };
@@ -302,6 +435,11 @@ try {
   console.log(`cell color distance (24x22 grid, lower is better): ${cells.mean.toFixed(4)}`);
   console.log(`grayscale SSIM at 64 px (higher is better): ${ssim.value.toFixed(4)}`);
   console.log(`scored out/render.png (sha256 ${shortHash(renderSha)}) from scene source tree ${shortHash(recorded.sourceTree)} over ${recorded.sourceFileCount} files`);
+  console.log(
+    `drawn at post-chain rung ${recorded.post.rung}, a ${recorded.post.width}x${recorded.post.height} target `
+    + `with ${recorded.post.samples} samples; the chain measured mean luma ${recorded.post.verdict.meanLuma} `
+    + `against a plain-render reference of ${recorded.post.verdict.referenceLuma}`,
+  );
   console.log('wrote out/compare.png, out/overlay.png, out/scores.json');
 } catch (err) {
   failure = err;

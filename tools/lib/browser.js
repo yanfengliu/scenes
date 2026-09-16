@@ -137,6 +137,28 @@ export async function openInspector(browser, errors) {
   return page;
 }
 
+// Every `post:` warning a watched page prints, echoed to this process's output the moment it arrives and
+// kept per page for a gate that wants to fail on one.
+//
+// WHY THIS IS NOT IN `errors`. src/post.js announces every ladder step-down and every watchdog ratchet
+// with `console.warn`, and `collectErrors` below only ever looked at `console.error`, so NO GATE COULD
+// SEE ONE. The scene could be drawn at a lesser configuration -- a smaller target, fewer multisamples,
+// none at all -- and every gate in this repo would report a pass and print nothing about it. That is a
+// step-down the machine decided on and said out loud into a log nobody was reading. It is not an error,
+// though: the ladder exists because stepping down is the right answer on a driver where the top rung
+// produces a NaN frame, and a gate whose verdict does not depend on the configuration (placement,
+// clearance, namerules) should not go red for one. So it is echoed everywhere and fatal in exactly one
+// place, `shot`, whose frame IS the configuration it was drawn at.
+//
+// Bound: this sees what the page PRINTED. A step-down that happens after the last console event has
+// crossed the CDP connection is not in the array, and a future change to src/post.js that stops warning
+// takes this with it. `shot` therefore also reads the post state itself out of the page and refuses
+// anything but the top rung, which is the check that does not depend on a string.
+const POST_WARNINGS = new WeakMap();
+export function postWarnings(page) {
+  return POST_WARNINGS.get(page) ?? [];
+}
+
 // Every console error, uncaught page error, and failed request lands in the returned array.
 //
 // Pass `sink` to collect several pages into ONE array, and never write
@@ -146,6 +168,33 @@ export async function openInspector(browser, errors) {
 // (found by review on 2026-09-11, fixed in the same commit, proved red by injecting a `console.error`).
 export function collectErrors(page, sink) {
   const errors = sink ?? [];
+  // One console listener per page, whatever a caller does. Two calls on the same page would otherwise
+  // push every `post:` warning twice and echo it twice, and `shot`'s failure text would report double the
+  // step-downs -- a gate lying about the size of what it caught. No caller does this today
+  // (`paintcheck.js` calls it twice but on two different pages), so this is latent, and latent is exactly
+  // when it is cheap to close. Found by an independent review, 2026-09-17.
+  const alreadyWatched = POST_WARNINGS.has(page);
+  const posts = POST_WARNINGS.get(page) ?? [];
+  POST_WARNINGS.set(page, posts);
+  if (!alreadyWatched) {
+    page.on('console', (msg) => {
+      const text = msg.text();
+      // ECHOED on any of the three prefixes and at any console level, so a gate's log carries everything
+      // the post chain decided. COLLECTED, and therefore fatal in `shot`, only for a `post:` WARNING,
+      // which src/post.js uses for a step-down and for nothing else: a contradicted black reading is a
+      // `post:` LOG and the watchdog giving up is a `watchdog:` warning, and neither is a frame drawn at
+      // a lesser configuration. Without the echo those two were visible in exactly one gate's output --
+      // `shot`, from the sidecar -- which is the "announced and nobody was listening" defect in
+      // miniature, and an independent review said so.
+      if (!text.startsWith('post:') && !text.startsWith('watchdog:')) return;
+      // Printed as it arrives, not gathered for a summary: a gate that dies before its summary would
+      // otherwise take the one record of a step-down with it.
+      console.log(`  page: ${text}`);
+      if (msg.type() === 'warning' && text.startsWith('post:')) posts.push(text);
+    });
+  }
+  // The error listeners are attached on EVERY call, unchanged: a caller that calls this twice with two
+  // sinks means to collect into both, and that was the behaviour before the block above existed.
   page.on('console', (msg) => {
     if (msg.type() === 'error') errors.push(`console.error: ${msg.text()}`);
   });

@@ -463,6 +463,93 @@ would rewrite the contract and pass. …
 - **Not yet proved: the green half on this tool's own renderer.** `npm run shot` unmutated on SwiftShader had not been run with this check in place when this was written — the machine's one CPU-rasterizing slot was held by another lane. `isSoftwareRenderer` returns true for the SwiftShader string (executed directly, with WARP, llvmpipe, the masked string and the RTX 4090 string beside it), so the branch is not taken, but that is an argument and not a run. `out/scratch/shot-refusal.sh` runs both halves plus a restore; run it and record the green line here.
 - Bound: it checks the renderer STRING through `isSoftwareRenderer`, so a CPU rasterizer under a name this repo has not met fails `shot` — loudly, with a message that says to add it to that function, which is the safe direction but is a false red until someone does. It says nothing about whether the SwiftShader it got is the same SwiftShader that produced the recorded digest; a chromium upgrade that changes the rasterizer's output passes this check and moves the contract, which is what `compare`'s thresholds are there to catch.
 
+## the post chain's watchdog, and the frame the full chain did not draw (2026-09-17)
+
+Two gates and one scene fix, from one investigation. The scene fix is first because it is the one that removes a flake rather than reporting it.
+
+### src/post.js: nine black pixels are a trigger, not a verdict
+
+- Claim (in the module's own header): `watchPostChain` steps the post chain down only when the composer's own targets are bad or the canvas is still black after the chain has drawn a fresh frame. A single unreadable drawing-buffer read does not step it down; it is counted, and after three of them the watchdog switches itself off for that page.
+- Origin: **not a user report — a reproduction loop.** `npm run shot` run 25 times as its own process with its own fresh chromium flaked once (`out/scratch/shot-loop2.log` run 18): the watchdog ratcheted on a healthy frame and the tool drew `1f74009907c0` where the contract is `e95a53185ee3`. `watchPostChain` read nine pixels off the DEFAULT framebuffer, and reading that buffer back is not reliable — `tools/record.js` has documented for months that it can hand back cleared black through no fault of the scene. Rate on this machine: **1 in 25, 4%**. That run's `scene ready` was 14.5 s against 18.3–28.0 s for the other 24, the only run in the loop below 18.3.
+- Mutations: the probe's own answer is forced, by rewriting two lines of `src/post.js` AS IT IS FETCHED (`page.route`, `out/scratch/ratchet-frame.mjs`), so the tree on disk never moves and `sourceTree` stays put. Four arms, one page load each, each driving `shot`'s exact path and keeping the frame:
+
+| arm | what is forced | digest | rung | ratchets | false alarms |
+| --- | --- | --- | --- | ---: | ---: |
+| control | nothing | `e95a53185ee3` | 0, designed | 0 | 0 |
+| **first-read-black** | the first probe only | **`e95a53185ee3`** | **0, designed** | **0** | **1** |
+| always-black | every probe | `e11e4d5135b8` | 4, not designed | 6 | 0 |
+| every-first-read-black | the first probe of every call | `e95a53185ee3` | 0, designed | 0 | 3, then blind |
+| first-read-black-and-bad-targets | the first probe, and `PROBE.maxBadTaps: -1` | `e11e4d5135b8` | 4, not designed | 1 | 0 |
+
+- **Row two is the fix, and it is the red proof run both ways**: against the code before the fix that same arm drew `1f74009907c0` at rung 1 with one ratchet (`out/scratch/ratchet-frame.log`); against the code after it, the contract frame, with the page saying why:
+
+```
+post: a 1440x1320 frame read back black and the chain's own check contradicts it (0% non-finite, mean
+luma 76.7 against a reference of 57.4), so this was an unreadable drawing buffer and not a black frame.
+Not stepping down. False alarm 1 of 3.
+```
+
+  That line is a `console.log` and **not** a `console.warn`, deliberately: `shot` fails on a `post:` WARNING, so announcing a frame that turned out to be fine as a warning would have moved the defect instead of removing it. The count travels in `postState().watch.falseAlarms`, which is the channel a gate reads.
+- **Rows three and five are the guard on the fix, and there are two because the ratchet branch has two ways in.** `verdict.ok && lit` short-circuits, so `always-black` — which forces the light reading false — never lets `verdict.ok` enter the decision at all. The fifth arm leaves the probe alone after the first read, so the canvas reads LIT, and makes the VERIFICATION reject instead, with `PROBE.maxBadTaps: -1`. That is the entry the 2026-09-06 and 2026-09-07 faults use (53.9% of the frame not a finite number at the pose the defect register records), and it ratchets in one call to the bottom rung. Added after an independent review pointed out that the four-arm set asserted this half rather than showing it.
+- **A bound the third arm states rather than hides.** `falseAlarms` only rises when the SECOND read comes back lit, so a driver whose default-framebuffer read returns black EVERY time never reaches the give-up path: `always-black` records falseAlarms 0, blind false, six ratchets, rung 4. An always-black read and a genuinely black canvas are indistinguishable to this module, and what covers the difference is `shot` refusing the frame rather than trusting the chain.
+- **And the rate in the field, which is weaker than the arms and is reported as such.** 25 fresh `npm run shot` processes before the fix: **1 not the contract frame**. 25 after: **0**. That is NOT a measurement of the fix: the chance of zero failures in 25 runs at an unchanged 4% rate is **0.36**, the 95% upper bound on the post-fix rate from 0 of 25 is **11%**, and loop 3's ready times (18.1–20.6 s) never enter the range loop 2's flake sat in (14.5 s, the only run below 18.3), so it may not have entered the regime at all. What carries the fix is the forced arm, which is deterministic. The loops carry "no regression observed at n=25" and nothing more; an independent review corrected an earlier draft that read them as proof.
+- Bounds: the arms force the PROBE'S ANSWER, not the driver, so this proves the decision procedure and not that the driver behaves as modelled; and `verifyComposer` reads the composer's two ping-pong targets, so a fault that is entirely in the final blit to the canvas is seen only by the second nine-pixel read.
+
+### shot and compare refuse a frame the full post chain did not draw
+
+- Claim (in both gates' own headers, `tools/shot.js` and `tools/compare.js`): `out/render.png` is drawn by the post chain AS DESIGNED, with no watchdog ratchet and no re-tune between the scene becoming ready and the screenshot; `shot` records what it was drawn with in `out/render.tree.json` and refuses anything else, and `compare` refuses a sidecar with no post state, no verdict, or a rung that is not the designed one, and refuses two runs of one tree that disagree about how much light is in the scene.
+- Origin: **not a user report and not a gate failure — an integration owner watching two runs of one tree disagree.** On 2026-09-17, `npm test` on main at `09eb339` (scene source tree `387c0513bdeda0a5`) drew `0e56fc677faf` scoring 0.0632 / 0.5718; `npm run shot && npm run compare` minutes later on the same tree drew `e95a53185ee3` at 0.05958 / 0.57134, and a second `npm test` drew `e95a53185ee3` again. `shot` printed the renderer, the draw calls, the triangles and the tree hash, all four identical in both, and nothing about the configuration or the light. The whole measurement, including the hypothesis that lost, is in `docs/devlog/detailed/2026-09-17-shot-rung.md`.
+- Why five different frames are a real risk: forcing each rung at 1200x1100 on SwiftShader through `shot`'s own path produces five different files — `e95a53185ee3` (designed), `1f74009907c0`, `1825c9dd2e0f`, `d1d5527ad529`, `e11e4d5135b8` — and the watchdog flake above reached the second of them without anyone asking.
+
+- **M1, the ladder starts one rung down.** `let watch = { last: 0, floor: 0, … }` in `src/post.js` → `floor: 1`, the state a machine whose top rung has failed at runtime is in. `npm run shot` exit **1**, naming two reasons:
+
+```
+  page: post: settled on a 1426x1307 target with 4 samples for this window size, giving up one percent of the supersample. …
+FAIL: this frame was not drawn by the full post chain, so it is not the contract docs/PLAN-scores.md records:
+  it was drawn at rung 1 (one percent of the supersample), a 1426x1307 target at scale 1.188 with 4 samples, which is not the chain as designed. …
+  the page announced 1 post-chain step-down(s), the first being: post: settled on a 1426x1307 target with 4 samples for this window size, giving up one percent of the supersample. …
+```
+
+  The `page: post:` line above the failure is the other half of this work: `collectErrors` in `tools/lib/browser.js` only ever watched `console.error`, and `src/post.js` announces every step-down with `console.warn`, so before this **no gate in the repo could see one**. That line is now printed by every gate that watches a page, as it arrives.
+
+- **M2, the same mutation with the announcement silenced.** M1 plus every `` `post: `` in `src/post.js` changed to `` `psot: ``, so the warning no longer matches and only the rung check can fire. Exit **1** with the rung reason alone and no `page:` line. That is the bound in `tools/lib/browser.js` made concrete: the string is not what the gate rests on.
+
+- **M3, every probe of the watchdog reads black.** The comparison inside `canvasCarriesLight` made unreachable. Exit **1** with all four reasons, including the two only this mutation reaches:
+
+```
+  the post chain's watchdog stepped down 5 time(s) while this frame was being made, leaving the chain at rung 4 …
+  the post chain was re-tuned between the scene becoming ready and the screenshot … At readiness: {"rung":3,…}. At the shot: {"rung":4,…}.
+```
+
+  The re-tune check compares the CONFIGURATION only; the watchdog's running counters are dropped before the comparison, because a contradicted black reading bumps `falseAlarms` without touching a pixel and would otherwise red a healthy run.
+
+- **M4, and this is the one that matters.** `TARGET_BYTE_BUDGET` → `1`, so `ladder()` drops every rung but the last and the surviving list has one entry. The chain then reports **rung 0** — and `shot` refuses it anyway:
+
+```
+  it was drawn at rung 0 (both the multisampling and the supersample), a 1200x1100 target at scale 1 with 0 samples, which is not the chain as designed.
+```
+
+  A gate that asked only `rung === 0` would have written that frame to the contract and passed. `designed` is the predicate for exactly this reason, and it is a real machine state: at 2560x1440 and a device pixel ratio of 1.5 the designed rung asks about 1.5 GiB against a 512 MiB budget. `rung === 0` is now not asked separately at all — it is implied by `designed` on every ladder the dedupe can produce, so a branch for it would be one no mutation could reach.
+
+- **M5–M7b, `compare`, by editing the sidecar `shot` wrote and putting it back.** Deleting `post`: `FAIL: out/render.tree.json carries no post-chain state …`. Deleting `post.verdict`: `FAIL: out/render.tree.json carries no post-chain verdict …` — a sentence rather than the bare `TypeError` three hundred lines further down that an independent review found. Setting `post.rung = 1` and `post.designed = false`: `FAIL: out/render.png was drawn at post-chain rung 1 (one percent of the supersample) … which src/post.js does not mark as the chain as designed …`. Setting only `post.designed = false`: the same refusal naming that field. All four exit **1**.
+
+- **M8, the check aimed at the unexplained frame's own class: the same tree must draw the same amount of light.** `compare` holds this run's `post.verdict.referenceLuma` to within 0.15 of `out/light-anchor.json`, when that anchor is of the same scene source tree. Mutation: the anchor set to the figures the same scene reads with `scene.environment` removed, 54.6 and 72.7. (Two measurements of that exist and they differ in the last digit: **54.7** with the environment removed BEFORE the build, which is what a real failure would record and what `shot` would have written, and 54.6 from a re-tune after the clock has advanced. Both are 2.8 or 2.9 from 57.5 and both are far outside the 0.15 tolerance.) Exit **1**:
+
+```
+FAIL: two runs of scene source tree 2588580226d7f721 disagree about how much light is in the scene. The
+previous run of this tree measured a plain-render reference luma of 54.6 (chain 72.7); this render
+measured 57.5 (chain 76.8), a difference of 2.9 against a tolerance of 0.15. … Which of the two is right
+is NOT established by this check.
+```
+
+  **The boundary was measured and not extrapolated**: an anchor 0.15 away passes (`same-tree light check: reference luma 57.5 … at 57.65 (tolerance 0.15)`, exit 0) and one 0.2 away fails, exit 1. The tolerance is one rounding step of a one-decimal figure against a measured run-to-run jitter of ZERO — 57.5 in all 54 logged `npm run shot` runs that recorded it, of the 56 across three loops on this machine — and a twentieth of the 2.9 the defect moved.
+- **The anchor is its own file, and that is a fix rather than a layout choice.** Keeping it in `out/scores.json` wedges the gate: a flaked run with no anchor passes and writes ITS figure, and every correct run after it is red against that stale figure because `process.exit(1)` happens before a new score is written. One flake would have reddened every later run, always on the good one. `out/light-anchor.json` is written on the way past whatever the verdict is, so the anchor follows the last run instead of sticking. Found by an independent review before it could happen to anyone. **Its own arithmetic is in the failure text**: because the anchor follows the last run, ONE flaked run produces TWO reds — the flake against the run before it, and the next correct run against the flake — and the third run is green. That is the price of not wedging, and it is stated rather than discovered.
+- **M9, the skipped path, which is the half that can lie.** `out/light-anchor.json` deleted, then `npm run compare`: exit **0** and `no previous out/light-anchor.json for scene source tree …, so the same-tree light check did not run this time; this run is now the anchor for the next one`. It says which case it took, because a check that cannot tell "passed" from "did not run" reports the second as the first — and this one does not run on CI at all, where every clone is fresh.
+
+- **The green half, and the pixels.** With every check in place and nothing mutated, `npm run shot && npm run compare` reproduces the contract exactly: `out/render.png` sha256 `e95a53185ee3595e5bf0102b3d60948574724ee8582054650b3b40bc2a1739a4`, cell distance **0.05957921461787957**, SSIM **0.5713434848735502** — the digit-for-digit frame and scores the 2026-09-17 good runs produced, before any of this existed, and reproduced 25 times in a row after the watchdog fix. `shot`'s new read is the last statement of the evaluate it was already making, so it adds no round-trip and no GL work before the screenshot. After the proofs, `src/post.js` is back to sha256 `083067b1ac3ac57f…` — the shipped digest, which every proof log's own `after:` line records — and the sidecar and anchor to the files they were.
+
+- **Bounds, and the largest is that the rung refusals would not have caught the flake this work started from.** The `0e56fc677faf` frame was drawn at the designed rung with no ratchet and no warning; what separates it is the light in the scene, which is M8's question and not theirs, and the recorded verdict is where that shows (`referenceLuma` 54.6 against 57.5). **No ABSOLUTE figure for the light is asserted anywhere, deliberately**: the light in this scene is a property of the scene, an iteration lane moves it every iteration, and a pinned figure is one someone has to raise and would eventually raise past the defect. M8 asserts only that two runs of ONE tree agree, which is why it resets itself, why it cannot run on a fresh clone, and why it would not have caught the 2026-09-17 incident itself — that was the first `npm test` on a freshly merged main, with no same-tree anchor. It catches every repeat. Further: both gates read numbers the page reports about ITSELF, so a page that lies about its rung passes; the warning check depends on a string `src/post.js` prints, which is why M2 exists; and `shot`'s console-warning array holds what crossed the CDP connection before the screenshot response, so a step-down announced after that is not in it — which is the reason the rung is read out of the page as well.
+
 ## compare refuses a stale render (2026-09-05)
 
 - Claim (in the gate's own header, `tools/compare.js`): a score is a claim about the current scene, so `compare` fails when `out/render.png` is older than any of `index.html` and `src/*`.
