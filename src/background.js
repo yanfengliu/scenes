@@ -4,15 +4,38 @@
 // block-out). The sky dome is src/sky.js.
 import * as THREE from 'three';
 import * as L from './layout.js';
-import { instanced, surface, panTileGeometry, eaveCapGeometry } from './instancing.js';
-import { makeMaterial } from './materials.js';
-import { makeHillTexture } from './textures.js';
+import { instanced, surface, panTileGeometry, eaveCapGeometry, ridgeTileGeometry } from './instancing.js';
+import { makeMaterial, albedoOf } from './materials.js';
+import { makeHillTexture, noise2D } from './textures.js';
 import { buildSky } from './sky.js';
 import { mulberry32, jitter } from './random.js';
 import { tileRoof } from './roofs.js';
 import { darker } from './paving.js';
 
 const C = L.COLORS;
+
+// The photo's own skyline, re-read column by column in iteration 4 (out/scratch/skyline.mjs: the first
+// row in each column that falls 28 levels of luma below the sky above it, which is the top of the
+// tallest tree there). It reads v 0.158 at u 0.630, 0.116 at 0.716, 0.104 at 0.745 and 0.089 at 0.774,
+// where the old polyline gave 0.145, 0.102, 0.095 and 0.089 -- about 0.013 of frame too high over
+// u 0.60 to 0.75. Columns at u <= 0.60 read the cherry and the evergreens rather than the hill and are
+// carried smoothly; columns at u >= 0.80 read the right house's roof (their sky reference drops to
+// luma 177 there) and are left where they were.
+// `mountains` reads it too: every card's top edge is tucked under it, so none of them ends in mid-sky.
+const HILL_RIDGE_LINE = [[-3.0, 0.94], [-1.4, 0.47], [-0.5, 0.375], [0.05, 0.345], [0.27, 0.305], [0.36, 0.285], [0.48, 0.225], [0.6, 0.172], [0.72, 0.115], [0.78, 0.092], [0.82, 0.08], [0.95, 0.075], [1.6, 0.07]];
+
+function ridgeVAt(u) {
+  const ridge = HILL_RIDGE_LINE;
+  if (u <= ridge[0][0]) return ridge[0][1];
+  for (let i = 1; i < ridge.length; i++) {
+    if (u <= ridge[i][0]) {
+      const [u0, v0] = ridge[i - 1];
+      const [u1, v1] = ridge[i];
+      return v0 + ((v1 - v0) * (u - u0)) / (u1 - u0);
+    }
+  }
+  return ridge[ridge.length - 1][1];
+}
 
 export function buildBackground(b) {
   buildSky(b);
@@ -22,38 +45,109 @@ export function buildBackground(b) {
   farHouses(b);
   farMachiyaRow(b);
   bend(b);
-  // Base slab so orbiting never looks into the void.
-  b.box('ground base', { x0: -80, x1: 80, y0: -30, y1: -24, z0: -120, z1: 40 }, C.groundBase);
 }
 
 // Hazy mountains as three planes facing the photo camera, farther ones paler: a pale far ridge whose
 // tops sit at v 0.25, the blue range below it from v 0.27, and the dull-green near ridge in front.
-// Each card runs below the horizon so nothing shows beneath.
 //
 // Their left ends run out to u = -2.4 rather than -0.6. Nothing there is inside the photo frame (u runs
 // 0 to 1), so the scored view cannot see the difference; `npm run views` pose 3 can, and what it showed
 // was the three cards' left edges stacked in the sky as a green, blue and white band with hard straight
-// ends, which reads as a mistake rather than as a mountain. Their right ends stay where they are: past
-// u 0.6 the photo has the forested hill and open sky above it, and a card carried further right would
-// put mountain into that sky.
+// ends, which reads as a mistake rather than as a mountain.
+//
+// Their RIGHT ends used to stop dead at u 0.5-0.6 with a vertical cut, for the same reason and with the
+// same result: pose 3 showed three flat strips ending in mid-sky, and iteration 2's note that "a card
+// carried further right would put mountain into that sky" is only true of a card carried STRAIGHT. Each
+// one now runs on to u 1.55 with its top edge well under the hill's own skyline, so from the photo camera
+// the hill covers every metre of it and from an orbit the ranges carry on behind the hill instead of
+// stopping. 1.55 and not further: the HILL stops at u 1.6, and a card carried past that is a card with
+// nothing in front of it — pose 2 showed exactly that as a pale mint slab standing in the sky, and
+// out/scratch/posefind.mjs named it `near ridge` at 1.6 km.
+//
+// WHAT ACTUALLY KEEPS THEM HIDDEN IS THE GAP, NOT THE `margin` BELOW, and `out/scratch/cardgap.mjs` is the
+// probe that says so without a browser. The `Math.max` clamp fires ZERO times on all 24 shipped points:
+// each card's own sinking line is always the larger value, so the margins are a guard for a ridge line
+// somebody later lowers and nothing shipped depends on them. They are ordered so the farthest card, which
+// needs the most, gets the most; an earlier version had that exactly backwards.
+//
+// THE HILL'S OPAQUE LINE IS NOT ITS POLYLINE, and that is the whole difficulty. The polyline is the top of
+// the TALLEST trees and `makeHillTexture` cuts the strip below it into crowns and gaps, so a card edge
+// inside the strip shows through: a column is opaque only from `ridgeVAt + TREE_RISE * (1 - canopyAt)`
+// down. At u 0.68, the tightest of the 24, that is v 0.13959 against the polyline's 0.13400, and the gap
+// to `mountains farthest`'s own 0.27433 is **0.1347 of frame** — against the 0.045 to 0.085 the clamp
+// names. `mountains blue` clears by 0.1531 there and `near ridge` by 0.1924. Two probes, one per party,
+// each measured a different wrong line (0.140 off the polyline, 0.125 off the whole strip) and disagreed
+// by 0.015 because of it; `cardgap.mjs` evaluates `canopyAt` and settles it.
+//
+// The bound is the CAMERA's height, and it is NOT a guarantee for every camera a user can reach. A rise of
+// dy shifts the hill by dy/d_hill radians and a card by dy/d_card, and the frame spans 60 degrees over its
+// height, so 0.955 of frame per radian; `d_hill` is the depth of the opaque row, 481 m, not the ridge's
+// 500. The worst sweep pose is 6, 21.2 m above the photo camera: 0.030 of frame against a 0.1347 gap. But
+// `controls.maxDistance` is 120 m FROM THE ORBIT TARGET and that target sits at y 0.751, so a drag can put
+// the eye 115.95 m above the photo camera — and the gaps are used up at **89.3 m** for `mountains
+// farthest`, **113.5 m** for `mountains blue` and 208.1 m for `near ridge`. TWO of the three are
+// reachable, the second by 2.4 m. Closing that would mean pushing the ranges below the hill's own foot.
+//
+// The bottoms run to v 0.9 rather than v 0.4. At v 0.4 they are horizontal edges sitting in the sky, and
+// pose 6 showed exactly that: hard straight lines across the background under each band.
+//
+// Each card takes a gradient rather than one colour, because that is what "receding in haze" is: the
+// range's own tone at its top, fading toward the horizon's warm pale at its foot.
 function mountains(b) {
+  // The right-hand continuation of a card's top edge: the range carries on, sinking gently toward the
+  // horizon with a low wobble over it, and is held at or below the hill's own skyline (`ridgeVAt` plus a
+  // margin, v downward, so "below" is the larger number) wherever the hill would otherwise not cover it.
+  // The hill climbs steeply to the right, so the clamp never fires on the shipped polylines — it is a
+  // guard, and the header above says what the real clearance is.
+  const carryRight = (fromU, fromV, margin, seed) => {
+    const out = [];
+    for (let u = fromU + 0.12; u <= 1.5501; u += 0.12) {
+      const own = fromV + 0.013 * (u - fromU) + 0.006 * Math.sin(u * 5.3 + seed) + 0.004 * Math.sin(u * 11.7 + seed * 2);
+      out.push([u, Math.max(own, ridgeVAt(u) + margin)]);
+    }
+    return out;
+  };
+  // The LEFT-hand continuation, and it exists for the same reason `carryRight` does. Iteration 2 pushed
+  // these ends out from u -0.6 to -2.4 because pose 3 showed them stacked in the sky as a green, blue and
+  // white band with hard straight ends — but pushing a hard end further left only moves it, and the band
+  // was still there at -2.4 with the hill's top 0.27 of frame below the card. Iteration 4's fix for the
+  // hill's own left cut made that worse before this: dropping the hill's ridge to v 0.94 at u -3.0 widened
+  // the open sky above it at u -2.4 from 0.271 to 0.484 of frame. So each card's top edge now SINKS to
+  // meet its own bottom instead of stopping: quadratic, so it holds its line over most of the run and
+  // dives at the end, which is a range going down behind the valley rather than a card being cut off.
+  const carryLeft = (toU, toV, seed) => {
+    const out = [];
+    for (let u = -2.4; u < toU - 0.001; u += 0.18) {
+      const t = (toU - u) / (toU + 2.4);
+      out.push([u, Math.min(0.885, toV + (0.88 - toV) * t * t + 0.008 * Math.sin(u * 3.1 + seed))]);
+    }
+    return out;
+  };
+  // A card's colour at a photo position: its own tone at `vTop`, hazing toward the horizon by `vHaze`.
+  const haze = (hex, hazeHex, vTop, vHaze) => (u, v) => {
+    const t = Math.max(0, Math.min(1, (v - vTop) / (vHaze - vTop)));
+    const a = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+    const c = [(hazeHex >> 16) & 255, (hazeHex >> 8) & 255, hazeHex & 255];
+    const m = a.map((x, i) => Math.round(x + (c[i] - x) * t));
+    return (m[0] << 16) | (m[1] << 8) | m[2];
+  };
   b.frontalCard(
     'mountains farthest',
-    [[-2.4, 0.28], [-0.6, 0.27], [0.08, 0.262], [0.18, 0.248], [0.26, 0.243], [0.33, 0.25], [0.4, 0.258], [0.47, 0.27], [0.6, 0.28], [0.6, 0.4], [-2.4, 0.4]],
+    [...carryLeft(-0.6, 0.27, 0.7), [-0.6, 0.27], [0.08, 0.262], [0.18, 0.248], [0.26, 0.243], [0.33, 0.25], [0.4, 0.258], [0.47, 0.27], [0.56, 0.278], ...carryRight(0.56, 0.278, 0.085, 0.7), [1.55, 0.9], [-2.4, 0.9]],
     L.DEPTHS.mountains[1],
-    C.mountainFarthest,
+    haze(C.mountainFarthest, C.fog, 0.25, 0.44),
   );
   b.frontalCard(
     'mountains blue',
-    [[-2.4, 0.3], [-0.6, 0.29], [0.1, 0.283], [0.17, 0.272], [0.23, 0.268], [0.29, 0.276], [0.35, 0.27], [0.41, 0.278], [0.48, 0.29], [0.6, 0.295], [0.6, 0.4], [-2.4, 0.4]],
+    [...carryLeft(-0.6, 0.29, 2.1), [-0.6, 0.29], [0.1, 0.283], [0.17, 0.272], [0.23, 0.268], [0.29, 0.276], [0.35, 0.27], [0.41, 0.278], [0.48, 0.29], [0.56, 0.296], ...carryRight(0.56, 0.296, 0.065, 2.1), [1.55, 0.9], [-2.4, 0.9]],
     L.DEPTHS.mountains[0],
-    C.mountainBlue,
+    haze(C.mountainBlue, C.fog, 0.27, 0.46),
   );
   b.frontalCard(
     'near ridge',
-    [[-2.4, 0.335], [-0.6, 0.325], [0.1, 0.32], [0.18, 0.305], [0.24, 0.285], [0.3, 0.295], [0.36, 0.283], [0.42, 0.29], [0.5, 0.32], [0.5, 0.42], [-2.4, 0.42]],
+    [...carryLeft(-0.6, 0.325, 3.9), [-0.6, 0.325], [0.1, 0.32], [0.18, 0.305], [0.24, 0.285], [0.3, 0.295], [0.36, 0.283], [0.42, 0.29], [0.5, 0.32], [0.56, 0.325], ...carryRight(0.56, 0.325, 0.045, 3.9), [1.55, 0.9], [-2.4, 0.9]],
     L.DEPTHS.nearRidge,
-    C.nearRidge,
+    haze(C.nearRidge, C.fog, 0.30, 0.48),
   );
 }
 
@@ -62,24 +156,20 @@ function mountains(b) {
 // (warm haze near the ridge under the sun glare, darker green lower down). UV v is the photo row, which
 // the texture's rows follow, so every row's mean is the sampled color at that row.
 function hill(b) {
-  const ridge = [[0.27, 0.305], [0.36, 0.28], [0.48, 0.215], [0.6, 0.16], [0.72, 0.1], [0.82, 0.08], [0.95, 0.075], [1.6, 0.07]];
-  const stops = [[0.075, C.hillRidge], [0.14, C.hillHaze], [0.2, C.hillMid], [0.32, C.hill]];
-  const vBottom = 0.8;
-  const vTop = 0.05;
-  const columns = 60;
-  const rows = 10;
-  const ridgeV = (u) => {
-    if (u <= ridge[0][0]) return ridge[0][1];
-    for (let i = 1; i < ridge.length; i++) {
-      if (u <= ridge[i][0]) {
-        const [u0, v0] = ridge[i - 1];
-        const [u1, v1] = ridge[i];
-        return v0 + ((v1 - v0) * (u - u0)) / (u1 - u0);
-      }
-    }
-    return ridge[ridge.length - 1][1];
-  };
-  const depthAt = (v) => L.DEPTHS.hill - ((v - 0.07) / (vBottom - 0.07)) * 200;
+  const ridge = HILL_RIDGE_LINE;
+  const stops = [[0.075, C.hillRidge], [0.14, C.hillHaze], [0.2, C.hillMid], [0.32, C.hillDeep]];
+  const vBottom = 0.95;
+  // vTop is the texture's own top row and has to sit above the highest point of the MESH, which is the
+  // ridge's own highest point (v 0.07 at u 1.6).
+  const vTop = 0.03;
+  // The crown strip: the ridge polyline is the top of the TALLEST trees, and the texture's alpha cuts
+  // this much of frame below it into crowns and gaps (see makeHillTexture). 0.015 of frame at 500 m is
+  // about 8 m of tree.
+  const TREE_RISE = 0.015;
+  const columns = 420;
+  const rows = 12;
+  const ridgeV = ridgeVAt;
+  const depthAt = (v) => L.DEPTHS.hill - ((v - 0.07) / 0.73) * 200;
   const positions = [];
   const uvs = [];
   const u0 = ridge[0][0];
@@ -107,54 +197,232 @@ function hill(b) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(index);
   geo.computeVertexNormals();
-  const map = makeHillTexture({ size: 1536, seed: 7, stops, vTop, vBottom });
-  b.add(new THREE.Mesh(geo, makeMaterial({ map, mean: C.hillMid, side: THREE.DoubleSide, fog: false, unlit: true })), 'hill');
+  // The glare's centre and width are in the texture's own u, which spans photo u0 to u1.
+  const map = makeHillTexture({
+    size: 4096,
+    seed: 7,
+    stops,
+    vTop,
+    vBottom,
+    sunU: (L.SUN.u - u0) / (u1 - u0),
+    glareWidth: 0.085 / (u1 - u0),
+    ridgeAt: ridgeV,
+    treeRise: TREE_RISE,
+    u0,
+    u1,
+  });
+  // alphaTest, not transparent: the crowns above the ridge are a cut-out, and a transparent material here
+  // would sort against the sky dome and the mountain cards instead of writing depth like the hill it is.
+  b.add(new THREE.Mesh(geo, makeMaterial({ map, mean: map.userData.mean, side: THREE.DoubleSide, fog: false, unlit: true, alphaTest: 0.5 })), 'hill');
 }
 
 // The ground the far houses and the pines stand on (see farGroundY): plots on both sides of the far
 // street beyond the bend, and a short hillside past the paving's end. Every strip starts outside the
 // paving and a little below it, so from the photo view none of it shows: the sweep at 0.01 of the frame
 // finds only paving, houses and the bend where the street is.
+// The `hillside` strip is the one `npm run views` pose 6 was showing as a flat pale band across the middle
+// of the frame -- out/scratch/posefind.mjs puts the first hit at (0.10, 0.33) and (0.10, 0.45) on it, 82
+// and 92 m away. It was a two-column ruled surface, flat across 160 m of x, on one flat colour and with
+// `THREE.Fog` mixing about 45% of the fog colour into it at that distance. `far plots left` and
+// `far plots right` are the same shape nearer the street.
+//
+// Their geometry near the street is untouched, because `evergreen trunks stands on hillside` and
+// `far roof c house lower stands on far plots left` are grounding checks with tolerances of 0.8 m: the
+// height field is still `farGroundY` exactly, and the relief only starts 18 m out from the street's own
+// centre line, which is well past both. What changed is that they are now grids rather than two columns,
+// they carry the valley's own vertex colours and distance haze, and they opt out of the fog for the same
+// reason `outer ground` does -- a linear far plane at 150 m draws a line across the land.
+//
+// FOUR of `hillside`'s cells are inside the photo frame, seen through the canopy, and the whole step costs
+// 0.0004 of SSIM: (0.604, 0.614) +0.0063, (0.604, 0.659) +0.0062, (0.563, 0.659) -0.0103 and
+// (0.646, 0.568) -0.0203 — the two that gain are the two larger movers. Rendering them UNLIT, as the
+// valley floor beyond them is, cost four times that, which is why these three keep the rig.
 function farGround(b) {
-  const strip = (name, zNear, zFar, xOf, xFar, samples) => {
+  const relief = noise2D(4243);
+  const strip = (name, zNear, zFar, xOf, xFar, samples, cols = 14) => {
     const positions = [];
+    const colors = [];
     for (let i = 0; i <= samples; i++) {
       const z = zNear + ((zFar - zNear) * i) / samples;
-      const y = L.farGroundY(z);
-      positions.push(xOf(z), y, z, xFar, y, z);
+      const base = L.farGroundY(z);
+      const x0 = xOf(z);
+      for (let c = 0; c <= cols; c++) {
+        const x = x0 + ((xFar - x0) * c) / cols;
+        const out = Math.max(0, Math.abs(x - L.streetCenterX(z)) - 18);
+        const amp = Math.min(3.0, out * 0.10);
+        const y = base + (relief(x * 0.05 + 60, z * 0.05 + 60) - 0.5) * 2 * amp;
+        positions.push(x, y, z);
+        const col = groundColor(x, y, z);
+        colors.push(col.r, col.g, col.b);
+      }
     }
     const index = [];
     for (let i = 0; i < samples; i++) {
-      const a = i * 2;
-      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+      for (let c = 0; c < cols; c++) {
+        const a = i * (cols + 1) + c;
+        const d = a + cols + 1;
+        index.push(a, d, a + 1, a + 1, d, d + 1);
+      }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.setIndex(index);
     geo.computeVertexNormals();
-    b.add(new THREE.Mesh(geo, makeMaterial({ color: C.hill, side: THREE.DoubleSide })), name);
+    // LIT, unlike the valley floor beyond it. These three are near enough to take the rig's own sun and
+    // shadows, and four of their cells are inside the photo frame (see the header): rendering them unlit
+    // cost 0.0016 of SSIM against the 0.0004 they cost lit. They still opt out of the fog, and haze in
+    // their own vertex colours instead.
+    b.add(new THREE.Mesh(geo, makeMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false })), name);
   };
   strip('far plots left', -24, -42, (z) => L.streetCenterX(z) - 3.4, -60, 12);
   strip('far plots right', -24, -42, (z) => L.streetCenterX(z) + 3.4, 60, 12);
-  strip('hillside', -42, -58, () => -80, 80, 8);
+  strip('hillside', -42, -58, () => -80, 80, 10);
+  outerGround(b);
+}
+
+// Woods and open ground mixed by a slow noise at two scales, then hazed toward the fog colour by distance.
+// Shared by the plots, the hillside and the valley floor so the three meet without a seam in tone.
+const groundClump = noise2D(4242);
+function groundColor(x, y, z, irradiance) {
+  const rgb = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+  const mixRgb = (a, c, t) => a.map((v, i) => v + (c[i] - v) * t);
+  const cover = Math.max(
+    0,
+    Math.min(1, (groundClump(x * 0.035 + 3, z * 0.035 + 3) - 0.35) * 2.2 + (groundClump(x * 0.17 + 21, z * 0.17 + 21) - 0.5) * 0.9),
+  );
+  // Haze that never quite arrives, and never reaches the fog colour outright. A linear ramp saturating at
+  // 255 m turned everything past it into one flat pale band, which is what `THREE.Fog`'s own 150 m far
+  // plane was already doing: pose 6 showed a wall of it across the middle of the frame.
+  const d = Math.hypot(x, y - L.CAMERA.eye.y, z);
+  const t = Math.min(0.9, 1 - Math.exp(-Math.max(0, d - 40) / 230));
+  const m = mixRgb(mixRgb(rgb(C.valleyWood), rgb(C.valleyField), cover), rgb(C.fog), t);
+  return albedoOf((Math.round(m[0]) << 16) | (Math.round(m[1]) << 8) | Math.round(m[2]), irradiance === undefined ? {} : { irradiance });
+}
+
+// Everything beyond the plots and the hillside: the valley this town stands over, and the ground under and
+// behind the camera. It replaces `ground base`, which was a BOX from y = -30 to -24 spanning x +-80 and
+// z +40 to -120 -- a flat slab, fogged to nearly the fog colour over most of its area, and it is what
+// filled most of `npm run views` poses 2 and 6 as "one flat plane with hard fog bands". Measured with
+// out/scratch/posefind.mjs, the pale mass across pose 6's whole background was `ground base` at 82 to
+// 163 m, and the band above it was the same slab further away.
+//
+// THE CEILING IS WHAT MAKES THIS SAFE. v depends only on a point's y and z (never on x), so the height at
+// which any (x, z) crosses a given photo row is exact: y = 4.8 + z * 0.5989 puts it at v = 0.78, and this
+// surface is held a metre below that everywhere. At v > 0.78 the photo frame is the near stairs, walls and
+// paving from u 0 to 1, all of them a few metres away, so nothing here can win a depth test in the scored
+// frame however the terrain is shaped. Measured: `npm run compare` moves by less than the PRNG noise floor.
+//
+// It carries no fog and hazes by distance in its own vertex colours instead. `THREE.Fog` is linear from
+// 38 m to 150 m, so on a surface that runs to 400 m every metre past 150 is exactly the fog colour and the
+// 150 m line is a hard band across the land -- which is the other half of what the sweep was showing.
+function outerGround(b) {
+  const COLS = 120;
+  const ROWS = 64;
+  const X = 320;
+  const zNear = 80;
+  const zFar = -420;
+  const relief = noise2D(4241);
+  // v = 0.78 at this height, for a point at depth z. Derived from worldToUV with x eliminated:
+  // Y = z * (m cos p + sin p) / (cos p - m sin p) with m = (v - 0.5) * 2 tanV, which is 0.598885 at
+  // v = 0.78, and y = eye.y + Y. Checked by substitution: (0, -55.09, -100) projects to v = 0.7800.
+  // For z >= 0 it returns no ceiling at all, and that is deliberate rather than an oversight: the shelf
+  // there sits at least 1.85 m BELOW the line this formula gives, so the clamp would never bite, and a
+  // point at z > 0 low enough to have a positive depth at all lands far outside u in [0, 1] (at z = +1
+  // it needs y < 0.47, which this surface only reaches past |x| = 20, where u comes out above 9).
+  const ceilingY = (z) => (z < 0 ? L.CAMERA.eye.y + z * 0.5989 - 1.0 : 1e6);
+  // The land's own shape: a shelf a little UNDER the street out to |x| = 16, falling away to the sides
+  // and, past the hillside's crest at z = -58, into the valley.
+  // The 1.2 m is not slack. A first pass put the shelf at streetY + 0.4, matching `far plots`' own kerb,
+  // and `npm run clearance` went red: this surface spans the whole width including the street itself, so
+  // at z = -0.25 it stood 0.4 m proud of the paving across the entire road, 0.00 m of clear run in both
+  // halves. Everything within 16 m of the centre line already has its own ground -- the paving, the
+  // terraces, the plots -- and this one's job there is only to close the void under them.
+  const shelf = (x, z) => {
+    const zc = Math.max(-46, Math.min(2, z));
+    return L.streetY(zc) - 1.2 - 0.45 * Math.max(0, Math.abs(x) - 16) - 0.85 * Math.max(0, -z - 60);
+  };
+  const heightAt = (x, z) => {
+    const amp = 2.0 + 0.055 * Math.hypot(x, z);
+    const r = (relief(x * 0.022 + 40, z * 0.022 + 40) - 0.5) * 2 * amp + (relief(x * 0.09 + 7, z * 0.09 + 7) - 0.5) * amp * 0.35;
+    return Math.min(shelf(x, z) + r, ceilingY(z) - 2.5);
+  };
+  const positions = [];
+  const colors = [];
+  for (let j = 0; j <= ROWS; j++) {
+    const z = zNear + ((zFar - zNear) * j) / ROWS;
+    for (let i = 0; i <= COLS; i++) {
+      const x = -X + (2 * X * i) / COLS;
+      const y = heightAt(x, z);
+      positions.push(x, y, z);
+      const c = groundColor(x, y, z, 1);
+      colors.push(c.r, c.g, c.b);
+    }
+  }
+  const index = [];
+  for (let j = 0; j < ROWS; j++) {
+    for (let i = 0; i < COLS; i++) {
+      const a = j * (COLS + 1) + i;
+      const c = a + COLS + 1;
+      index.push(a, c, a + 1, a + 1, c, c + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  b.add(new THREE.Mesh(geo, makeMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false, unlit: true })), 'outer ground');
 }
 
 // Roofs of farther houses below the hill, seen from above: gabled houses whose front slope covers the
 // photo's roof box at the house's depth, with a plaster body and gable ends, kawara on the slopes, the
 // body reaching down to the ground beside the far street.
 function farHouses(b) {
-  const tile = surface('kawara', C.farRoof, { seed: 51 });
   const wall = surface('plaster', C.farWall, { seed: 52 });
   const low = surface('plaster', C.farWallLow, { seed: 53 });
-  // The three roofs the photo shows below the hill. Each house's walls are kept clear of the far street
+  // The roofs the photo shows below the hill. Each house's walls are kept clear of the far street
   // (whose slabs run to x = streetCenterX(z) + 2.6): b's box would otherwise cross it.
+  //
+  // `far roof d` is new in iteration 4 and it closes a hole. Between the left row's own eave and the top
+  // of `far roof c` there was a band of NOTHING at u 0.10 to 0.17, v 0.36 to 0.41, and what the render put
+  // in it was the `near ridge` mountain card 1004 m away: cells (0.146, 0.386) and (0.104, 0.386) read
+  // #583d2d and #654631 in the photo -- dark timber and tile -- against #7b8275 and #6a5f50, and the
+  // "greenish" reported there since iteration 1 is `nearRidge` 0x6b7a5f itself. No colour on any timber
+  // reaches those two cells, because no timber is in front of them.
+  // Raising `far roof c` into the gap instead was measured and is worse: its ridge is horizontal, so
+  // lifting its left end lifts its right end too, and cell (0.229, 0.386) went 0.0212 to 0.0855 -- a cell
+  // that was nearly exact, against a photo of #9fa697 that wants the pale gable behind it.
+  // Its tiles are their own colour, `farRoofNear`: the photo's roofs here are in the left row's shade and
+  // `farRoof` is the sunlit grey-green of the ones two blocks further on.
   const houses = [
     { name: 'far roof a', u0: 0.2, u1: 0.34, v0: 0.3, v1: 0.36, depth: L.DEPTHS.farHouses },
     { name: 'far roof b', u0: 0.3, u1: 0.42, v0: 0.33, v1: 0.4, depth: L.DEPTHS.farHouses - 4 },
     { name: 'far roof c', u0: 0.14, u1: 0.24, v0: 0.4, v1: 0.47, depth: L.DEPTHS.farHouses - 6 },
+    { name: 'far roof d', u0: 0.085, u1: 0.155, v0: 0.352, v1: 0.408, depth: L.DEPTHS.farHouses - 9, tile: C.farRoofNear, run: 1.6, backRun: 0.8 },
   ];
+  // Ridge caps and eave lips for all of them, in two shared instanced sets: from above they were bare
+  // slabs meeting at a line, which is what `npm run views` poses 2, 3 and 6 have called "pale boxes"
+  // since iteration 2. A ridge and a lip are what makes a roof read as a roof at this distance.
+  const ridgeGeo = ridgeTileGeometry(0.16, 0.5);
+  const lipGeo = new THREE.BoxGeometry(1, 1, 1);
+  const ridges = [];
+  const lips = [];
+  // One material per distinct tile colour, built on first use. The first entry's seed is the 51 this had
+  // when every house shared one material, so no tile texture in the scene is regenerated.
+  // Bound: the seed comes from INSERTION ORDER, not from the hex. `far roof a` inserts `C.farRoof` first
+  // and keeps 51 today, but adding a house with a new tile colour ABOVE it would shift every later seed by
+  // 7 and regenerate those textures — the same reseed class the rest of this module is careful about.
+  // Keying the seed off the hex would remove the ordering dependence and reseed `C.farRoof` doing it.
+  const tiles = new Map();
+  const tileFor = (hex) => {
+    if (!tiles.has(hex)) tiles.set(hex, surface('kawara', hex, { seed: 51 + tiles.size * 7 }));
+    return tiles.get(hex);
+  };
   for (const h of houses) {
-    const run = 3.0;
+    const tile = tileFor(h.tile ?? C.farRoof);
+    const run = h.run ?? 3.0;
+    const backRun = h.backRun ?? run;
     // The house's own ground: below the street's surface at its depth, so no wall shows over the paving.
     const ridgeL = L.uvToWorld(h.u0, h.v0, h.depth);
     const ridgeR = L.uvToWorld(h.u1, h.v0, h.depth);
@@ -165,7 +433,7 @@ function farHouses(b) {
     const yRidge = ridgeL.y;
     const yEave = Math.min(eave.y, yRidge - 1.0);
     const zFront = zRidge + run;
-    const zBack = zRidge - run;
+    const zBack = zRidge - backRun;
     const yBase = Math.min(L.streetY(zFront), L.streetY(zBack)) - 0.6;
     // The gable in plaster under the roof; below it the wall is the dark the photo shows there (these
     // houses stand on the valley side, so their walls run a long way down before they meet their ground).
@@ -175,7 +443,17 @@ function farHouses(b) {
     const o = 0.35;
     b.quadSlab(h.name, [{ x: x0 - o, y: yEave - 0.15, z: zFront + o }, { x: x1 + o, y: yEave - 0.15, z: zFront + o }, { x: x1 + o, y: yRidge + 0.05, z: zRidge }, { x: x0 - o, y: yRidge + 0.05, z: zRidge }], 0.14, tile);
     b.quadSlab(`${h.name} back`, [{ x: x1 + o, y: yEave - 0.15, z: zBack - o }, { x: x0 - o, y: yEave - 0.15, z: zBack - o }, { x: x0 - o, y: yRidge + 0.05, z: zRidge }, { x: x1 + o, y: yRidge + 0.05, z: zRidge }], 0.14, tile);
+    // A half-round cap along the ridge, and a lip along each eave.
+    const span = x1 + o - (x0 - o);
+    for (let t = 0.25; t < span; t += 0.5) {
+      ridges.push({ position: [x0 - o + t, yRidge + 0.13, zRidge], uv: [t, 0] });
+    }
+    for (const zEave of [zFront + o, zBack - o]) {
+      lips.push({ position: [(x0 + x1) / 2, yEave - 0.19, zEave], scale: [span + 0.1, 0.1, 0.14], uv: [0, 0] });
+    }
   }
+  b.add(instanced('far house ridges', ridgeGeo, surface('kawara', darker(C.farRoof, 0.82), { seed: 54, instancedUv: true }), ridges), 'far house ridges');
+  b.add(instanced('far house lips', lipGeo, surface('kawara', darker(C.farRoof, 0.88), { seed: 55, instancedUv: true }), lips), 'far house lips');
 }
 
 // The machiya row that lines the right side of the far street, from the foot of the stairs into the
@@ -453,10 +731,14 @@ function bend(b) {
   const c4 = L.uvToWorld(0.43, 0.7, d4);
   const eave4 = L.uvToWorld(0.43, 0.66, d4).y;
   const ridge4 = L.uvToWorld(0.43, 0.58, d4).y;
-  const xl = L.uvToWorld(0.36, 0.66, d4).x - 0.3;
+  // Its left edge is the photo's own, or the far edge of the paved band at the street's end, whichever is
+  // further left. The paving stops at L.FAR_STREET_END (the front face below) and the band there runs
+  // 2.6 m each side of the centre line, so without this the road ended in a 0.3 m slot of open paving
+  // beside the house instead of at it.
+  const xl = Math.min(L.uvToWorld(0.36, 0.66, d4).x - 0.3, L.streetCenterX(L.FAR_STREET_END) - 3.2);
   const xr = L.uvToWorld(0.5, 0.66, d4).x + 0.6;
-  // The house stands behind the far street's end (z = -34) so the paving is never inside its front face.
-  b.box('corner house body', { x0: xl, x1: xr, y0: c4.y - 6, y1: eave4, z0: c4.z - 8.3, z1: c4.z - 1.3 }, C.woodDark);
+  // The house's front face is the far street's end: nothing paved runs past it.
+  b.box('corner house body', { x0: xl, x1: xr, y0: c4.y - 6, y1: eave4, z0: c4.z - 8.3, z1: L.FAR_STREET_END }, C.woodDark);
   b.profileSolid(
     'corner house roof',
     [[-c4.z + 0.5, eave4], [-c4.z + 4.5, ridge4], [-c4.z + 8.5, eave4], [-c4.z + 8.5, eave4 - 0.35], [-c4.z + 4.5, ridge4 - 0.35], [-c4.z + 0.5, eave4 - 0.35]],

@@ -90,6 +90,8 @@ export function buildRoofs(b) {
     rafterColor: C.house3Lower,
   });
 
+  leftRowBacks(b, geos, H, t3);
+
   // Right machiya: the deep ground-floor eave seen from above, and the top roof over the upper floor.
   // The block-out slab this replaced ran from 4.15 at the edge to 4.8 at the wall, and the tiles kept its
   // line until iteration 3 measured where the photo's tile field actually ends. Ladders of small boxes
@@ -139,6 +141,58 @@ export function buildRoofs(b) {
 }
 
 const v = (x, y, z) => new THREE.Vector3(x, y, z);
+
+// The other half of the left row's gables. Until iteration 4 the annex and house 3 were roofed over their
+// street-facing 3 to 4 m only, while their bodies run back to x = -10: `npm run views` pose 2 looks
+// straight down on them from the left flank and showed a stack of open crates with flat tops. Each gets a
+// back slope from its lean-to's own high edge down to the back wall, a ridge line along the top, and the
+// same tile colour as its front.
+//
+// Its PRNG is private. `tileRoof` draws from `buildRoofs`'s shared `rand` for every tile, cap and ridge
+// tile in the scene, so adding two roofs in the middle of that stream would renumber every roof after
+// them -- iteration 2 measured a reseed of that kind at 0.0004 of cell distance and 0.0054 of SSIM.
+//
+// None of it is in the photo view: at z = -6 the back wall at x = -10.6 projects to u = -0.81, off the
+// left edge of the frame, and everything here is further left still. `npm run compare` is the check, not
+// the argument.
+function leftRowBacks(b, geos, H, t3) {
+  const rand = mulberry32(6607);
+  const AR = L.LEFT_ANNEX_ROOF;
+  const backX = H.back - 0.6;
+  // The annex lean-to's high edge is at AR.xInner; the back slope falls at the same pitch it rises at.
+  const annexPitch = AR.rise / (AR.xOuter - AR.xInner);
+  const annexDrop = annexPitch * (AR.xInner - backX);
+  tileRoof(b, rand, geos, 'annex roof back', [
+    v(backX, AR.yFar + AR.rise - annexDrop, AR.zFar),
+    v(AR.xInner, AR.yFar + AR.rise, AR.zFar),
+    v(AR.xInner, AR.yNear + AR.rise, AR.zNear),
+    v(backX, AR.yNear + AR.rise - annexDrop, AR.zNear),
+  ], {
+    color: C.tileAnnex,
+    boardColor: C.house1Wall,
+    rafters: false,
+    caps: false,
+    fascia: false,
+    ridge: true,
+  });
+  // House 3's roof rises 0.6 m over 2.0 m from its eave at x = H.front - 0.6 to its high edge at
+  // H.front - 2.6; the back slope carries the same pitch on to the back wall.
+  const h3High = H.front - 2.6;
+  const h3Drop = (0.6 / 2.0) * (h3High - backX);
+  tileRoof(b, rand, geos, 'house 3 roof back', [
+    v(backX, -0.3 - h3Drop, t3.z1 - 0.3),
+    v(h3High, -0.3, t3.z1 - 0.3),
+    v(h3High, -0.3, t3.z0),
+    v(backX, -0.3 - h3Drop, t3.z0),
+  ], {
+    color: C.tileLeftLight,
+    boardColor: C.house3Lower,
+    rafters: false,
+    caps: false,
+    fascia: false,
+    ridge: true,
+  });
+}
 
 // Clip a planar polygon to the half-plane where f >= 0 (Sutherland-Hodgman; points stay on the plane).
 function clipPolygon(points, f) {

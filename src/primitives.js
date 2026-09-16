@@ -2,7 +2,7 @@
 // add named meshes to `group`; every mesh gets a name so the probe tool can map a pixel to it.
 import * as THREE from 'three';
 import * as L from './layout.js';
-import { makeMaterial } from './materials.js';
+import { makeMaterial, albedoOf } from './materials.js';
 
 // A flat-colored material through the factory. The color is a photo-sampled mean: the factory turns it
 // into the albedo that displays as that mean again once the rig and the tone curve have had their say.
@@ -137,12 +137,33 @@ export function createBuilder(group) {
     return new THREE.Shape(uvPoints.map(([u, v]) => new THREE.Vector2((u - 0.5) * 2 * basis.tanH * depth, (0.5 - v) * 2 * basis.tanV * depth)));
   }
 
-  // A flat card facing the photo camera at `depth`, outlined in photo (u, v) coordinates.
+  // A flat card facing the photo camera at `depth`, outlined in photo (u, v) coordinates. `color` is a
+  // hex, or a function (u, v) -> hex for a card that carries a gradient: a distant ridge hazes toward its
+  // foot and a flat card cannot. Each vertex is mapped back to its own photo position (the shape's x and
+  // y are the frame offsets at `depth`, so the inverse is exact) and given that colour as a linear vertex
+  // colour, which is the space three multiplies them in.
   function frontalCard(name, uvPoints, depth, color) {
     const geo = new THREE.ShapeGeometry(uvShape(uvPoints, depth));
-    // The distant layers are beyond any light in the rig: they carry their sampled color through the
-    // tone curve unchanged.
-    const mesh = new THREE.Mesh(geo, material(color, { side: THREE.DoubleSide, fog: false, unlit: true }));
+    let mat;
+    if (typeof color === 'function') {
+      const pos = geo.getAttribute('position');
+      const colors = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) {
+        const u = 0.5 + pos.getX(i) / (2 * basis.tanH * depth);
+        const v = 0.5 - pos.getY(i) / (2 * basis.tanV * depth);
+        const c = albedoOf(color(u, v), { irradiance: 1 });
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      mat = makeMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false, unlit: true });
+    } else {
+      // The distant layers are beyond any light in the rig: they carry their sampled color through the
+      // tone curve unchanged.
+      mat = material(color, { side: THREE.DoubleSide, fog: false, unlit: true });
+    }
+    const mesh = new THREE.Mesh(geo, mat);
     orientToCamera(mesh, depth);
     return add(mesh, name);
   }
