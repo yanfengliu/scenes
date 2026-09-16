@@ -79,8 +79,24 @@ export const LIMIT = {
 };
 
 // Measure the current page: the composer's frame, and the same view with no post chain at all.
-async function measure(page, { darkLuma = DARK_LUMA, grid = GRID } = {}) {
-  return await page.evaluate(({ darkLuma, grid }) => {
+//
+// `settleFrames` lets the frame loop present that many frames before anything is measured, which is what
+// a measurement after a resize needs: `src/main.js` re-sizes the renderer and `src/post.js` re-picks the
+// composer's configuration on the window's own resize event, and both have to have happened. It is an
+// option on this call rather than a `page.evaluate` of its own so the resize path costs one round-trip
+// instead of two, and every round-trip to the scene page waits out the frame in flight.
+//
+// IT IS THREE, NOT TWO, AND THAT IS DELIBERATE. The separate wait it replaced was `rAF -> rAF` in one
+// evaluate followed by `measure` in another, and the second evaluate ALSO waited out a frame before it
+// ran, so the old measurement landed after three settled frames rather than two. Two passes on this tree
+// -- the red proof still catches the black frame on a RESIZED row, at 1441x801 -- but this is the gate
+// written for a user-reported catastrophe, and a false green here is the expensive direction, so the
+// settling is kept identical to what it was and the saving on this gate comes from `openScene` instead.
+// An earlier draft used two and claimed "same frames, same order"; that claim was false and a reviewer
+// caught it.
+async function measure(page, { darkLuma = DARK_LUMA, grid = GRID, settleFrames = 0 } = {}) {
+  return await page.evaluate(async ({ darkLuma, grid, settleFrames }) => {
+    for (let i = 0; i < settleFrames; i++) await new Promise((done) => requestAnimationFrame(done));
     const s = window.__scene;
     const gl = s.renderer.getContext();
     const W = s.renderer.domElement.width;
@@ -155,7 +171,7 @@ async function measure(page, { darkLuma = DARK_LUMA, grid = GRID } = {}) {
       direct,
       vsDirect: direct.meanLuma > 0 ? composer.meanLuma / direct.meanLuma : 0,
     };
-  }, { darkLuma, grid });
+  }, { darkLuma, grid, settleFrames });
 }
 
 function round(row) {
@@ -169,6 +185,7 @@ function round(row) {
 }
 
 export async function run({ views = VIEWS, gpu = true } = {}) {
+  const startedAt = Date.now();
   const server = await startServer({ port: 0, quiet: true });
   const browser = await launch({ gpu });
   const rows = [];
@@ -184,8 +201,9 @@ export async function run({ views = VIEWS, gpu = true } = {}) {
       rows.push({ ...round(await measure(page)), view: label, when: 'on load' });
       if (view.resize) {
         await page.setViewportSize({ width: view.resize.width, height: view.resize.height });
-        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-        rows.push({ ...round(await measure(page)), view: `${view.resize.width}x${view.resize.height} @ ${view.ratio}`, when: `resized from ${label}` });
+        // Three frames for the resize to have been handled and the composer re-picked, then measure --
+        // the same three the two separate evaluates used to give it. See `measure`'s comment.
+        rows.push({ ...round(await measure(page, { settleFrames: 3 })), view: `${view.resize.width}x${view.resize.height} @ ${view.ratio}`, when: `resized from ${label}` });
       }
       if (errors.length) throw new Error(`the page reported errors at ${label}:\n${errors.join('\n')}`);
       await page.close();
@@ -194,7 +212,7 @@ export async function run({ views = VIEWS, gpu = true } = {}) {
     await browser.close();
     await server.close();
   }
-  return { rows, renderer };
+  return { rows, renderer, seconds: (Date.now() - startedAt) / 1000 };
 }
 
 // Every reason a row can fail, as sentences, so a red run says which property broke and by how much.
@@ -230,7 +248,7 @@ if (isMainModule()) {
     `views: ${count} of ${VIEWS.length}${count < VIEWS.length ? ` (BLACKFRAME_VIEWS=${process.env.BLACKFRAME_VIEWS})` : ''} `
     + `-- ${views.map((v) => `${v.width}x${v.height}@${v.ratio}`).join(', ')}, each measured on load and after a resize`,
   );
-  const { rows, renderer } = await run({ views, gpu: process.env.BLACKFRAME_GPU !== '0' });
+  const { rows, renderer, seconds } = await run({ views, gpu: process.env.BLACKFRAME_GPU !== '0' });
   console.log(`renderer: ${renderer}`);
   console.log('\nview                    when                          buffer       samples  dark%  worstBlk  lumaStd  vsDirect');
   for (const r of rows) {
@@ -251,5 +269,5 @@ if (isMainModule()) {
     }
     process.exit(1);
   }
-  console.log(`blackframe: ${rows.length} size/ratio combinations from ${count} of ${VIEWS.length} views all rendered the scene on ${renderer}`);
+  console.log(`blackframe: ${rows.length} size/ratio combinations from ${count} of ${VIEWS.length} views all rendered the scene on ${renderer}, in ${seconds.toFixed(0)} s`);
 }

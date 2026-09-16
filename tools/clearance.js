@@ -187,9 +187,11 @@ export async function measureClearance({ quiet = false } = {}) {
     page.setDefaultTimeout(ACTION_TIMEOUT_MS);
     errors = collectErrors(page);
     const info = await openScene(page, `${server.url}/`);
-    await page.evaluate(() => window.__scene.setTime(0));
-    if (!quiet) console.log(`renderer: ${info.renderer}; clock pinned at t = 0`);
+    // The clock is pinned inside `measureInPage`, so this line is printed after the evaluate that does it
+    // and not before: a print that runs first would claim the pin on a run where the measure then threw.
+    if (!quiet) console.log(`renderer: ${info.renderer}`);
     result = await page.evaluate(measureInPage, { MIN_HEADROOM, HEAD_M, KERB_M, SKY_M, Z_STEP, X_STEP });
+    if (!quiet) console.log('clock pinned at t = 0');
   } catch (err) {
     failure = err;
   } finally {
@@ -207,6 +209,10 @@ export async function measureClearance({ quiet = false } = {}) {
 // Everything below runs inside the page, against the scene three actually built.
 function measureInPage({ MIN_HEADROOM, HEAD_M, KERB_M, SKY_M, Z_STEP, X_STEP }) {
   const { THREE, scene } = window.__scene;
+  // Pinned here rather than in a `page.evaluate` of its own, because an evaluate on this page waits for
+  // the frame in flight before it runs and the scene page is always mid-frame. Same clock, same instant,
+  // one round-trip fewer.
+  window.__scene.setTime(0);
   scene.updateMatrixWorld(true);
 
   // The through route a person walks down the street: the top platform, the stairs and their gutter, the

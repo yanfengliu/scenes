@@ -40,7 +40,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
+import { launch, collectErrors, openScene, openInspector, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
 import { decodeImage } from './lib/image.js';
 import * as L from '../src/layout.js';
 
@@ -210,9 +210,10 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
     // images is bound to the bytes it actually looked at rather than to the filename.
     //
     // On `inspector`, the blank page, for the reason in this file's header: the same seven decodes cost
-    // 792 s on the scene page and print nothing while they do it.
-    const inspector = await browser.newPage({ viewport: { width: 200, height: 200 }, deviceScaleFactor: 1 });
-    inspector.setDefaultTimeout(ACTION_TIMEOUT_MS);
+    // 792 s on the scene page and print nothing while they do it. `openInspector` in lib/browser.js is
+    // where that page is made now, so there is one of it; it also watches this page for errors, which a
+    // page opened by hand here did not.
+    const inspector = await openInspector(browser, errors);
     const seen = new Map();
     const inspectStarted = Date.now();
     for (const r of rendered) {

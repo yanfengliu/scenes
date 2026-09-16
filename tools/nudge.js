@@ -39,6 +39,7 @@ const LIMIT = {
 };
 const OUT = 'out/nudge.json';
 
+const started = Date.now();
 const server = await startServer({ port: 0, quiet: true });
 const browser = await launch();
 let failure = null;
@@ -48,7 +49,12 @@ try {
   for (const ratio of PIXEL_RATIOS) {
   const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: ratio });
   page.setDefaultTimeout(ACTION_TIMEOUT_MS);
-  errors = errors.concat(collectErrors(page));
+  // Both pages collect into THIS array. It was `errors = errors.concat(collectErrors(page))`, which
+  // copies the array `collectErrors` has just returned -- empty, every time, because the listeners have
+  // not fired yet -- and leaves the real one orphaned. `errors` therefore never grew, the check below was
+  // dead, and this gate could not report a console error, a page error or a failed request from the day
+  // it landed until 2026-09-11. Found by review of the suite-cost change, not by a run.
+  collectErrors(page, errors);
   await openScene(page, `${server.url}/`);
   const measured = await page.evaluate((nudge) => {
     const s = window.__scene;
@@ -149,4 +155,4 @@ if (failed) {
   console.error('FAIL: the frame is unstable under a small camera move; see out/nudge.json');
   process.exit(1);
 }
-console.log(`nudge: ${rows.length} poses stable across device pixel ratios ${PIXEL_RATIOS.join(' and ')}`);
+console.log(`nudge: ${rows.length} poses stable across device pixel ratios ${PIXEL_RATIOS.join(' and ')}, in ${((Date.now() - started) / 1000).toFixed(0)} s`);
