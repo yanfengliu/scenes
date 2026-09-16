@@ -45,6 +45,16 @@ Per iteration, all of them, before the integration owner pushes:
 - [ ] Iteration 6, close-up realism: materials at orbit distance, tile and board edges, wood grain, foliage cards that hold up close.
 - [ ] Then the loop again, from the heat map and the sweep.
 
+## Lanes
+
+One expensive gate runs on this machine at a time (a full `npm test`, or `animation`, `nudge`, `views` or `record` alone); a lane asks the integration owner for the slot before starting one and reports when it ends. Two suites side by side crashed the browser under `nudge` on 2026-09-15 and inflated `animation` fourfold. Lanes never share a file: scene lanes own `src/` and `docs/PLAN-scores.md`; tool lanes own `tools/`; the integration owner owns `AGENTS.md`, `docs/devlog/summary.md` and this file.
+
+| lane | owner | outcome | files | waiting on |
+| --- | --- | --- | --- | --- |
+| iteration 3 | worker iter3-right-side, worktree from e580a92 | right-side stone and kawara, two iteration-1 survivors, shopfronts on the far row | src/, PLAN-scores.md, its devlog | the gate slot when it runs a suite |
+| gpu-gates | worker gpu-gates, worktree from 1e3f03b | every gate whose verdict allows it renders on the GPU; shot and compare stay on SwiftShader | tools/, AGENTS.md Gates, gate-proofs | the gate slot, by request to the integration owner |
+| integration | this session | merge, suite in the primary checkout, push, CI to a conclusion | the primary checkout | each lane's handoff |
+
 ## Outcome
 
 Iteration 1, merged as cb9a17c. Cell distance 0.0812 to 0.0768 and SSIM 0.4401 to 0.4559, both targets met; thresholds tightened to 0.0783 and 0.4509. The twenty worst cells fall 26% in summed distance. `tools/views.js` now renders seven poses to `out/views/`.
