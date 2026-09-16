@@ -336,7 +336,12 @@ function ladder(renderer, base) {
   const full = clampSamples(renderer, POST.samples);
   const half = clampSamples(renderer, Math.floor(POST.samples / 2));
   const rungs = [
-    { scale: base, samples: full, cost: 'nothing: the chain as designed' },
+    // `designed` marks THE chain as designed, and it is not the same claim as "index 0". The filter below
+    // drops any rung whose targets exceed the memory budget, so on a large high-density window index 0 of
+    // what survives can be a lesser configuration -- and a gate that accepted "rung 0" would accept it.
+    // This flag travels into the state a gate reads, so "the frame was drawn by the full chain" is a
+    // question that can be asked directly rather than inferred from an index into a filtered list.
+    { scale: base, samples: full, cost: 'nothing: the chain as designed', designed: true },
     // Aimed at the ingredient that fails, and it is often enough: the bad sizes at 8 samples and at 4
     // are different sets, and the size that started all of this is clean at 4.
     { scale: base, samples: half, cost: 'half the multisamples, at the same size and the same supersample' },
@@ -383,13 +388,26 @@ function applyRung(composer, buffer, rung) {
 
 let state = null;
 // Declared here because tuneComposer's default argument reads it; the watchdog that maintains it is
-// further down, next to the evidence that made it necessary.
-let watch = { last: 0, floor: 0 };
+// further down, next to the evidence that made it necessary. `ratchets` counts the times the watchdog
+// has found a black frame and stepped down, which is not the same question as `floor`: a run that
+// ratcheted once and then re-tuned back up to a rung the ladder still allows has floor 0 in its own
+// future decisions and is still a run whose frame was drawn after something went wrong.
+let watch = { last: 0, floor: 0, ratchets: 0, falseAlarms: 0, blind: false };
 let subject = null;
 // What the chain settled on, for `window.__scene.describe()` and for the gates: the size and sample
 // count in use, which rung produced them and why, and the numbers the verification measured.
+//
+// The watchdog's own counters travel with it, in `watch`. They are merged here rather than exported
+// separately so that `describe().post` carries the WHOLE post state in the one round-trip every gate
+// already makes: an evaluate on the scene page waits out the frame in flight, which is about five
+// seconds on SwiftShader, so a second call to ask "and did the watchdog fire?" would cost a gate more
+// than the check is worth. The returned object is a fresh one each call; nothing may compare it by
+// identity.
 export function postState() {
-  return state;
+  return state === null ? null : {
+    ...state,
+    watch: { floor: watch.floor, ratchets: watch.ratchets, falseAlarms: watch.falseAlarms, blind: watch.blind },
+  };
 }
 
 // Walk the ladder at the renderer's current drawing buffer and stop at the first rung whose frame is
@@ -408,6 +426,9 @@ export function tuneComposer(renderer, composer, { minRung = watch.floor } = {})
     chosen = {
       rung: i,
       fallback: i > 0,
+      // True only for the chain as designed. See `designed` in `ladder` above: on a window where the
+      // memory budget drops the top rungs, index 0 is not the designed chain.
+      designed: rungs[i].designed === true,
       cost: rungs[i].cost,
       width: composer.renderTarget1.width,
       height: composer.renderTarget1.height,
@@ -457,22 +478,47 @@ export function resizeComposer(composer, renderer) {
 // Cost is the reason this is a few pixels and not a frame: reading back from the GPU stalls the pipeline,
 // so it samples nine single pixels a few times a second, and only when they are all black does it pay for
 // the full verification. A black frame is uniform, so nine points spread across it are enough to notice.
+//
+// AND NINE BLACK PIXELS ARE A TRIGGER, NOT A VERDICT. Reading the default framebuffer back is not
+// reliable: `tools/record.js` already documents that a drawing buffer read after the browser has
+// composited can hand back cleared black through no fault of the scene, and this watchdog was treating
+// one such read as proof and ratcheting permanently on it. Measured on 2026-09-17: **1 of 25 fresh
+// `npm run shot` runs** on this machine ratcheted on the first watchdog call and drew 1f74009907c0
+// instead of the contract's e95a53185ee3 (out/scratch/shot-loop2.log run 18), which is the scored frame
+// changing under a tree that did not move. That run's `scene ready` was 14.5 s against 18.3-28.0 s for
+// the other 24, so the false read goes with a fast first frame, which is what a race with the first
+// buffer swap looks like.
+//
+// So a black reading now asks the chain's own verification, which reads the composer's TARGETS through
+// `readRenderTargetPixels` rather than the default framebuffer, and then reads the nine pixels again
+// after that verification has drawn a fresh frame. Both of the faults this watchdog exists for still
+// ratchet: a poisoned target fails `verifyComposer`, and a canvas that is genuinely black reads black
+// the second time too. What no longer ratchets is a single unreadable frame.
+//
+// The cost is a frame, and it is paid only on a black reading. On a machine where the read is
+// INTERMITTENTLY unreliable -- the case measured here -- that would be a frame every 500 ms, so after
+// `falseAlarmsBeforeGivingUp` CONTRADICTED readings the cheap probe is abandoned and said so once: its
+// input is noise there, and a watchdog reading noise is worse than no watchdog.
+//
+// And say plainly what that does NOT cover, because the arm that shows it is in the red proofs. A driver
+// whose default-framebuffer read returns black EVERY time never reaches the give-up path at all:
+// `falseAlarms` only rises when the SECOND read comes back lit, so an always-black read looks exactly
+// like a canvas that is genuinely black and the chain walks the whole ladder down, once per 500 ms,
+// arriving at the bottom rung. Measured, in the `always-black` arm of out/scratch/ratchet-frame.mjs:
+// falseAlarms 0, blind false, six ratchets, rung 4. That is the right answer for a canvas that IS black
+// and the wrong one for a driver that merely cannot be read, and nothing here can tell those two apart
+// -- which is the bound, and the reason `shot` refuses the frame rather than trusting the chain.
 const WATCH = {
   everyMs: 500,
   points: 3, // a points x points grid of single-pixel reads
   luma: 24,
+  falseAlarmsBeforeGivingUp: 3,
 };
 
-// Reset the watchdog's memory of what this machine cannot do. Only for tests.
-export function resetPostFloor() {
-  watch = { last: 0, floor: 0 };
-}
-
-// Call once per frame. Cheap almost always; when the frame has gone black it re-tunes and ratchets the
-// floor down so later sizes never climb back to a configuration this machine has failed at runtime.
-export function watchPostChain(renderer, composer, now = performance.now()) {
-  if (!state || now - watch.last < WATCH.everyMs) return null;
-  watch.last = now;
+// The nine pixels. `true` means at least one of them carries light, which is all the question needs:
+// a black frame is uniform, so nine points spread across it are enough to notice. `null` means there was
+// nothing to read.
+function canvasCarriesLight(renderer) {
   const gl = renderer.getContext();
   const el = renderer.domElement;
   const w = el.width, h = el.height;
@@ -484,13 +530,70 @@ export function watchPostChain(renderer, composer, now = performance.now()) {
       const y = Math.min(h - 1, Math.round(((iy + 0.5) * h) / WATCH.points));
       gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
       // One lit pixel anywhere is enough to say the chain is working; stop reading.
-      if (0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2] >= WATCH.luma) return null;
+      if (0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2] >= WATCH.luma) return true;
     }
+  }
+  return false;
+}
+
+// Reset the watchdog's memory of what this machine cannot do. Only for tests.
+export function resetPostFloor() {
+  watch = { last: 0, floor: 0, ratchets: 0, falseAlarms: 0, blind: false };
+}
+
+// Call once per frame. Cheap almost always; when the frame has gone black it re-tunes and ratchets the
+// floor down so later sizes never climb back to a configuration this machine has failed at runtime.
+export function watchPostChain(renderer, composer, now = performance.now()) {
+  if (!state || watch.blind || now - watch.last < WATCH.everyMs) return null;
+  watch.last = now;
+  if (canvasCarriesLight(renderer) !== false) return null;
+  // Black. Ask the two things a single drawing-buffer read cannot answer: are the composer's own targets
+  // still producing a frame (read through readRenderTargetPixels, which does not go near the default
+  // framebuffer), and do the nine pixels still read black after that verification has drawn one?
+  // `renderer.info` is saved across the verification. src/main.js resets it once per frame and reads the
+  // counters back through `describe()`, so the composer render plus the two detector renders plus the
+  // reference render inside `verifyComposer` would roughly double the draw calls and triangles reported
+  // for whatever frame this ran on -- numbers nothing asserts, but ones `shot` prints and an
+  // investigation reads as "identical draw calls". The extra work is this watchdog's, not the frame's.
+  const counters = { ...renderer.info.render };
+  const verdict = verifyComposer(renderer, composer, subject.scene, subject.camera);
+  const lit = canvasCarriesLight(renderer) === true;
+  Object.assign(renderer.info.render, counters);
+  if (verdict.ok && lit) {
+    watch.falseAlarms++;
+    // console.log, NOT console.warn, and the difference is load-bearing: `tools/lib/browser.js` collects
+    // `post:` WARNINGS and `tools/shot.js` fails on one, so announcing a frame that turned out to be
+    // fine as a warning would red the contract gate on a healthy run -- which is the defect this is
+    // fixing, moved rather than removed. The count travels in `postState().watch.falseAlarms`, which is
+    // what `shot` records; that is the channel a gate should read.
+    console.log(
+      `post: a ${state.width}x${state.height} frame read back black and the chain's own check contradicts it `
+      + `(${verdict.badTaps}% non-finite, mean luma ${verdict.meanLuma} against a reference of ${verdict.referenceLuma}), `
+      + 'so this was an unreadable drawing buffer and not a black frame. Not stepping down. False alarm '
+      + `${watch.falseAlarms} of ${WATCH.falseAlarmsBeforeGivingUp}.`,
+    );
+    if (watch.falseAlarms >= WATCH.falseAlarmsBeforeGivingUp) {
+      watch.blind = true;
+      // `watchdog:`, and deliberately NOT `post:`. `tools/lib/browser.js` collects WARNINGS whose text
+      // starts with `post:` and `tools/shot.js` fails on one, and giving up on a noisy read is not a
+      // step-down -- the three frames that got here were all healthy. `post-watchdog:` would have been
+      // one character away from failing the contract gate, which is a thing to notice by accident rather
+      // than to depend on. The fact itself is not lost: it travels in postState().watch.blind, which the
+      // sidecar records and `shot` prints.
+      console.warn(
+        `watchdog: the drawing buffer has read back black ${watch.falseAlarms} times on frames the post `
+        + "chain's own check found healthy, so reading it is not telling this machine anything and the "
+        + 'black-frame watchdog is switching itself off for the rest of this page. The chain is still '
+        + 'verified on build and on every size change.',
+      );
+    }
+    return null;
   }
   console.warn(
     `post: the frame has gone black at a ${state.width}x${state.height} target with ${state.samples} samples, ` +
       'after that configuration had already been verified at this size. Stepping down and staying down.',
   );
+  watch.ratchets++;
   watch.floor = Math.max(watch.floor, state.rung + 1);
   const chosen = tuneComposer(renderer, composer, { minRung: watch.floor });
   return chosen;
