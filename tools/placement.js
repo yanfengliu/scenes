@@ -20,8 +20,11 @@
 // against the scene graph, which is CPU JavaScript over geometry that three built before anything was
 // drawn; the renderer decides what the frame looks like and this gate never looks at a frame. It
 // rendered through SwiftShader until 2026-09-15 only because that is what `launch()` defaulted to. The
-// claim is measured, not argued: the two renderers print the same 21 forward hits and the same 10
-// grounding gaps, recorded in docs/devlog/detailed/2026-09-15-gpu-gates.md. `PLACEMENT_GPU=0` (or
+// claim is measured, not argued: on 2026-09-15 both renderers printed the same 21 forward hits and the
+// same 10 grounding gaps, recorded in docs/devlog/detailed/2026-09-15-gpu-gates.md, and that was the
+// whole of PLACEMENT_CHECKS then. Iteration 3 (8f21794) grew the list to 23, so the pair was measured
+// again on 2026-09-16: 23 forward hits and 10 grounding gaps on both renderers, all ok, 10 s on
+// ANGLE/D3D11 against 24 s on SwiftShader standing alone. `PLACEMENT_GPU=0` (or
 // `GATES_GPU=0`) forces SwiftShader, which is what CI gets anyway because a runner has no GPU -- so CI's
 // verdict is unchanged, and the summary line names the renderer it got either way.
 //

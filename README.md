@@ -30,17 +30,20 @@ npx playwright install chromium
 npm test
 ```
 
-`npm test` renders the photo view, scores it against the photograph, checks that the right object is where the photograph says it is, scores several frames across the animation cycle, and moves the camera a hair to see that the frame holds still. Each step is also a command of its own:
+`npm test` runs ten gates in this order: `import-inert`, `shot`, `compare`, `placement`, `namerules`, `clearance`, `animation`, `nudge`, `blackframe` and `record`, then asserts the scores against the thresholds in `docs/PLAN-scores.md`. Each gate has to print its own summary line, so a tool that exits 0 without doing its work fails by name rather than passing in silence. Each gate is also a command of its own:
 
 | Command | What it does |
 | ------- | ------------ |
+| `npm run import-inert` | Imports every tool in `tools/` in its own child process and fails unless each one loads and does nothing: exits 0, prints nothing, finishes fast. It opens no browser and runs first, because a tool that runs itself on import is a tool whose every other result is suspect. |
 | `npm run shot` | Renders the photo view at 1200x1100 to `out/render.png`. Fails on any console error, page error or failed request. |
 | `npm run compare` | Scores `out/render.png` against `japan.webp` and writes `out/compare.png` (photo, render, 50% overlay, heat map), `out/overlay.png` and `out/scores.json`. |
 | `npm run placement` | Two checks the scores cannot make: a ray through 23 photo positions that must hit the object belonging there, and 10 objects whose own base must sit on the ground they claim to stand on. |
 | `npm run namerules` | Every rule in the source that selects meshes by name (placement and grounding checks, the shadow-caster exclusion, clearance's lists, whole-name lookups) is evaluated against the built scene and its population pinned to `tools/name-manifest.json`; a rename that changes any population fails unless the manifest is updated with the reason. It exists because one rename silently moved 37 instances into the shadow pass through a second rule. |
-| `npm run animation` | Scores the photo view at several points across the animation cycle, so a drift that only shows at t = 3 s cannot hide. |
+| `npm run clearance` | What the walkable street keeps clear, measured on the built scene rather than on the constants it was built from: nothing the cherry hangs may come below 1.90 m over the street or the right terrace, and each half of the paved band must keep a 0.60 m run clear of anything built between 0.35 m and 2.0 m over the paving. It also checks its own sorting of meshes into paving, plants and buildings, because a new paving and a new plant once landed in the building set in silence. |
+| `npm run animation` | Scores the photo view at seven points across the animation cycle, so a drift that only shows at t = 3 s cannot hide. |
 | `npm run nudge` | Moves the camera two millimetres from three poses and fails if the frame changes more than a little. A still camera renders the same frame every time, so this is the only gate that sees the scene the way someone orbiting it does. |
 | `npm run blackframe` | Loads the scene at six window sizes and device pixel ratios, including non-round ones, and fails when the post chain hands back a black, flat or nearly lightless frame. It is the counterpart to `nudge`: that one scores how much the frame *changes*, which rates a fully black frame as perfectly stable, and this one scores whether the frame is there at all. |
+| `npm run record` | Drives the camera with real mouse events and checks every frame, failing when any one frame goes dark or when it caught fewer than 30 frames. It is the only gate that exercises the controls rather than posing the camera, and the only one that can see a flicker: the others sample moments. |
 | `npm run perf` | Median frame time and draw calls over 5 s at 1920x1080. Budget: under 16 ms and under 400 draw calls. |
 | `npm run probe -- u,v ...` | Names the mesh under each photo position, and the pixel there. |
 | `npm run inspect -- pair u0 v0 u1 v1` | Writes a photograph-versus-render crop of a region. |
@@ -62,7 +65,12 @@ Two metrics, both computed by `npm run compare` (see `tools/lib/metrics.js` for 
 | Vegetation and background (phase 3) | 0.0844 | 0.4159 |
 | Light and atmosphere (phase 4) | 0.0820 | 0.4338 |
 | Life and delivery (phase 5) | 0.0811 | 0.4411 |
-| **Final** | **0.0811** | **0.4411** |
+| Realism loop, iteration 1 | 0.0768 | 0.4559 |
+| Realism loop, iteration 2 | 0.0749 | 0.4733 |
+| Realism loop, iteration 3 | 0.0660 | 0.5286 |
+| Realism loop, iteration 4 | 0.0640 | 0.5403 |
+| Realism loop, iteration 5 | 0.0596 | 0.5713 |
+| **Current** | **0.0596** | **0.5713** |
 
 The thresholds the tests assert live in `docs/PLAN-scores.md`, along with every intermediate measurement and what moved it.
 
@@ -83,11 +91,11 @@ The thresholds the tests assert live in `docs/PLAN-scores.md`, along with every 
 
 Two ideas run through all of it. Every colour is a mean sampled from the photograph, and because the photograph's colours already contain the photograph's light, each material's albedo is derived by inverting the tone curve so the lit result lands back on the sampled mean. And the scene is built from fixed seeds, so the same render comes out every time.
 
-`AGENTS.md` is the working brief; [the work entry](docs/work/0_japan-street-scene/plan.md) records status and links to the original plan the work followed; `docs/devlog/` records what was tried, what it measured, and what turned out to be false.
+`AGENTS.md` is the working brief; [the first work entry](docs/work/0_japan-street-scene/plan.md) records the phased build and links to the original plan it followed, and [the second](docs/work/1_realism-and-content/plan.md) records the realism loop the iteration rows above come from; `docs/devlog/` records what was tried, what it measured, and what turned out to be false.
 
 ## Deployment
 
-The page is static. `.github/workflows/ci.yml` runs `npm test` on every push to `main` and on pull requests: the runner has no GPU, so it renders through SwiftShader, which is what the scored shot has always used, and it reproduces the same scores this machine gets. It does not run `npm run perf`, it shoots three animation frames instead of seven (`ANIMATION_FRAMES`) and two of the six blackframe sizes (`BLACKFRAME_VIEWS`), because a frame takes minutes on a shared runner. `blackframe` asks for the GPU and will not get one there, so on CI it proves the chain is sound on SwiftShader; the driver behaviour it was written for needs a machine with a GPU to see.
+The page is static. `.github/workflows/ci.yml` runs `npm test` on every push to `main` and on pull requests: the runner has no GPU, so every gate renders through SwiftShader (`GATES_GPU=0`, a choice the workflow states rather than one the runner imposes), which is what the scored shot has always used, and it reproduces the same scores this machine gets. It does not run `npm run perf`, it shoots three animation frames instead of seven (`ANIMATION_FRAMES`) and one of the six blackframe sizes (`BLACKFRAME_VIEWS`), because a frame takes minutes on a shared runner, and it skips `record` (`RECORD=0`), which drives real mouse input through a renderer that is mid-frame and had not finished after 19 minutes on SwiftShader locally. `blackframe` asks for the GPU and will not get one there, so on CI it proves the chain is sound on SwiftShader; the driver behaviour it was written for needs a machine with a GPU to see.
 
 `.github/workflows/pages.yml` publishes `index.html`, `src/`, the photograph and the render to GitHub Pages on the same pushes. **It needs Pages switched on once before it can deploy**: in the repository's Settings, under Pages, set the source to GitHub Actions. Until then the workflow fails with "Resource not accessible by integration", because a workflow token cannot create the site by itself. Note what deploying does: it serves `japan.webp`, a third-party photograph, from a public URL. See the licence note below before turning it on.
 
