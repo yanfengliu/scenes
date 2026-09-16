@@ -137,13 +137,22 @@ export function buildFacades(b) {
   const upperWall = balancedMean(C.woodUpperRight, SHOJI, shojiFraction);
   b.box('right house upper', { x0: M.front, x1: M.back, y0: M.eaveTop, y1: M.roofY, z0: M.upperZ0, z1: M.z1 }, surface('woodWide', upperWall, { seed: 85 }), { metric: true });
   for (const zc of [-5.0, -8.4]) {
-    shoji(b, rand, unit, `shoji ${zc}`, M.front - 0.005, 5.05, 6.35, zc - 0.7, zc + 0.7);
+    // 5.35 and not 5.05: below the balcony rail's base at 5.30 the photo has near-black timber (#17110f at
+    // (0.955-0.985, 0.23)) and a lit shoji panel was showing through the rail there.
+    shoji(b, rand, unit, `shoji ${zc}`, M.front - 0.005, 5.35, 6.35, zc - 0.7, zc + 0.7);
   }
   // The lit band under the balcony, and the balcony itself raised onto its top edge. At 4.9 the balcony's
   // floor projected to v 0.291 at u 0.90 and v 0.29 at u 0.979, while the photo's near-black floor line
   // is at v 0.247 and its lit band below it at v 0.255-0.29 -- the whole assembly sat about 0.4 m low,
   // which is why cell (0.979,0.250) rendered a lit shoji panel (#96897c) where the photo is #56432f.
-  b.bandSolid('right upper band', M.upperZ0, M.z1, () => 5.3, () => 4.85, M.front - 0.03, M.front + 0.02, surface('plaster', C.rightUpperBand, { seed: 102 }), 6);
+  // 4.78..5.18, not 4.85..5.30. Its TOP is the photo's: the lit strip is 0.020 of frame tall and the old
+  // band was 0.041, reaching v 0.254 where the photo's timber runs to 0.268 (see `rightUpperBand` in
+  // src/layout.js for the ladder). Its BOTTOM is a compromise and is worth naming as one: below the lit
+  // strip the photo has a mid brown (#89776b at v 0.29) and then dark (#534b49 at 0.31), and this band
+  // and the near-black upper wall are the only two surfaces there, so the band is carried down over the
+  // mid-brown part rather than a third band being built for it. Swept: 4.90 gives 0.0601 / 0.5694, 4.78
+  // gives 0.0597 / 0.5702 and 4.66 gives 0.0601 / 0.5694.
+  b.bandSolid('right upper band', M.upperZ0, M.z1, () => 5.18, () => 4.78, M.front - 0.03, M.front + 0.02, surface('plaster', C.rightUpperBand, { seed: 102 }), 6);
   balconyRail(b, rand, unit, M.front, 5.3, M.upperZ0 + 0.2, M.z1 - 0.2);
 
   // ---- the fence: vertical boards with dark posts on the planter's stone core, jogging back at the steps ----
@@ -151,18 +160,23 @@ export function buildFacades(b) {
   const B = L.RIGHT_BED;
   const bw = F.thickness - 0.1;
   const posts = [];
+  // The wall runs `B.wallSkirt` below the bed's top as well as `B.fenceHeight` above it, and carries the
+  // photo's dark earth plaster rather than the generic `fence` grey: see RIGHT_BED in src/layout.js for
+  // the ladder down the wall's own face that measured both. `walls.js` drops the stone core's top by the
+  // same amount, so the panel is not buried behind stone.
+  const wallBottom = (z) => L.rightBedY(z) - B.wallSkirt;
   for (let i = 0; i < F.path.length - 1; i++) {
     const [xa, za] = F.path[i];
     const [xb, zb] = F.path[i + 1];
     if (xa === xb) {
-      b.bandSolid(`fence ${i}`, za, zb, (z) => L.rightBedY(z) + B.fenceHeight, (z) => L.rightBedY(z) - 0.1, xa - bw / 2, xa + bw / 2, surface('wood', C.fence, { seed: 86 + i }), 6);
+      b.bandSolid(`fence ${i}`, za, zb, (z) => L.rightBedY(z) + B.fenceHeight, wallBottom, xa - bw / 2, xa + bw / 2, surface('wood', C.fenceWall, { seed: 86 + i }), 6);
       for (let z = za - 0.6; z > zb + 0.3; z -= 1.2) {
-        posts.push({ position: [xa - bw / 2 - 0.04, L.rightBedY(z) + B.fenceHeight / 2 - 0.05, z], scale: [0.08, B.fenceHeight + 0.1, 0.1], tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] });
+        posts.push({ position: [xa - bw / 2 - 0.04, L.rightBedY(z) + (B.fenceHeight - B.wallSkirt) / 2, z], scale: [0.08, B.fenceHeight + B.wallSkirt, 0.1], tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] });
       }
     } else {
       const x0 = Math.min(xa, xb) - F.thickness / 2;
       const x1 = Math.max(xa, xb) + F.thickness / 2;
-      b.box(`fence ${i}`, { x0, x1, y0: L.rightBedY(za) - 0.1, y1: L.rightBedY(za) + B.fenceHeight, z0: za - bw / 2, z1: za + bw / 2 }, surface('wood', C.fence, { seed: 86 + i }), { metric: true });
+      b.box(`fence ${i}`, { x0, x1, y0: wallBottom(za), y1: L.rightBedY(za) + B.fenceHeight, z0: za - bw / 2, z1: za + bw / 2 }, surface('wood', C.fenceWall, { seed: 86 + i }), { metric: true });
     }
   }
   b.add(instanced('fence posts', unit, surface('wood', C.woodDark, { seed: 60, instancedUv: true }), posts), 'fence posts');
@@ -377,7 +391,13 @@ function noren(b, M) {
   const length = zN - zF;
   const positions = [];
   const uvs = [];
-  const hem = (z) => M.norenHemNear + ((M.norenHemFar - M.norenHemNear) * (zN - z)) / length;
+  // The far panel is hitched up: the photo's cloth stops short of the machiya's dark far end (see
+  // `norenZ0` in src/layout.js for the two whole-cloth alternatives and what each cost). The term is zero
+  // over the first 72% of the run, so the near and middle panels' hems are exactly where they were, and
+  // reaches NOREN_HITCH at the far corner.
+  const NOREN_HITCH = 0.32;
+  const hitch = (t) => NOREN_HITCH * Math.max(0, (t - 0.72) / 0.28) ** 2;
+  const hem = (z) => M.norenHemNear + ((M.norenHemFar - M.norenHemNear) * (zN - z)) / length + hitch((zN - z) / length);
   for (let i = 0; i <= cols; i++) {
     const t = i / cols;
     const z = zN - t * length;

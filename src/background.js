@@ -205,7 +205,11 @@ function hill(b) {
     vTop,
     vBottom,
     sunU: (L.SUN.u - u0) / (u1 - u0),
-    glareWidth: 0.085 / (u1 - u0),
+    // 0.055 of frame, not 0.085. Measured on the shipped tree the old width left g = 0.19 at photo
+    // u 0.729 and 0.10 at 0.771, which is where the photo's hill is a grey-green #5b5f60: those cells
+    // rendered #d2c3ac and #7d6f61 against #9f9d96 and #5e6663, too warm and too light. At 0.055 the
+    // glare is 0.02 by u 0.729 and still 0.80 at u 0.646, which is the photo's own warm band.
+    glareWidth: 0.055 / (u1 - u0),
     ridgeAt: ridgeV,
     treeRise: TREE_RISE,
     u0,

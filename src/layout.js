@@ -261,7 +261,24 @@ export function leftPotPlacement() {
 // planter bed along its street edge (shrubs behind the wooden fence) and the pot on the walkway.
 // Beyond the planter the walkway drops to the street level, where the landing widens to the right.
 export const RIGHT_TERRACE = { xInner: 2.1, xBed: 2.4, xOuter: 9.0, line: [[0, 0.45], [-5.6, 0.45], [-14.8, -2.7], [-15.3, -5.0], [-40, -13.0]] };
-export const RIGHT_BED = { z0: -14.8, z1: -5.6, raise: 1.5, fenceHeight: 0.6 };
+// `wallSkirt` is how far the fence's boarded wall runs BELOW the planter bed's top, over the stone core.
+// The photo's garden wall is a dark earth-plastered panel with timber posts standing on a light stone
+// plinth, and the render had the stone running all the way up to a 0.6 m board.
+//
+// The ladder that shows it, each cell's ray met at the wall plane x = 2.10, **as metres below the SHIPPED
+// bed top** (the first version of this comment quoted the same ladder against the bed as it was before
+// `raise` moved 1.5 to 1.05 in the same edit, so its depths were 0.45 m out and a critic caught it):
+// -0.52 and -0.36 #515d68 (above the bed: the tiled cap), -0.19 #33231b, -0.14 #494445, 0.04 #523b34,
+// 0.13 #554d3b, 0.35 #6a534e, 0.43 #756563, 0.44 #697062, 0.76 #798288, 0.83 #7a7d7e, 0.84 #768186. So
+// the dark panel runs from about 0.2 m ABOVE the bed top to 0.43 below it and the light stone starts
+// between 0.44 and 0.76, where one colour, `stoneWallRight`, used to cover the lot.
+//
+// 0.38 is swept and not read off that ladder, because the panel's lower edge also decides how much stone
+// shows and the two do not have the same boundary. On the shipped tree, everything else held: 0.20 gives
+// 0.05993 / 0.57065, 0.30 gives 0.05969 / 0.57093, **0.38 gives 0.05958 / 0.57134**, 0.45 gives 0.05961 /
+// 0.57110. (An earlier sweep on an earlier arm agreed: 0.60 was 0.0599 / 0.5678 and 0.34 was 0.05960 /
+// 0.57081.)
+export const RIGHT_BED = { z0: -14.8, z1: -5.6, raise: 1.05, fenceHeight: 0.6, wallSkirt: 0.38 };
 // The wooden fence with its small tiled roof stands on the planter strip's street edge and jogs back
 // around the head of the side steps (photo: the low roof's ridge kinks near u 0.68). `path` is the
 // fence's centre line as [x, z] points; the roof overhangs the fence by roofHalfWidth on each side.
@@ -272,6 +289,57 @@ export const RIGHT_STEPS_Z = { z0: -12.0, z1: -9.0 };
 export const RIGHT_WALL_NOTCH = { z0: -12.5, z1: -8.0 };
 export function rightTerraceY(z) {
   return interpolateZ(RIGHT_TERRACE.line, z);
+}
+// The step across the near end of the right terrace, and the stone coping along the retaining wall's top.
+//
+// The step is what the photo's bottom-right corner is, and it is geometry rather than a colour. Read the
+// photo across the two bottom cell rows: on the terrace the ray at v = 0.932 lands at z = -5.27 and the
+// ray at v = 0.977 at z = -4.86, and every cell on that terrace flips from lit stone to near black
+// between them — the walkway at x 2.41 (#5a6570 to #14191d) and x 2.73 (#56616a to #181e22), and the
+// wall-top strip at x 2.09 (#6d7986 to #272d31). One boundary at one z, right across the terrace's width,
+// which is a step and not a shadow: the surface in front of it is a riser turned back at the camera and
+// away from a sun that is behind the scene. A horizontal line at z = -5.05 projects to v = 0.955 at EVERY
+// x, which is exactly the cell boundary the photo flips on, and a 0.40 m drop puts the riser's foot at
+// v = 1.005, just past the frame's bottom edge, so the whole bottom cell row is the riser's own face and
+// nothing has to be painted on a horizontal surface. Iteration 3 proved no colour on the slab row can do
+// it (the same row fills (0.813, 0.932), which the render already matches to 0.018) and removed a painted
+// corner term; this is the geometry that term was standing in for.
+//
+// Measured depth, and why the rig cannot supply it. The photo's riser is #14191d against #5a6570 on the
+// slab above it: a linear ratio of 0.068, 0.075, 0.076 per channel — about 93% of the light gone. What
+// this rig can do, evaluated from `RIG` and `sunDirection()` in src/lighting.js rather than by eye (the
+// sun's own L is (0.136, 0.216, -0.967) and the fill's (0.159, 0.398, 0.903), and three's hemisphere
+// weight is 0.5 * dot(n, up) + 0.5): an UP-facing surface receives 0.780 ambient + 0.039 sun + 0.140
+// hemisphere + 0.024 fill = 0.983, and a +z-facing one 0.780 + 0.000 + 0.120 + 0.054 = 0.954. Turning a
+// surface back at the camera and away from this sun therefore removes **2.9%**, a -x-facing wall 8.4%,
+// and iteration 3's critic measured the deepest CAST shadow at 14%. (The environment map at
+// `envIntensity` 0.12 is not in that sum and varies with the normal too, so these are the analytic lights
+// only.) The riser is therefore a SURFACE carrying its own sampled colour, the way `stair risers` and
+// `sideStepFoot` do, and not a shadow painted on the walkway — the rig is three decimal places short of
+// being able to paint it.
+//
+// The step jogs 0.27 m nearer past x = 2.95, which is the photo again and not a flourish. Across the
+// bottom cell row the photo reads #272d31, #14191d, #181e22 at u 0.771 to 0.854 and then #35424d, #343d48,
+// #394146 at u 0.896 to 0.979 — near black over the inner half and a mid slate over the outer half. One
+// step line at z = -5.05 across the whole terrace puts the riser's face over the whole row and renders the
+// outer three at #18191e, #141519 and #15161a, which is 0.157, 0.157 and 0.163 against the photo where
+// leaving them alone cost 0.096, 0.095 and 0.085 (measured, both ways). At z = -4.78 the riser's top edge
+// projects to v = 0.986 instead of 0.955, so those cells are about a third riser and two thirds lit deck,
+// which is what the photo has. `zOuter` is that line and `xSplit` is where the step turns. 2.78 is where
+// the cell boundary at u 0.875 lands on the INNER step line, at z = -5.05; it projects to u 0.892 at the
+// outer line, so the return face between the two runs covers u 0.875 to 0.892 and a critic measured that
+// as 41% of cell (0.896, 0.977)'s width. That cell is the one the jog leaves worst of the four, and 2.95
+// (the first value) put the whole deep riser in it instead, at 0.132.
+export const RIGHT_STEP = { z: -5.05, zOuter: -4.78, xSplit: 2.78, drop: 0.4 };
+// The z of the step at a given x across the terrace.
+export function rightStepZ(x) {
+  return x < RIGHT_STEP.xSplit ? RIGHT_STEP.z : RIGHT_STEP.zOuter;
+}
+// The walking surface of the right terrace: the terrace line, dropped by the step in front of it. `x`
+// picks which of the step's two lines applies and is REQUIRED — an earlier version defaulted it to 0 and
+// nothing ever called it that way, which is a branch that cannot be red-proved.
+export function rightWalkY(z, x) {
+  return rightTerraceY(z) - (z > rightStepZ(x) ? RIGHT_STEP.drop : 0);
 }
 export function rightBedY(z) {
   return rightTerraceY(z) + RIGHT_BED.raise;
@@ -287,6 +355,13 @@ export const RIGHT_MACHIYA = {
   z1: -2.0,
   upperZ0: -13.5,
   roofZ0: -12.2,
+  // The photo's noren is hitched up over its LAST panel and the render's hung straight on: box
+  // (0.835,0.505)-(0.875,0.545) reads #423930, the shopfront's timber, against a rendered cell of #767274
+  // at (0.854, 0.523), which is white cloth over dark wood. Two whole-cloth fixes were measured and both
+  // cost more than they paid, because the hem is linear in z and every change to one end moves the other:
+  // raising `norenHemFar` 2.03 to 2.35 took that cell 0.187 to 0.040 and pushed (0.938, 0.523) 0.030 to
+  // 0.206 and (0.979, 0.523) 0.011 to 0.092, and ending the cloth at z = -10.9 scored 0.0613 / 0.5630
+  // against 0.0604 / 0.5672. `NOREN_HITCH` in src/facades.js lifts only the far panel.
   norenZ0: -11.8,
   norenTop: 3.8,
   norenHemNear: 3.2, // at z1; the hem slopes to photo v 0.55 at u 1.0 and v 0.50 at u 0.86
@@ -298,7 +373,30 @@ export const RIGHT_MACHIYA = {
   eaveTop: 4.5,
   eaveDrop: 0.5, // the ground-floor eave steps down along the street (photo: its edge stays at v 0.40 from u 1.0 to 0.75)
   roofY: 6.95,
-  roofThickness: 0.65,
+  // 0.27, not 0.65. The top eave's edge is the line between the photo's sky and its dark eave, and the
+  // render's ran 0.033 of frame too high along it. Read off `npm run inspect -- pair 0.78 0.0 1.0 0.14`,
+  // the photo's line passes (0.804, 0.091), (0.851, 0.060), (0.899, 0.031) and (0.947, 0.005); projecting
+  // the edge at x = 3.92 gives (0.841, 0.027) at y = 7.60 and (0.836, 0.089) at 7.00, so the photo's line
+  // is between them and 7.60 is where it was. 7.30 was the first value here and a critic measured it as
+  // still uniformly high, by 0.010, 0.013, 0.018 and 0.027 of frame across those four points and growing
+  // toward u 1.0; 7.00 overshoots the other way by 0.018, 0.020, 0.018 and 0.014. 7.22 (this thickness)
+  // is between them, and over the eight cells the eave's edge is in -- (0.854, 0.023) through (0.813,
+  // 0.114) -- it sums 0.700 against 0.722 at 7.30 and 0.781 at 7.60. The whole-frame scores cannot see
+  // the difference (0.05958 / 0.57134 against 0.05960 / 0.57145), so this one is decided by the eave's
+  // own region and by the photo's line, not by the total.
+  //
+  // Dropping the whole roof instead (roofY 6.95 to 6.55) was measured and is much worse, 0.0643 against
+  // 0.0605: the tiles below the edge fill v 0.07 to 0.30 correctly already, so only the EDGE moves. And
+  // this constant is read by THREE things, not one: the fascia and the eave block in architecture.js, the
+  // tile plane in roofs.js, and `topRoofY` in vegetation.js, which is the surface the canopy is held out
+  // of -- it drops with the plane, so blossom cards now survive 0.26 m lower at x = 4.6 than they did.
+  roofThickness: 0.27,
+  // The top roof's ridge, held where it was while the eave dropped: the plane is steeper (30.6 degrees
+  // rather than 28) rather than lower. src/roofs.js and src/vegetation.js both read these.
+  topRidgeX: 9.0,
+  // 7.62 + (9.0 - 3.9) * tan(28 degrees), which is where the ridge stood when the eave was at 7.62 and the
+  // pitch was written as a constant: held to the millimetre so "steeper, not lower" is exactly true.
+  topRidgeY: 10.3317,
   fasciaZ0: -11.0, // only the near part of the top eave's tile ends catches the light (photo u > 0.80)
 };
 // Left house 1 is a low-mezzanine machiya: its top roof sits at about 6.4 m with sky above it.
@@ -582,14 +680,22 @@ export const COLORS = {
   // caught the earlier version of this comment calling them the arithmetic mean.
   latticeFarUpper: 0x6b6e78,
   latticeFarLower: 0x3a332e,
-  // The lit band running along under the balcony's floor, box (0.85,0.255)-(1.00,0.300) #9a8369. It is
-  // the brightest thing on that wall in the photo and the render had nothing there: a v-ladder at
-  // u 0.885-0.915 reads #635b5a at v 0.24, #b19c82 at 0.26 and #d7c4a1 at 0.28, and at u 0.955-0.985
-  // #231812 at 0.24 and #8f7c61 at 0.28. Dropped onto the wall plane x = 5.0 that band is y 4.85..5.30,
-  // which is where the balcony's own floor sits once it is raised off 4.9.
-  rightUpperBand: 0x9a8369,
+  // The lit band running along under the balcony's floor. Its old value, 0x9a8369, came from box
+  // (0.85,0.255)-(1.00,0.300), which is 0.045 of frame tall where the band itself is 0.020: it spans the
+  // band AND the dark timber above and below it, so it is the brief's first cause again. Laddered in
+  // 0.015-wide steps, u 0.885-0.915 reads #685e5d at v 0.23, #7d6b5a at 0.25, #d8c4a1 at 0.27-0.285,
+  // #89776b at 0.29 and #534b49 at 0.31; u 0.955-0.985 reads #17110f at 0.23, #674d32 at 0.25, #a78f6b at
+  // 0.27-0.285 and #443b39 at 0.29. So the band is at v 0.268-0.288 and nowhere else, and over just that
+  // strip it reads #bca27f (#c5ae8d over the left half, #b29670 over the right). On the wall plane x = 5.0
+  // that strip is y 4.90..5.18, where the band was built 4.85..5.30 and so ran 0.014 of frame too high.
+  rightUpperBand: 0xbca27f,
   shrubDeep: 0x1e2416,
   shrubLit: 0x7c958b, // the planter shrub's lit top, cell (0.771, 0.659)
+  // The top of the foliage spilling over the fence, which is in the shrub's own shade in the photo while
+  // its lower edge catches the light: box (0.670,0.598)-(0.750,0.632) #3d5048 against (0.752,0.645)-
+  // (0.792,0.678) #839d95 one cell below it. The cluster took `shrubLit` at both ends and read as one pale
+  // sage lump; cell (0.729, 0.614) was #728680 against a photo of #385341.
+  spillTop: 0x3d5048,
   doorRed: 0x6f3219, // the annex's near door, cells (0.104, 0.75) and (0.104, 0.795)
   // The annex's koshi window. Its slats were the scene's generic near-black `SLAT`, and the photo has a
   // lit warm lattice there: the two cells it fills read #917655 at (0.104, 0.614) and #884a2e at
@@ -602,7 +708,8 @@ export const COLORS = {
   shrubDark: 0x2a3320,
   plaster: 0xcfc6b8,
   stoneWallLeft: 0x8e8983, // box (0.13,0.88)-(0.24,0.98) #8b8580; its seven cells average #837d79 against #7c7269
-  // The right retaining wall, the fence's stone core and the ribbon skirts. The old 0x4d5559 came from box
+  // The right retaining wall and the ribbon skirts. It was the fence's stone core as well until iteration
+  // 5 gave that its own `fenceCoreStone`: the two walls are different stone in the photo. The old 0x4d5559 came from box
   // (0.60,0.80)-(0.70,0.95), which is mostly the main stairs in their own shadow, not the wall. The wall's
   // own face reads #677277 at (0.65,0.815)-(0.70,0.87), #65737a at (0.70,0.845)-(0.75,0.90) and #6f7b83 at
   // (0.73,0.88)-(0.775,0.935), and the fence's core above it #778086 at (0.755,0.865)-(0.79,0.905).
@@ -706,7 +813,35 @@ export const COLORS = {
   // to belong to the same lighting as everything beside it.
   walkwayNear: 0x47525d,
   walkwayFar: 0x2d3036,
-  fence: 0x64605a,
+  // The step's riser at the near end of the terrace (see RIGHT_STEP above), box (0.79,0.960)-(0.88,1.00)
+  // #181d22, with (0.755,0.955)-(0.795,0.995) reading #212527 at its inner end. It is the face of a stone
+  // step turned back at the camera, not a shadow: the sun is behind the scene, so this face never sees it.
+  // The value is NOT the mean of those two boxes, which is #1c2124 -- it is set two levels above it so the
+  // riser carries the inner end's reading as well as the outer, and the difference is worth one line
+  // rather than letting the comment imply an average it is not.
+  walkwayStep: 0x1d2227,
+  // The coping along the top of the right retaining wall, box (0.74,0.90)-(0.78,0.945) #76828d. The first
+  // value here was #5f6a71 from (0.70,0.90)-(0.78,0.945) — a box that straddles the very two populations
+  // this coping exists to separate, which is the mistake this whole iteration is about, committed by the
+  // fix for it. That box's left half reads #485255 and its right half #76828d, and at v 0.9225 it spans
+  // x 1.565 to 2.191 while the coping is built over 1.86 to 2.15, so only the right half is the surface.
+  // The photo
+  // has a light kerb stone running the length of that wall and the render had the wall's own dark mortar
+  // body showing its top strip: the three cells that land on the strip between x 1.35 and 2.15 read
+  // #6d7986, #637075 and #66747a in the photo against #444e5b, #414952 and #464f57, all asking for about
+  // 1.5x. `stoneWallRightShade`'s comment already says the body shows "its top strip and its own shaded
+  // face" and that lifting the two together cost 0.086 over its cells — they are two populations and this
+  // is the lit one, given its own surface.
+  wallCoping: 0x76828d,
+  // `fence` (0x64605a), the fence boards' generic warm grey, was removed in iteration 5: the whole panel
+  // is `fenceWall` now and nothing read it any more.
+  // The fence's own wall panel, now that it runs down over the stone core (see RIGHT_BED.wallSkirt): box
+  // (0.700,0.735)-(0.780,0.775) #523c34, the dark earth plaster between its timber posts.
+  fenceWall: 0x523c34,
+  // The stone core under that panel. It was `stoneWallRight`, which is the retaining wall's colour and is
+  // a full stop darker: box (0.690,0.835)-(0.780,0.895) #6c777d, with (0.650,0.800)-(0.690,0.845) #6b7577
+  // one bay along it. The two walls are different stone in the photo and were one hex here.
+  fenceCoreStone: 0x6c777d,
   plinth: 0x4c4f53, // the near half of the machiya's base band, boxes (0.87,0.71)-(0.95,0.79) #515457 and (0.92,0.76)-(1.0,0.84) #3e4348
   // Its far half runs into the shade of the bend: (0.66,0.555)-(0.78,0.60) #2f2b28, (0.83,0.63)-(0.90,0.70)
   // #3c4243. The old 0x363432 rendered #4c4743, 45 percent light, because the rig lifts a dark albedo --

@@ -332,8 +332,12 @@ export function barkPixel(c) {
 
 export const KINDS = {
   bark: { pixel: barkPixel, metres: 1.2, height: true, size: 256 },
-  stone: { pixel: stonePixel, metres: 1.4, height: true, size: 256 },
-  rubble: { pixel: rubblePixel, metres: 1.0, height: true, size: 256 },
+  // `metres` is the texture's world period, and for these two it WAS the period the orbit sweep keeps
+  // reporting: every iteration since 2 has recorded "stone textures repeat about every metre" from pose 4
+  // and pose 7, and 1.4 and 1.0 are where that comes from. Both are 2.4 m now at 384 px, which keeps
+  // about 160 texels a metre (256/1.4 was 183) and nearly halves how often the pattern comes round.
+  stone: { pixel: stonePixel, metres: 2.4, height: true, size: 384 },
+  rubble: { pixel: rubblePixel, metres: 2.4, height: true, size: 384 },
   wood: { pixel: (c) => woodPixel(c, 6), metres: 1.0, height: true, size: 256 },
   woodWide: { pixel: (c) => woodPixel(c, 3), metres: 1.0, height: true, size: 256 },
   plaster: { pixel: plasterPixel, metres: 2.0, height: true, size: 256 },
@@ -699,6 +703,12 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, su
     const b = rgbOf(c1);
     return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
   };
+  // The hill away from the sun is `colorAt(vBottom)` at EVERY row, which is one colour for the whole
+  // shaded half. Two row ramps were tried against the photo's own shaded boxes and both lost: light
+  // (#95978e, #5b5f60, #5c533b) scored 0.0609 / 0.5657 and dark (#5f6460, #4e4c47, #43403c) 0.0604 /
+  // 0.5678, against 0.0601 / 0.5694 for the one colour. The light one is why: its top box sits ON the
+  // tree line, so it is trees against sky and not hill, and the cells under it are the photo's own answer
+  // -- (0.771, 0.114) is #5e6663, not #95978e.
   // The warm band under the ridge is the sun's glare washing over it, so it belongs near the sun's own
   // column and nowhere else: away from it the hill is its dark green at every row. Before this the band
   // ran the whole width and the hill beside the sun read 0.10 too bright in the cells at u 0.72 to 0.80.

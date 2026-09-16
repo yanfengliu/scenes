@@ -118,8 +118,8 @@ export function buildRoofs(b) {
     soffit: { offset: 0.06, thickness: 0.12, color: C.rightEaveFascia },
   });
   const topEave = M.roofY + M.roofThickness + 0.02;
-  const topRidgeX = 9.0;
-  const topRidgeY = topEave + (topRidgeX - M.topEaveEdge) * Math.tan((28 * Math.PI) / 180);
+  const topRidgeX = M.topRidgeX;
+  const topRidgeY = M.topRidgeY;
   tileRoof(b, rand, geos, 'right roof front', [v(M.topEaveEdge, topEave, M.z1), v(topRidgeX, topRidgeY, M.z1), v(topRidgeX, topRidgeY, M.roofZ0), v(M.topEaveEdge, topEave, M.roofZ0)], {
     color: C.tileRight,
     fasciaColor: C.topEaveUnder,

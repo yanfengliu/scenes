@@ -376,7 +376,9 @@ function rightWalkway(b) {
   // There is no corner term. One was written for cells (0.813, 0.977) and (0.854, 0.977), where the photo
   // is #14191d and #181e22 against #35424d one cell to their right, and it never reached them: `near` is
   // zero on the row those cells are filled by, so the term fired only on rows in front of the frame. It
-  // painted a black wedge into the sweep for no scored gain and it is gone.
+  // painted a black wedge into the sweep for no scored gain and it is gone. What those two cells actually
+  // are is `L.RIGHT_STEP`: the terrace steps down 0.40 m at z = -5.05 and the bottom cell row is the
+  // riser's own face. Read that comment in src/layout.js before touching `near` again.
   const walkColor = (cz) => {
     const near = Math.min(clamp01((cz + 5.05) / 0.45), clamp01((-cz - 3.3) / 1.0));
     const far = clamp01((-cz - 6.0) / 1.1);
@@ -398,9 +400,14 @@ function rightWalkway(b) {
     const zA = Math.min(0, cz + d / 2);
     const zB = cz - d / 2;
     if (zA - zB < 0.1) continue;
-    const rowZ = (zA + zB) / 2;
-    const rowD = zA - zB;
     const stagger = r % 2 ? w / 2 : 0;
+    // The row that STRADDLES the step is cut at it, into a piece on each level. Without this cut the row
+    // takes whichever level its centre is on and the step lands at a row boundary instead: the row centred
+    // at z = -5.07 spans -4.76 to -5.38, so a step at -5.05 sat behind that row's own slab and the riser
+    // was never seen at all (measured: the probe at (0.813, 0.977) returned the same #57667a it did before
+    // the step existed, on a slab at y = 0.45).
+    const R = L.RIGHT_STEP;
+    const inBand = zA > R.zOuter && zB < R.z; // only this row meets the step, and only it is cut at xSplit
     for (let c = -1; c <= cols; c++) {
       let sx0 = x0 + c * w + stagger;
       let sx1 = sx0 + w;
@@ -408,19 +415,133 @@ function rightWalkway(b) {
       sx0 = Math.max(sx0, x0);
       sx1 = Math.min(sx1, x1);
       if (sx1 - sx0 < joint + 0.06) continue;
-      const cx = (sx0 + sx1) / 2;
+      for (const [px0, px1] of inBand && sx0 < R.xSplit && sx1 > R.xSplit ? [[sx0, R.xSplit], [R.xSplit, sx1]] : [[sx0, sx1]]) {
+        if (px1 - px0 < joint + 0.06) continue;
+        const cx = (px0 + px1) / 2;
+        const stepZ = L.rightStepZ(cx);
+        for (const [sA, sB] of zA > stepZ && zB < stepZ ? [[zA, stepZ], [stepZ, zB]] : [[zA, zB]]) {
+          if (sA - sB < 0.06) continue;
+          const rowZ = (sA + sB) / 2;
+          items.push({
+            position: [cx, L.rightWalkY(rowZ, cx) + 0.005, rowZ],
+            euler: [-Math.atan(slopeAt(rowZ)), 0, 0],
+            scale: [px1 - px0 - joint, 1, sA - sB - joint],
+            tint: 1 + jitter(rand, 0.05),
+            color: walkColor(rowZ),
+            uv: [rand() * 4, rand() * 4],
+          });
+        }
+      }
+    }
+  }
+  // The step's riser and the wall's coping, both after the loop above and drawing from the same stream,
+  // so no slab laid above is renumbered by either of them. They are instances of this same set because
+  // they are the same cut stone on the same terrace and a second InstancedMesh is a second draw call; the
+  // brief for this iteration is cost-neutral, so the census attributes their cells to `right walkway
+  // slabs` and this comment is where that is written down.
+  stepRiser(items, rand, slab, x0, x1);
+  wallCoping(items, rand);
+  const mean = balancedMean(C.walkwayLit, mortarOf(C.walkwayLit), 0.05);
+  b.add(instanced('right walkway slabs', slab, surface('stone', mean, { seed: 23, instancedUv: true }), items), 'right walkway slabs');
+}
+
+// The riser of `L.RIGHT_STEP`, standing across the walkway at its z and facing the camera, in two runs
+// with a short return face where the step jogs at `xSplit`. A slab lies flat with its top face at y = 0,
+// so an euler of +PI/2 about x turns that face to +z and the body behind it: local x stays width, local y
+// becomes thickness along -z, local z becomes height downward. The return face is the same slab turned
+// about Z instead, so its face looks back along -x at the camera; see the comment on it below.
+//
+// `yScale` is why this takes the geometry: local y is NOT metres here. `slabGeometry(0.03, 0.008)` spans
+// 0.038 m in y (0.022 of extrusion plus a 0.008 bevel each side), so the scale component MULTIPLIES that
+// span -- every other slab in this file passes 1 for it, and passing 0.12 here, as the first version did,
+// gave a body **0.0046 m** deep. The other risers in this file use `riserGeo`, a unit box, where the
+// component IS metres; this set has to share the slab geometry to stay on one draw call. A critic
+// measured the 0.0046 and the `right walkway` band standing 0.076 m proud of the lower flagstones through
+// it.
+const RIGHT_STEP_DEPTH = 0.12;
+function stepRiser(items, rand, slab, x0, x1) {
+  const R = L.RIGHT_STEP;
+  const face = scaleHex(C.walkwayStep, C.walkwayLit);
+  slab.computeBoundingBox();
+  const yScale = RIGHT_STEP_DEPTH / (slab.boundingBox.max.y - slab.boundingBox.min.y);
+  for (const [ra, rb] of [[x0, R.xSplit], [R.xSplit, x1]]) {
+    const z = L.rightStepZ((ra + rb) / 2);
+    const top = L.rightTerraceY(z);
+    const cols = Math.max(1, Math.round((rb - ra) / 0.95));
+    const w = (rb - ra) / cols;
+    for (let c = 0; c < cols; c++) {
       items.push({
-        position: [cx, L.rightTerraceY(rowZ) + 0.005, rowZ],
-        euler: [-Math.atan(slopeAt(rowZ)), 0, 0],
-        scale: [sx1 - sx0 - joint, 1, rowD - joint],
-        tint: 1 + jitter(rand, 0.05),
-        color: walkColor(rowZ),
+        position: [ra + (c + 0.5) * w, top - R.drop / 2, z],
+        euler: [Math.PI / 2, 0, 0],
+        scale: [w - 0.015, yScale, R.drop],
+        tint: 1 + jitter(rand, 0.04),
+        color: face,
         uv: [rand() * 4, rand() * 4],
       });
     }
   }
-  const mean = balancedMean(C.walkwayLit, mortarOf(C.walkwayLit), 0.05);
-  b.add(instanced('right walkway slabs', slab, surface('stone', mean, { seed: 23, instancedUv: true }), items), 'right walkway slabs');
+  // The return between the two runs: 0.27 m of z at x = xSplit, closing the side of the deeper inner step.
+  // An euler of +PI/2 about z turns the slab's top face to -x (local x becomes world y, local z stays z),
+  // so this one is scaled [height, thickness, length].
+  items.push({
+    position: [R.xSplit, L.rightTerraceY(R.z) - R.drop / 2, (R.z + R.zOuter) / 2],
+    euler: [0, 0, Math.PI / 2],
+    scale: [R.drop, yScale, Math.abs(R.z - R.zOuter)],
+    tint: 1 + jitter(rand, 0.04),
+    color: face,
+    uv: [rand() * 4, rand() * 4],
+  });
+}
+
+// The coping along the top of the right retaining wall: a kerb stone every 0.9 m over the strip between
+// the wall's face and the walkway's inner edge, from the step back to the terrace's steep end. It stops
+// at the step because in front of it the photo is as dark as the riser (#272d31 at (0.771, 0.977)) and
+// the band's own mortar body already reads #3a424c there; a light kerb carried across the step would be
+// the one thing on this terrace that does not step. The three cells it is FOR land at x 1.89, 1.95 and
+// 2.09 on the terrace plane, not across the whole 1.35-to-2.15 strip, which is what an earlier draft of
+// this comment said.
+//
+// It is 0.33 m wide and NOT the whole 0.80 m strip, and the photo is what sets that. Dropping each cell
+// that lands on this strip onto the terrace plane and sorting by the x it lands at gives one clean ramp:
+// x 1.13 #364146, 1.24 #4c5354, 1.28 #4b4843, 1.35 #303c44, 1.45 #354145, 1.47 #474d4e, 1.60 #566469,
+// 1.76 #464f52, 1.79 #3f4345 — all dark — and then x 1.89 #66747a, 1.95 #637075, 2.09 #6d7986, 2.30
+// #768186, 2.31 #798288 — all light. The ramp turns between 1.79 and 1.89, so the light stone starts at
+// 1.82 and not at 1.78, which is where the first version put it: at 1.78 the coping reached the last dark
+// sample and cell (0.646, 0.795), whose photo IS the #3f4345 at x 1.79, went 0.0725 to 0.1316. 1.86 was
+// measured too and is worse at both ends (0.05963 / 0.57129 against 0.05960 / 0.57145 at 1.78 and
+// 0.05960 / 0.57145 at 1.82), because a CELL spans x and an edge at 1.86 uncovers half of the two light
+// cells it is there for. 1.82 clears the dark sample and keeps them.
+// A coping over the WHOLE strip was measured before either and moved four cells the right way by 0.10,
+// 0.089, 0.081 and 0.023 while moving five the wrong way by 0.106, 0.050, 0.050, 0.048 and 0.013, for a
+// net of nothing. Inside 1.86 what the camera sees over that strip is the wall's own face and the stones'
+// tops at a grazing angle, which the photo has in shade.
+//
+// The rows are laid in two spans so that none of them straddles the terrace line's kink at z = -5.6. The
+// first version laid one span from -5.05 back, and its nearest stone was centred at -5.493, above the
+// kink, where `slopeAt` reads 0: the whole 0.87 m stone came out horizontal, its far end standing 0.142 m
+// proud of the wall top with a 0.119 m drop to the next stone — a 15 px jog in the scored frame inside
+// cell (0.729, 0.886). `rightWalkway` guards the same case with a slope test; this guards it by cutting.
+function wallCoping(items, rand) {
+  const T = L.RIGHT_TERRACE;
+  const x1 = T.xInner + 0.05;
+  const x0 = x1 - 0.33;
+  const slopeAt = (z) => (L.rightTerraceY(z + 0.05) - L.rightTerraceY(z - 0.05)) / 0.1;
+  const color = scaleHex(C.wallCoping, C.walkwayLit);
+  for (const [zNear, zFar] of [[L.RIGHT_STEP.z, L.RIGHT_BED.z1], [L.RIGHT_BED.z1, L.RIGHT_BED.z0]]) {
+    const rows = Math.max(1, Math.round((zNear - zFar) / 0.9));
+    const d = (zNear - zFar) / rows;
+    for (let r = 0; r < rows; r++) {
+      const cz = zNear - (r + 0.5) * d;
+      items.push({
+        position: [(x0 + x1) / 2, L.rightTerraceY(cz) + 0.03, cz],
+        euler: [-Math.atan(slopeAt(cz)), 0, 0],
+        scale: [x1 - x0, 1, d - 0.02],
+        tint: 1 + jitter(rand, 0.04),
+        color,
+        uv: [rand() * 4, rand() * 4],
+      });
+    }
+  }
 }
 
 // The mortar body under a paved ribbon on the height field, with side skirts.

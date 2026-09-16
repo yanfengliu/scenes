@@ -174,7 +174,8 @@ function cherry(b, rand) {
   // the photo shows blossom above the machiya's eave and against its upper wall (u 0.75 to 0.83), so the
   // tests stop at each roof's own surface rather than at a tall box over the whole building.
   const M = L.RIGHT_MACHIYA;
-  const topRoofY = (x) => M.roofY + M.roofThickness + 0.02 + Math.max(0, x - M.topEaveEdge) * Math.tan((28 * Math.PI) / 180);
+  const topEaveY = M.roofY + M.roofThickness + 0.02;
+  const topRoofY = (x) => topEaveY + Math.max(0, x - M.topEaveEdge) * ((M.topRidgeY - topEaveY) / (M.topRidgeX - M.topEaveEdge));
   const eaveRoofY = (x, z) => M.eaveTop - 0.35 + ((x - M.eaveEdge) / (M.front + 0.2 - M.eaveEdge)) * 0.65 - M.eaveDrop * ((M.z1 - z) / (M.z1 - M.eaveZ0));
   const solid = (p) =>
     (p.x > M.front - 0.4 && p.z > M.z0 - 0.5 && p.z < M.z1 + 0.5 && p.y < topRoofY(p.x) + 0.25) ||
@@ -442,9 +443,15 @@ function groundPlants(b, rand) {
   const spill = [];
   const spillZ = -6.5;
   const spillRand = mulberry32(7714);
-  // It takes `shrubLit` top AND bottom rather than `shrub`: `shrubLit` IS the photo's own reading of this
-  // cell, and the darker `shrub` the planter shrub grows from is its shaded interior 4 m further back.
-  cluster(spillRand, spill, new THREE.Vector3(2.12, L.rightBedY(spillZ) + 0.5, spillZ), { x: 0.3, y: 0.3, z: 1.4 }, 160, 0.22, C.shrubLit, leaf.mean, C.shrubLit);
+  // Its BOTTOM is `shrubLit`, which IS the photo's own reading of cell (0.771, 0.659), and the darker
+  // `shrub` the planter shrub grows from is its shaded interior 4 m further back. Its TOP was `shrubLit`
+  // too until iteration 5, and the cluster read as one pale sage lump: see `spillTop` in src/layout.js.
+  // Anchored on the TERRACE and not on the bed. It used to be `rightBedY(spillZ) + 0.5`, and when
+  // `RIGHT_BED.raise` went from 1.5 to 1.05 (see src/layout.js) the whole cluster fell 0.45 m with it,
+  // out from under the ray the solution above was fitted to: `npm run placement` went red at once with
+  // `fence spill` hitting `fence roof ridge`. +2.00 on the terrace is the same world height the solved
+  // version had, so the fit above still holds and the plant now hangs over the cap rather than the rail.
+  cluster(spillRand, spill, new THREE.Vector3(2.12, L.rightTerraceY(spillZ) + 2.0, spillZ), { x: 0.3, y: 0.3, z: 1.4 }, 160, 0.22, C.shrubLit, leaf.mean, C.spillTop);
   b.add(instanced('fence spill leaves', cardGeometry, leafMat, spill, { uvOffsets: false }), 'fence spill leaves');
   // A small potted plant on the walkway beside the big pot, and the potted plant on the left low wall
   // (that pot is built with the walls).

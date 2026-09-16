@@ -182,6 +182,10 @@ export function buildWalls(b) {
   // ---- the fence's core: a stone-faced wall on the planter strip, jogging back around the side steps ----
   const F = L.RIGHT_FENCE;
   const half = F.thickness / 2;
+  // The stone core's top, `RIGHT_BED.wallSkirt` below the bed: above it the wall is the fence's own dark
+  // plaster panel (src/facades.js), which is what the photo has there. Only `fence core stones` draws from
+  // `rand` after this point in this module, so moving this line renumbers that set and nothing else.
+  const coreTop = (z) => L.rightBedY(z) - L.RIGHT_BED.wallSkirt;
   const coreStones = [];
   for (let i = 0; i < F.path.length - 1; i++) {
     const [xa, za] = F.path[i];
@@ -197,10 +201,10 @@ export function buildWalls(b) {
       const sa = prevAcross ? za + (convexStart ? half : -half) : za;
       const sb = nextAcross ? zb - (convexEnd ? half : -half) : zb;
       const tz = (t) => sa + (sb - sa) * t;
-      b.bandSolid(`fence core ${i}`, za, zb, (z) => L.rightBedY(z), (z) => L.rightTerraceY(z) - 2, xa - half + MORTAR_SETBACK, xa + half, mortarOf(C.stoneWallRight), 6);
+      b.bandSolid(`fence core ${i}`, za, zb, (z) => coreTop(z), (z) => L.rightTerraceY(z) - 2, xa - half + MORTAR_SETBACK, xa + half, mortarOf(C.fenceCoreStone), 6);
       // Inside the wall's notch the stones run down to the lowered wall top, so the face above the notch
       // is stone all the way (the photo's tall stone wall under the fence).
-      coreStones.push(...stackedStones(rand, { from: [xa - half, sa], to: [xa - half, sb], outward: [-1, 0], top: (t) => L.rightBedY(tz(t)), bottom: (t) => Math.min(L.rightTerraceY(tz(t)) - 0.2, wallTop(tz(t)) + 0.1), course: 0.3, depth: F.thickness, style: 'rubble' }));
+      coreStones.push(...stackedStones(rand, { from: [xa - half, sa], to: [xa - half, sb], outward: [-1, 0], top: (t) => coreTop(tz(t)), bottom: (t) => Math.min(L.rightTerraceY(tz(t)) - 0.2, wallTop(tz(t)) + 0.1), course: 0.3, depth: F.thickness, style: 'rubble' }));
     } else {
       // Across the jog: a level piece closing the corner, its street-side end set behind the stone line,
       // stones on the face toward the steps.
@@ -208,11 +212,11 @@ export function buildWalls(b) {
       const x1 = Math.max(xa, xb) + half;
       const toward = xb > xa ? -1 : 1;
       const zf = za + toward * half;
-      b.box(`fence core ${i}`, { x0, x1, y0: L.rightTerraceY(za) - 2, y1: L.rightBedY(za), z0: za - half + (toward < 0 ? MORTAR_SETBACK : 0), z1: za + half - (toward > 0 ? MORTAR_SETBACK : 0) }, mortarOf(C.stoneWallRight));
-      coreStones.push(...stackedStones(rand, { from: [x0 - MORTAR_SETBACK, zf], to: [x1, zf], outward: [0, toward], top: () => L.rightBedY(za), bottom: () => L.rightTerraceY(za) - 0.2, course: 0.3, depth: F.thickness, style: 'rubble' }));
+      b.box(`fence core ${i}`, { x0, x1, y0: L.rightTerraceY(za) - 2, y1: coreTop(za), z0: za - half + (toward < 0 ? MORTAR_SETBACK : 0), z1: za + half - (toward > 0 ? MORTAR_SETBACK : 0) }, mortarOf(C.fenceCoreStone));
+      coreStones.push(...stackedStones(rand, { from: [x0 - MORTAR_SETBACK, zf], to: [x1, zf], outward: [0, toward], top: () => coreTop(za), bottom: () => L.rightTerraceY(za) - 0.2, course: 0.3, depth: F.thickness, style: 'rubble' }));
     }
   }
-  b.add(instanced('fence core stones', rubble, surface('rubble', rubbleMean(C.stoneWallRight), { seed: 39, instancedUv: true }), coreStones), 'fence core stones');
+  b.add(instanced('fence core stones', rubble, surface('rubble', rubbleMean(C.fenceCoreStone), { seed: 39, instancedUv: true }), coreStones), 'fence core stones');
 
   // ---- the round pot on the right walkway ---------------------------------------------------------
   const potHit = L.rayHitGround(L.POT.u, L.POT.v, (z) => L.rightTerraceY(z) + 0.5);
