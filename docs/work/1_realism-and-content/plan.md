@@ -54,7 +54,7 @@ One expensive gate runs on this machine at a time (a full `npm test`, or `animat
 | iteration 3 | done: merged 2026-09-16, 0.0660 / 0.5286 | right-side stone and kawara, two iteration-1 survivors, shopfronts on the far row | src/, PLAN-scores.md, its devlog | nothing |
 | gpu-gates | done: merged 0b81d68, suite green on main at 2 min 46 s | every gate whose verdict allows it renders on the GPU; shot stays on SwiftShader and refuses a GPU | tools/, AGENTS.md Gates, gate-proofs | nothing |
 | iteration 4 | worker iter4-content, worktree from a06a1c4 | content from the sweep: the hill and mountains as geometry, ground fog bands, the left row's open backs, the right roof mass, the bend; the persistent right-machiya cells treated as shadow and placement | src/, PLAN-scores.md, its devlog | the gate slot by request |
-| tools-followups | worker tools-followups, worktree from 95b295e | clearance classifies the new walkway slabs and spill leaves as buildings; the sweep lost its digest binding to the scored frame when views moved to the GPU | tools/, AGENTS.md Gates, gate-proofs | the gate slot by request |
+| tools-followups | done: merged 6f12960 | clearance classifies the new walkway slabs and spill leaves as buildings; the sweep lost its digest binding to the scored frame when views moved to the GPU | tools/, AGENTS.md Gates, gate-proofs | nothing |
 | integration | this session | merge, suite in the primary checkout, push, CI to a conclusion | the primary checkout | each lane's handoff |
 
 ## Outcome
