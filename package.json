@@ -8,6 +8,7 @@
     "dev": "node tools/serve.js",
     "shot": "node tools/shot.js",
     "compare": "node tools/compare.js",
+    "treecheck": "node tools/treecheck.js",
     "perf": "node tools/perf.js",
     "probe": "node tools/probe.js",
     "placement": "node tools/placement.js",

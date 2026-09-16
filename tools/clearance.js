@@ -76,7 +76,12 @@
 //   this gate through by 0.01 m. Shipped, the lowest over it is 2.526 m.
 // - A hanging plant whose mesh name does not start with `cherry ` is measured by nothing here. Every
 //   plant this check does not measure is printed by name on every run, which is a weak defence: it prints
-//   the list a reader skims.
+//   the list a reader skims. One of them is known to be low and is deliberately not asserted:
+//   `fence spill leaves` hangs 1.437 m over the right terrace's paving, measured 2026-09-16 by putting it
+//   in CANOPY for one run and reading the FAIL. It is foliage spilling over the near fence at the
+//   terrace's inner edge, pinned to the photo at (0.771, 0.659) by the placement gate, so holding it to
+//   the 1.90 m a street owes would red this gate for something the scene builds on purpose. What it is
+//   held to instead is that it is a PLANT and not a building — see CLASSIFICATION below.
 // - The ground under a card is found on a 0.25 m grid, so a card within 0.125 m of the paving's edge can
 //   be tested against a neighbouring cell — or, if all five of its points quantize off the paving, not
 //   tested at all. Five points are tried per card (its centre and its four horizontal corners) and the
@@ -91,7 +96,10 @@
 //   long.
 // - "Structure" is defined by exclusion — anything that is not paving, terrain, sky, vegetation or the
 //   person — so a NEW building mesh is a structure without anyone remembering to list it. The cost of
-//   that choice is that mislabelling something as terrain hides it: every set is printed every run.
+//   that choice is that a new PAVING or a new PLANT lands there too, and in silence: iteration 3's
+//   `right walkway slabs` and `fence spill leaves` both did. What now catches that class is the
+//   name-shape cross-check under CLASSIFICATION above, whose bound is a word list it prints every run;
+//   mislabelling something as TERRAIN is still caught by nothing, which is why every set is printed.
 // - A structure blocks where the air it occupies over the paving overlaps the band from KERB_M to the
 //   rule's ceiling. Under KERB_M it is a kerb, a coping or a slab edge — the street's own masonry,
 //   stepped over; the platform's front coping stands 0.17 m over the platform slabs and is excluded by
@@ -120,10 +128,10 @@
 //   running from under the paving to above head height is invisible; without the second, one instanced
 //   tile set's high and low pieces would merge into one span and report the air between them as solid.
 //   Nothing is rendered while the materials are changed.
+// `isMainModule` comes from serve.js and is never hand-built here: the hand-built form is how four tools
+// came to skip their whole main block on every CI run for three days (docs/learning/gate-proofs.md).
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { startServer } from './serve.js';
+import { isMainModule, startServer } from './serve.js';
 import { launch, collectErrors, openScene, rendererTag, wantsGpu, ACTION_TIMEOUT_MS } from './lib/browser.js';
 
 // A standing eye on this street, 1.70 m over the paving. That is the eye `npm run views` pose 5 puts on
@@ -144,9 +152,11 @@ export const EYE_M = 1.7;
 // gate, the answer is to look at the frame, not to lower the limit.
 export const MIN_EYE_GAP = 0.2;
 export const MIN_HEADROOM = EYE_M + MIN_EYE_GAP;
-// The road left beside the far row. As shipped the narrowest near-half run is 1.10 m and the narrowest
-// far-half run is also 1.10 m; with the row's front line unfloored the near half reaches 0 and the row's
-// base crosses the band's left edge entirely.
+// The road left beside the far row. As shipped the narrowest near-half run is 0.95 m (at z -29.25) and
+// the narrowest far-half run is 1.10 m (at z -13.75, the lamp post splitting it); with the row's front
+// line unfloored the near half reaches 0 and the row's base crosses the band's left edge entirely.
+// The near-half figure was 1.10 m until iteration 3 built shopfronts onto the far row; this line said so
+// until 2026-09-16, when an independent critic caught it in a file this work was already editing.
 export const MIN_STRIP = 0.6;
 // The same road measured clear of an eave as well. Shipped 0.65 m. This is the rule that stops the row
 // being walked back into the street by amounts the 0.60 m rule allows: the near-half run and the eave
@@ -185,6 +195,71 @@ export const BEYOND_ROWS_MAX = 40; // shipped 34
 export const BEYOND_BLOCKERS = ['corner house body', 'corner house roof', 'bend roof'];
 const Z_STEP = 0.25;
 const X_STEP = 0.05;
+
+// ---- CLASSIFICATION: a mesh's own name, checked against the set it landed in -------------------------
+// The structure ("building") set is built by EXCLUSION: anything WALK, TERRACE, TERRAIN, LIVING and
+// CANOPY do not match is a building. That is deliberate — a new building is swept without anyone
+// remembering to list it — and it has a matching cost: a new PAVING or a new PLANT is swept too, silently,
+// and its surface stops being walked on. Every one of those lists is a whole-name anchored regex, so a
+// new mesh is never NEAR a match; it either is in the list or it is a building.
+//
+// That is not hypothetical. Iteration 3 added `right walkway slabs` (the flagstones on the right terrace)
+// and `fence spill leaves` (foliage over the near fence) and both landed in the building set, found by a
+// reviewer rather than by this tool.
+//
+// Why it was harmless, stated correctly. The first version of this comment said it was "coincidence of
+// their x positions -- both sit at x >= 1.82 and the paved band ends at x ~ 1.26", and that is wrong:
+// this gate's own measurement has `right walkway slabs` named in `farBlockers` at z -14.25 and -14.50,
+// which can only happen if a WALK ray found paving in that column. The real reason is that
+// `right walkway` -- the solid directly beneath those flagstones -- was ALREADY in TERRACE, so the raised
+// terrace edge was already exempt there and the slabs were a 5 mm lid on an exempt solid. It cost no
+// measured run: worst numeric change across all 200 z positions and all four measured runs, 0.0.
+// The going-forward cost is the honest statement: paving laid over the street's own columns from the
+// terrace side can no longer narrow a clear run.
+//
+// So a mesh whose OWN NAME says it is a walking surface or a growing thing may not be a building. The two
+// facts are independent — the name is written in `src/`, the set comes from the regexes in
+// `measureInPage` — so this is a cross-check and not the code agreeing with itself.
+//
+// BOUND, and it is far weaker than it looks. This is a WORD LIST, printed in full on every run, and the
+// honest measure of it is not invented examples but THIS SCENE'S OWN NAMES. Run over the sets that are
+// correctly classified today, it would catch only:
+//
+//     WALK    6 of 14   blind to: stairs, gutter, gutter floor, gutter curb, landing, far street,
+//                       platform, platform coping
+//     CANOPY  1 of 2    blind to: cherry strands
+//     LIVING  7 of 33   blind to: cherry trunk, evergreen trunks, evergreen cards, pot, small pot,
+//                       left pot
+//
+// So it covers a MINORITY of this scene's own non-building meshes. `landing 2`, `stairs upper`, a second
+// pine, a fourth pot — the natural next names — would all land in the building set in silence, which is
+// the same defect one step over. It catches the two words this scene reached for when it broke (`slabs`
+// and `leaves`) and it is not a general guarantee that a misfiled mesh is caught.
+//
+// It also only looks in ONE direction: a building misfiled as terrain or a plant is caught by nothing
+// here, which is why every set is printed by name every run.
+//
+// Add a word when a NEW NAME would have needed it, not to close the gaps listed above — a word added for
+// a mesh nobody has written is a word nobody can red-prove, and `plant` shows the other risk: the most
+// obvious word on the list is the one that would have fired on this repo's own masonry.
+export const SURFACE_WORDS = ['paving', 'pavement', 'slab', 'walkway', 'tread', 'riser', 'flagstone', 'cobble'];
+// `plant` is deliberately NOT in this list, though it looks like the most obvious word in it. This repo's
+// own word for the stone bed on the right terrace is `planter` -- `planter strip`, `the planter's stone
+// core`, eight uses across src/layout.js, src/facades.js, src/paving.js, src/roofs.js, src/architecture.js
+// and src/vegetation.js -- and that bed is MASONRY, correctly a structure. A future `planter strip` mesh
+// would have been a false positive whose failure text's first instruction is "put it in LIVING", which
+// would have taken a real obstruction out of the street sweep. `left plant leaves`, the only mesh here
+// the word would have caught, is caught by `leaves` anyway. Found by an independent critic, 2026-09-16.
+export const PLANT_WORDS = ['leaf', 'leaves', 'foliage', 'blossom', 'petal', 'shrub', 'bush', 'moss', 'weed', 'flower', 'grass', 'ivy', 'vine', 'fern'];
+
+// The word a name is caught by, or null. Lower-cased substring: mesh names here are lower-case words
+// separated by spaces, and `slab` has to match `slabs`.
+export function nameSaysNotABuilding(name) {
+  const n = String(name).toLowerCase();
+  for (const w of SURFACE_WORDS) if (n.includes(w)) return { word: w, kind: 'a walking surface', set: 'WALK or TERRACE' };
+  for (const w of PLANT_WORDS) if (n.includes(w)) return { word: w, kind: 'a growing thing', set: 'LIVING (or CANOPY, which is measured for headroom)' };
+  return null;
+}
 
 export async function measureClearance({ quiet = false, gpu = wantsGpu('CLEARANCE') } = {}) {
   let server = null;
@@ -236,12 +311,29 @@ function measureInPage({ MIN_HEADROOM, HEAD_M, KERB_M, SKY_M, Z_STEP, X_STEP }) 
   // name, and both are walking surface.
   const WALK = /^(platform|platform slabs|platform coping|stairs|stair treads|stair risers|gutter|gutter floor|gutter curb|landing|landing slabs|far street|far street slabs|far street lit slabs)$/;
   // The right terrace: walkable, but not the street, and measured separately so the gap is a number.
-  const TERRACE = /^(right paving|right walkway|right walkway far|side stair treads|side stair risers|side stair body)$/;
+  // `right walkway slabs` are the flagstones iteration 3 laid on top of the `right walkway` band, and they
+  // are the surface a person there actually stands on. Without them here the headroom rays landed on the
+  // band underneath, and the error is NOT the 5 mm of the slab's nominal offset: the band is a
+  // `bandSolid` of 10 segments whose top is a chord approximation of `rightTerraceY`, while each slab row
+  // is placed on the true curve at `rightTerraceY(rowZ) + 0.005`. Where the terrace drops steeply the
+  // chord falls away underneath. Measured on this gate's own 0.25 m grid, 542 cells gained a higher
+  // surface: 454 by exactly 5.000 mm and 88 by more, up to **1.0207 m** in one row at z -14.5 (the chord
+  // error alone reaches 1.3837 m at z -14.76). So the terrace headroom was overstated by up to a metre at
+  // that end. Nothing hangs there today, which is why no assertion moved — the shipped minimum is
+  // bit-identical either side at 2.5255109556019306 m, because it grounds on `side stair treads`.
+  // See CLASSIFICATION below for what now stops the next one being missed.
+  const TERRACE = /^(right paving|right walkway|right walkway far|right walkway slabs|side stair treads|side stair risers|side stair body)$/;
   // Terrain and backdrop. Not walking surface and not structure. Whole names, not prefixes, so a mesh
   // called "hillside cottage" does not quietly become terrain; every name that lands here is printed.
   const TERRAIN = /^(sky|mountains (blue|farthest)|near ridge|hill|hillside|far plots (left|right)|ground base|left house 1 ground|right house ground( far)?)$/;
   // Growing things and the person: neither is a building standing in the road.
-  const LIVING = /^(cherry .*|evergreen (trunks|cards)|shrub leaves|shrub 2 leaves|left plant leaves|weeds|moss|petals|pot|small pot|left pot|person .*)$/;
+  // `fence spill leaves` is the plant iteration 3 hung over the near fence. It is a plant and not a
+  // building, so it belongs here — and it is NOT in CANOPY, which is measured: it hangs 1.437 m over the
+  // right terrace's paving (measured 2026-09-16 by putting it in CANOPY for one run), so asserting the
+  // 1.90 m headroom on it would red this gate for foliage the scene puts there on purpose and the
+  // placement gate pins to the photo at (0.771, 0.659). What it gets instead is what every other plant
+  // here gets: it is printed, by name, in the "plants NOT measured for headroom" line on every run.
+  const LIVING = /^(cherry .*|evergreen (trunks|cards)|shrub leaves|shrub 2 leaves|left plant leaves|fence spill leaves|weeds|moss|petals|pot|small pot|left pot|person .*)$/;
   // The canopy, for check 1: every cherry mesh except the trunk, which stands on the street by design and
   // carries the limbs in the same merged geometry.
   const CANOPY = (n) => n.startsWith('cherry ') && n !== 'cherry trunk';
@@ -515,9 +607,38 @@ export function report(result) {
     + `${counts.canopy} canopy, ${counts.structure} structure, ${counts.other} terrain/living/person`,
   );
   console.log(`  walkable street: ${names.walk.join(', ')}`);
+  // Printed for the same reason the walkable street is: this set decides which surface the terrace
+  // headroom rays land on, and a mesh missing from it is a mesh whose top is not the top.
+  console.log(`  right terrace: ${names.terrace.join(', ')}`);
   console.log(`  canopy measured: ${street.meshes.join(', ')}`);
   console.log(`  plants NOT measured for headroom: ${names.plantsUnmeasured.join(', ') || '(none)'}`);
   console.log(`  not a building (terrain, plants, the person): ${names.other.join(', ')}`);
+
+  // ---- the classification itself -----------------------------------------------------------------
+  // See CLASSIFICATION at the top of this file for why this exists and what it does not cover. The
+  // building set is the one built by exclusion, so it is the one a new mesh falls into by accident.
+  // This scan proves nothing on an empty structure set; the `counts.structure < 50` floor under check 2
+  // is what asserts there was something to scan.
+  const misfiled = names.structure
+    .map((n) => ({ name: n, ...(nameSaysNotABuilding(n) ?? {}) }))
+    .filter((r) => r.word);
+  console.log(
+    `${misfiled.length ? 'FAIL' : 'ok  '} every mesh in the building set is named like a building: `
+    + `${counts.structure} scanned against ${SURFACE_WORDS.length + PLANT_WORDS.length} words `
+    + `(${[...SURFACE_WORDS, ...PLANT_WORDS].join(', ')})`
+    + `${misfiled.length ? ` — but ${misfiled.map((r) => `"${r.name}"`).join(', ')} came through` : ''}`,
+  );
+  for (const r of misfiled) {
+    problems.push(
+      `"${r.name}" is being treated as a BUILDING, but its name says it is ${r.kind} (the word "${r.word}"). `
+      + 'The building set in tools/clearance.js is built by exclusion, so a mesh no list matches lands there '
+      + `silently: swept for the street's clear-run rule, and — if it is paving — not counted as a surface `
+      + `anyone stands on, so the headroom rays over it drop to whatever is underneath. Put "${r.name}" in `
+      + `${r.set} in measureInPage (the lists are whole-name anchored, so add the whole name), or rename the `
+      + `mesh if it really is a building. If the word "${r.word}" is wrong for this mesh, the word lists are `
+      + 'SURFACE_WORDS and PLANT_WORDS at the top of tools/clearance.js.',
+    );
+  }
 
   // ---- check 1 -----------------------------------------------------------------------------------
   // Three "did this actually measure the canopy" guards, because a partial rename is what happens in
@@ -577,7 +698,7 @@ export function report(result) {
   // Both of the assertions below sit behind an `if`, so each needs a floor of its own or it reports
   // "did not run" as "passed" — the exact failure the whole gate exists to avoid.
   if (!counts.terrace) {
-    problems.push('no right-terrace paving was found, so the terrace headroom assertion did not run; TERRACE in tools/clearance.js is the list, and this scene has 6 meshes in it');
+    problems.push('no right-terrace paving was found, so the terrace headroom assertion did not run; TERRACE in tools/clearance.js is the list, and this scene has 7 meshes in it');
   }
   const tl = terraceHead.lowest;
   if (counts.terrace && !tl) {
@@ -660,7 +781,7 @@ export function report(result) {
   // A gate whose structure set emptied would find every cell unblocked and print the widest possible run.
   if (counts.structure < 50) {
     problems.push(
-      `only ${counts.structure} meshes were treated as buildings (this scene has 176), so almost nothing `
+      `only ${counts.structure} meshes were treated as buildings (this scene has 184), so almost nothing `
       + 'could block the street and this check would pass whatever stood in the road. The sets are built '
       + 'by exclusion in tools/clearance.js; something is being classified as terrain, paving or a plant.',
     );
@@ -755,14 +876,7 @@ export function report(result) {
   return problems;
 }
 
-function isMainModule() {
-  if (!process.argv[1]) return false;
-  const a = resolve(process.argv[1]).toLowerCase();
-  const b = fileURLToPath(import.meta.url).toLowerCase();
-  return a === b;
-}
-
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   const { result, errors, failure } = await measureClearance();
   if (failure) {
     console.error(`FAIL: ${failure.message}`);
@@ -781,6 +895,13 @@ if (isMainModule()) {
     limits: { EYE_M, MIN_EYE_GAP, MIN_HEADROOM, MIN_STRIP, MIN_SKY_STRIP, TRUNK_SPREAD_M, HEAD_M, KERB_M, SKY_M, STREET_TO_Z, BEYOND_ROWS_MAX, BEYOND_BLOCKERS },
     counts: result.counts,
     names: result.names,
+    // The name-shape cross-check's own bound, in the artifact rather than only in this file: these are
+    // every word it can catch a misfiled mesh by, and `misfiled` is what it caught.
+    classification: {
+      surfaceWords: SURFACE_WORDS,
+      plantWords: PLANT_WORDS,
+      misfiled: result.names.structure.filter((n) => nameSaysNotABuilding(n)),
+    },
     window: result.window,
     headroom: {
       lowest: result.street.lowest,
