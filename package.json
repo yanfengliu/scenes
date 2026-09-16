@@ -20,7 +20,8 @@
     "blackframe": "node tools/blackframe.js",
     "webp": "node tools/render-webp.js",
     "nudge": "node tools/nudge.js",
-    "record": "node tools/record.js"
+    "record": "node tools/record.js",
+    "import-inert": "node tools/import-inert.js"
   },
   "engines": {
     "node": ">=24"

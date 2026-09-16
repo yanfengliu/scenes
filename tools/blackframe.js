@@ -50,7 +50,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
+import { launch, collectErrors, openScene, wantsGpu, ACTION_TIMEOUT_MS } from './lib/browser.js';
+
+// RENDERER: THE GPU, always asked for, because the fault this gate exists for is a driver behaviour and a
+// green run on a CPU rasterizer proves only that the chain is sound there. That is why `ci.yml` pairs
+// `GATES_GPU: 0` with `BLACKFRAME_GPU: 1` -- the gate's own variable wins, so this one keeps asking where
+// every other gate is told to stop. WATCH OUT for `GATES_GPU=0` on its own: it moves this gate to
+// software too, silently, and the run then proves nothing about the driver. The printed renderer line is
+// how you tell; it says SOFTWARE FALLBACK or software, never GPU.
 
 // Window size and device pixel ratio, chosen so the drawing buffers differ and the ratios are not all
 // whole numbers. The first entry is the case the user hit: 1280x720 at 1.5 is a drawing buffer of
@@ -248,7 +255,7 @@ if (isMainModule()) {
     `views: ${count} of ${VIEWS.length}${count < VIEWS.length ? ` (BLACKFRAME_VIEWS=${process.env.BLACKFRAME_VIEWS})` : ''} `
     + `-- ${views.map((v) => `${v.width}x${v.height}@${v.ratio}`).join(', ')}, each measured on load and after a resize`,
   );
-  const { rows, renderer, seconds } = await run({ views, gpu: process.env.BLACKFRAME_GPU !== '0' });
+  const { rows, renderer, seconds } = await run({ views, gpu: wantsGpu('BLACKFRAME') });
   console.log(`renderer: ${renderer}`);
   console.log('\nview                    when                          buffer       samples  dark%  worstBlk  lumaStd  vsDirect');
   for (const r of rows) {

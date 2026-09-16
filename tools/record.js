@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene } from './lib/browser.js';
+import { launch, collectErrors, openScene, wantsGpu } from './lib/browser.js';
 
 export const DARK_LUMA = 24;
 export const GRID = 5; // GRID x GRID single-pixel probes per frame
@@ -167,7 +167,7 @@ if (isMainModule()) {
     height: arg('height', 1305),
     ratio: arg('ratio', 1.5),
     seconds: arg('seconds', Number(process.env.RECORD_SECONDS) || 12),
-    gpu: process.env.RECORD_GPU !== '0',
+    gpu: wantsGpu('RECORD'),
   };
   const { trace, firstBad, shot, renderer, errors } = await record(opts);
   mkdirSync('out', { recursive: true });

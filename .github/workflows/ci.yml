@@ -37,9 +37,10 @@ jobs:
       # libraries the runner does not ship.
       - run: npx playwright install --with-deps chromium
 
-      # shot, compare, placement, animation, nudge and blackframe. The runner has no GPU, so every render
-      # goes through SwiftShader, which is what tools/lib/browser.js asks for anyway: the scored shot has
-      # always used it so the numbers do not move with the graphics driver.
+      # shot, compare, placement, clearance, animation, nudge and blackframe; record is skipped below.
+      # Every one of them renders through SwiftShader here -- see GATES_GPU below for why that is now
+      # written down rather than inherited. The scored shot has always used it, so the numbers do not move
+      # with the graphics driver.
       #
       # npm run perf is deliberately NOT run here. It measures frame time on the machine it runs on, and
       # a shared runner without a GPU produces numbers unrelated to the budget in AGENTS.md; asserting
@@ -68,8 +69,29 @@ jobs:
       # does not have, so those minutes would prove nothing -- the gate says so itself, in its bound in
       # docs/learning/gate-proofs.md. It stays in the local suite, where the machine has a GPU. The skip
       # prints one line saying it was skipped and why, so it can never be mistaken for a gate that ran.
+      # GATES_GPU=0, every gate on SwiftShader, said out loud. From 2026-09-15 the gates ask for the GPU
+      # by default, because on a machine that has one a 1200x1100 frame is 5 ms instead of 14 s. This
+      # runner has no GPU, so without this line each gate would ask, fall back, and render through
+      # SwiftShader anyway -- the same pixels by accident rather than by decision. Setting it makes the
+      # renderer here a stated choice, and it keeps every gate's chromium flags exactly what they were
+      # before that change: WEBGL_ARGS, no --use-angle=d3d11.
+      #
+      # It also selects the per-renderer limits two gates now carry, and those are what keeps this run's
+      # verdicts identical to what they were. `nudge` holds the software limits (0.4/0.2 and 0.6/0.3),
+      # which are the ones measured on SwiftShader in 2026-09-06 and re-proved on 2026-09-11; its GPU
+      # limits are much tighter and would be wrong here. `animation` applies a renderer margin of zero,
+      # so the worst frame is held to docs/PLAN-scores.md exactly as before.
+      #
+      # BLACKFRAME_GPU=1 overrides GATES_GPU for the one gate that should always ask: the fault it exists
+      # for is a GPU driver behaviour, so it asks wherever it runs and prints the software fallback it
+      # gets here. The gate's own variable wins over GATES_GPU by design (tools/lib/browser.js).
+      #
+      # The same two lines reproduce this run locally on a machine that does have a GPU:
+      #   GATES_GPU=0 BLACKFRAME_GPU=1 ANIMATION_FRAMES=3 BLACKFRAME_VIEWS=1 RECORD=0 npm test
       - run: npm test
         env:
+          GATES_GPU: 0
+          BLACKFRAME_GPU: 1
           ANIMATION_FRAMES: 3
           BLACKFRAME_VIEWS: 1
           RECORD: 0

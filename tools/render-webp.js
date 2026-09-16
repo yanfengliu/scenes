@@ -5,6 +5,12 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { launch } from './lib/browser.js';
 import { fileToDataUrl } from './lib/image.js';
+import { isMainModule } from './serve.js';
+// An import must never start a gate. Everything below runs only when node was asked to run THIS file;
+// `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
+// the diff that added it is three lines rather than the whole tool. Proved inert, per tool, by
+// out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
+if (isMainModule(import.meta.url)) {
 
 const SOURCE = 'out/render.png';
 const OUT = 'docs/render.webp';
@@ -57,4 +63,6 @@ try {
 if (failure) {
   console.error(`FAIL: ${failure.message}`);
   process.exit(1);
+}
+
 }

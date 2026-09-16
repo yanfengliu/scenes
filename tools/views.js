@@ -15,6 +15,19 @@
 // — so a review is bound to the bytes it looked at and re-running this tool strands that review instead
 // of the review silently inheriting new pixels.
 //
+// RENDERER: THE GPU, because nothing here is a verdict. This tool fails only on a page error; its whole
+// output is frames for a person to look at, and a person looking at a pose from the left flank is looking
+// for a wall standing in the road, not for a driver's antialiasing. On SwiftShader the seven poses cost
+// about five and a half minutes, which is what the diagnostic that is meant to be run every iteration
+// could least afford. `VIEWS_GPU=0` (or `GATES_GPU=0`) puts it back on SwiftShader.
+//
+// A SWEEP DIGEST IS A DIGEST OF THAT RENDERER'S PIXELS. The manifest exists so a review is bound to the
+// bytes it looked at, and the renderer is part of what produced those bytes: the same tree renders
+// different frames on ANGLE/D3D11 and on SwiftShader, so a digest from one never matches the other and a
+// review that quotes one is a review of that renderer's sweep. Every digest quoted in a review before
+// 2026-09-15 is a SwiftShader digest. The manifest names the renderer on its own line for exactly this
+// reason, and a review comparing digests across a renderer change is comparing nothing.
+//
 // EVERY IMAGE OPERATION IN PAGE JAVASCRIPT RUNS ON A SECOND, BLANK PAGE, and that is not tidiness. (The
 // screenshots themselves stay on the scene page, obviously — that is where the scene is. What moved is
 // everything that decodes, resamples or composes a file AFTERWARDS.)
@@ -40,7 +53,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, openInspector, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
+import { launch, collectErrors, openScene, openInspector, rendererTag, wantsGpu, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
 import { decodeImage } from './lib/image.js';
 import * as L from '../src/layout.js';
 
@@ -110,7 +123,7 @@ export const POSES = [
   },
 ];
 
-export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
+export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wantsGpu('VIEWS') } = {}) {
   let server = null;
   let browser = null;
   let errors = [];
@@ -121,7 +134,7 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
     // launch() throws when chromium is not cached (`npx playwright install chromium` once). Inside the
     // try, that comes out as this tool's own FAIL line with the server already closed, instead of an
     // unhandled rejection with an HTTP listener left behind.
-    browser = await launch();
+    browser = await launch({ gpu });
     const page = await browser.newPage({ viewport: { width: L.SHOT.width, height: L.SHOT.height }, deviceScaleFactor: 1 });
     page.setDefaultTimeout(ACTION_TIMEOUT_MS);
     errors = collectErrors(page);
@@ -140,7 +153,7 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
     // directory with no index.txt in it is a directory whose frames cannot be trusted to be one sweep.
     rmSync(`${outDir}/index.png`, { force: true });
     rmSync(`${outDir}/index.txt`, { force: true });
-    if (!quiet) console.log(`renderer: ${info.renderer}; clock pinned at t = ${CLOCK}`);
+    if (!quiet) console.log(`renderer: ${rendererTag(info.renderer, gpu)}; clock pinned at t = ${CLOCK}`);
 
     let clampFired = false;
     let n = 0;
@@ -241,7 +254,10 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false } = {}) {
     const sweepDigest = createHash('sha256').update(rendered.map((r) => `${r.name} ${r.digest}`).join('\n')).digest('hex').slice(0, 12);
     const manifest = [
       `# npm run views — sweep ${sweepDigest}`,
-      `# ${new Date().toISOString()}; renderer: ${info.renderer}; clock pinned at t = ${CLOCK}; ${L.SHOT.width}x${L.SHOT.height}`,
+      `# ${new Date().toISOString()}; renderer: ${rendererTag(info.renderer, gpu)}; clock pinned at t = ${CLOCK}; ${L.SHOT.width}x${L.SHOT.height}`,
+      '# The digests below belong to THAT RENDERER: the same tree renders different frames on a GPU and on',
+      '# SwiftShader, so a digest from one never matches the other, and a review quoting one is a review of',
+      '# that one sweep. Every digest quoted in a review before 2026-09-15 came from SwiftShader.',
       '# Review each frame at its own resolution and quote the sweep digest above, or a frame\'s own sha256;',
       '# re-running this tool replaces the bytes and strands that review rather than letting it inherit new',
       '# pixels. The sweep digest is over the seven frame digests, so it moves when any frame moves and is',

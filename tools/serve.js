@@ -82,14 +82,22 @@ export function startServer({ port = 8080, root = REPO_ROOT, quiet = false } = {
   });
 }
 
-function isMainModule() {
+// True when THE CALLER's module is the one node was asked to run, false when it is being imported.
+// `metaUrl` is the caller's `import.meta.url`: this is exported so a tool does not have to hand-build the
+// comparison, because a hand-built one is how `blackframe` and `record` came to skip their whole main
+// block on every CI run for three days (docs/learning/gate-proofs.md).
+//
+// The `!process.argv[1]` line is not decoration. Under `node --input-type=module -e '…'` there is no
+// argv[1] at all, and `resolve(undefined)` throws rather than returning false -- so without it an import
+// from an eval'd node would crash instead of being inert. Exercised by out/scratch/import-inert.mjs.
+export function isMainModule(metaUrl) {
   if (!process.argv[1]) return false;
   const a = resolve(process.argv[1]).toLowerCase();
-  const b = fileURLToPath(import.meta.url).toLowerCase();
+  const b = fileURLToPath(metaUrl).toLowerCase();
   return a === b;
 }
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   const port = Number(process.env.PORT || 8080);
   startServer({ port }).catch((err) => {
     console.error(`dev server failed to start on port ${port}: ${err.message}`);
