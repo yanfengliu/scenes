@@ -7,11 +7,32 @@
 //        out/overlay.png  render at 50% over the photo at 1200x1100 with a 0.1 grid and the plan's
 //                         landmark boxes, for checking each landmark's position
 //        out/scores.json  the scores plus the per-cell distances, read by npm test
+//
+// ---- RENDERER ---------------------------------------------------------------------------------------
+// SWIFTSHADER, AND IT TAKES NO GPU SWITCH EITHER, for a reason that is NOT the one `shot` has. This tool
+// never opens the scene page and renders no 3D at all; what it does is DECODE two files and RESAMPLE them
+// to 600x550 through chromium's 2D canvas, and the two scored numbers are computed from those resampled
+// bytes. Give chromium a GPU and the 2D canvas can be accelerated, so the resample -- and with it the
+// last digits of the score -- becomes a property of the graphics driver. The scored numbers must not
+// move for that reason, so the decode browser stays on the CPU path, permanently and without a lever.
+//
+// Measured rather than assumed, on 2026-09-15: the same three files decoded by the same `decodeImage`
+// call in a software-launched browser and in a `--use-angle=d3d11 --enable-gpu-rasterization` one come
+// back byte-identical, and the scores off them are equal to eight decimals (out/scratch/
+// decode-renderer.mjs, recorded in docs/devlog/detailed/2026-09-15-gpu-gates.md). So the risk did not
+// materialise on THIS driver -- which is exactly why the lever is absent rather than defaulted: the
+// measurement covers one machine and the contract covers every machine.
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { launch } from './lib/browser.js';
 import { decodeImage, fileToDataUrl, pngDataUrlToBuffer } from './lib/image.js';
 import { cellDistance, ssimGray } from './lib/metrics.js';
 import { LANDMARK_MARKS, PHOTO, SHOT } from '../src/layout.js';
+import { isMainModule } from './serve.js';
+// An import must never start a gate. Everything below runs only when node was asked to run THIS file;
+// `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
+// the diff that added it is three lines rather than the whole tool. Proved inert, per tool, by
+// out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
+if (isMainModule(import.meta.url)) {
 
 const PHOTO_PATH = 'japan.webp';
 const RENDER_PATH = 'out/render.png';
@@ -208,4 +229,6 @@ try {
 if (failure) {
   console.error(`FAIL: ${failure.message}`);
   process.exit(1);
+}
+
 }

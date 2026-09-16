@@ -2,13 +2,18 @@
 // Budget: median under 16 ms on the dev machine, under 400 draw calls.
 // Frame time is measured around renderer.render plus a 1x1 readPixels, which blocks until the GPU
 // (or SwiftShader) has finished the frame, so it is the true cost of a frame and not the rAF interval.
-import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
+import { isMainModule, startServer } from './serve.js';
+import { launch, collectErrors, openScene, wantsGpu, ACTION_TIMEOUT_MS } from './lib/browser.js';
+// An import must never start a gate. Everything below runs only when node was asked to run THIS file;
+// `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
+// the diff that added it is three lines rather than the whole tool. Proved inert, per tool, by
+// out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
+if (isMainModule(import.meta.url)) {
 
 const SECONDS = Number(process.env.PERF_SECONDS || 5);
 const BUDGET_MS = 16;
 const BUDGET_CALLS = 400;
-const useGpu = process.env.PERF_GPU !== '0';
+const useGpu = wantsGpu('PERF');
 
 const server = await startServer({ port: 0, quiet: true });
 const browser = await launch({ gpu: useGpu });
@@ -42,3 +47,5 @@ console.log(`viewport: 1920x1080, frames timed: ${result.frames} over ${SECONDS}
 console.log(`median frame time: ${result.medianMs.toFixed(2)} ms (p95 ${result.p95Ms.toFixed(2)} ms) -> budget < ${BUDGET_MS} ms: ${withinMs ? 'ok' : 'OVER'}`);
 console.log(`draw calls: ${result.drawCalls} (triangles ${result.triangles}) -> budget < ${BUDGET_CALLS}: ${withinCalls ? 'ok' : 'OVER'}`);
 process.exit(withinMs && withinCalls && !errors.length ? 0 : 1);
+
+}

@@ -27,6 +27,18 @@
 // band's left edge — the building was in the road. From the photo view the row occludes itself there and
 // no score moves, which is why this needs a gate of its own.
 //
+// ---- RENDERER ---------------------------------------------------------------------------------------
+// THE GPU, because no pixel enters either verdict. Both checks read instance matrices, vertex positions
+// and raycast hits out of the scene graph on the CPU -- the header above says so itself, "from the BUILT
+// SCENE, never from the constants" -- and nothing here looks at a frame. It rendered through SwiftShader
+// until 2026-09-15 only because that is what `launch()` defaulted to, and the page it opens is 640x480,
+// so it was the cheapest of the inherited cases and still paid a software frame per round-trip. The
+// claim is measured: both renderers print the same headroom and the same narrowest run to three
+// decimals (docs/devlog/detailed/2026-09-15-gpu-gates.md). `CLEARANCE_GPU=0` (or `GATES_GPU=0`) forces
+// SwiftShader, which is what CI gets anyway, so CI's verdict is unchanged; both summary lines name the
+// renderer they got. It asks `openScene` for no settling frames for the same reason: those exist to give
+// the compositor a canvas to screenshot, and this gate never screenshots.
+//
 // ---- HOW BOTH ARE MEASURED --------------------------------------------------------------------------
 // From the BUILT SCENE, never from the constants the scene was built with. The paving surface is found by
 // dropping a ray onto the paving meshes themselves; the canopy's height is read from the instance
@@ -112,7 +124,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
+import { launch, collectErrors, openScene, rendererTag, wantsGpu, ACTION_TIMEOUT_MS } from './lib/browser.js';
 
 // A standing eye on this street, 1.70 m over the paving. That is the eye `npm run views` pose 5 puts on
 // the landing, and the eye the pose-5 blossom was seen from.
@@ -174,7 +186,7 @@ export const BEYOND_BLOCKERS = ['corner house body', 'corner house roof', 'bend 
 const Z_STEP = 0.25;
 const X_STEP = 0.05;
 
-export async function measureClearance({ quiet = false } = {}) {
+export async function measureClearance({ quiet = false, gpu = wantsGpu('CLEARANCE') } = {}) {
   let server = null;
   let browser = null;
   let errors = [];
@@ -182,15 +194,19 @@ export async function measureClearance({ quiet = false } = {}) {
   let result = null;
   try {
     server = await startServer({ port: 0, quiet: true });
-    browser = await launch();
+    browser = await launch({ gpu });
     const page = await browser.newPage({ viewport: { width: 640, height: 480 }, deviceScaleFactor: 1 });
     page.setDefaultTimeout(ACTION_TIMEOUT_MS);
     errors = collectErrors(page);
-    const info = await openScene(page, `${server.url}/`);
+    // No settling frames: those exist to present a canvas for a screenshot and this gate takes none.
+    const info = await openScene(page, `${server.url}/`, { settleFrames: 0 });
     // The clock is pinned inside `measureInPage`, so this line is printed after the evaluate that does it
     // and not before: a print that runs first would claim the pin on a run where the measure then threw.
-    if (!quiet) console.log(`renderer: ${info.renderer}`);
+    if (!quiet) console.log(`renderer: ${rendererTag(info.renderer, gpu)}`);
     result = await page.evaluate(measureInPage, { MIN_HEADROOM, HEAD_M, KERB_M, SKY_M, Z_STEP, X_STEP });
+    // Carried on the result so both marker lines can name it. They are what `tools/test.js` reads as
+    // proof this gate ran, and a log that says a gate passed should say which renderer it passed on.
+    result.renderer = rendererTag(info.renderer, gpu);
     if (!quiet) console.log('clock pinned at t = 0');
   } catch (err) {
     failure = err;
@@ -614,7 +630,7 @@ export function report(result) {
   // The marker tools/test.js looks for. Printed after the check's own work, and worded so it cannot be
   // matched by any earlier line here (the set listing prints "walkable street:", which contains
   // "street:" but not "clearance street:").
-  console.log(`clearance headroom: lowest canopy geometry ${low ? low.clear.toFixed(3) : 'n/a'} m over the walkable street, limit ${MIN_HEADROOM.toFixed(2)} m, ${street.over} samples over ${counts.walk} paving meshes`);
+  console.log(`clearance headroom: lowest canopy geometry ${low ? low.clear.toFixed(3) : 'n/a'} m over the walkable street, limit ${MIN_HEADROOM.toFixed(2)} m, ${street.over} samples over ${counts.walk} paving meshes, on ${result.renderer ?? 'an unrecorded renderer'}`);
 
   // ---- check 2 -----------------------------------------------------------------------------------
   // A run that measured a couple of metres of paving and passed would look exactly like a run that
@@ -734,7 +750,7 @@ export function report(result) {
       );
     }
   }
-  console.log(`clearance street: narrowest near-half clear run ${worst ? worst.near.toFixed(2) : 'n/a'} m over ${asserted.length} of ${rows.length} paved z positions, limit ${MIN_STRIP.toFixed(2)} m`);
+  console.log(`clearance street: narrowest near-half clear run ${worst ? worst.near.toFixed(2) : 'n/a'} m over ${asserted.length} of ${rows.length} paved z positions, limit ${MIN_STRIP.toFixed(2)} m, on ${result.renderer ?? 'an unrecorded renderer'}`);
   console.log(`     (headroom check ${result.headSeconds.toFixed(1)} s, street sweep ${result.sweepSeconds.toFixed(1)} s in the page)`);
   return problems;
 }

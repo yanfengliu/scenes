@@ -4,6 +4,12 @@
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS } from './lib/browser.js';
 import { SHOT } from '../src/layout.js';
+import { isMainModule } from './serve.js';
+// An import must never start a gate. Everything below runs only when node was asked to run THIS file;
+// `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
+// the diff that added it is three lines rather than the whole tool. Proved inert, per tool, by
+// out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
+if (isMainModule(import.meta.url)) {
 
 const points = process.argv.slice(2).map((s) => s.split(',').map(Number));
 if (!points.length || points.some((p) => p.length !== 2 || p.some(Number.isNaN))) {
@@ -43,4 +49,6 @@ try {
 } finally {
   await browser.close();
   await server.close();
+}
+
 }

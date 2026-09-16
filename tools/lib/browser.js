@@ -10,6 +10,76 @@ export function launch({ gpu = false } = {}) {
   return chromium.launch({ args: gpu ? GPU_ARGS : WEBGL_ARGS });
 }
 
+// WHICH RENDERER A GATE ASKS FOR, and the switch that forces the other one.
+//
+// Only two gates' verdicts depend on the CPU rasterizer: `shot` produces the scored render and `compare`
+// scores it, and the numbers in `docs/PLAN-scores.md` must match CI digit for digit, which they do
+// because SwiftShader is deterministic across machines while GPU drivers are not. Every other gate
+// inherited SwiftShader without its verdict depending on it, and paid for it on a machine with a GPU: a
+// 1200x1100 frame there is about 5.0 s and a round-trip to the scene page about 14 s, against about 5 ms
+// a frame on this machine's GPU. They ask for the GPU now; each one's header says so and says why.
+//
+// `<NAME>_GPU=0` forces one gate onto SwiftShader and `GATES_GPU=0` forces all of them, which is how the
+// two renderers are measured against each other on one machine without editing anything -- and how the
+// CI path is exercised locally. Asking for the GPU is a REQUEST: chromium falls back to SwiftShader
+// where there is no usable GPU (every CI runner), which is why nothing here asserts that it got one and
+// why every gate prints what it actually got.
+//
+// The GATE'S OWN variable wins over `GATES_GPU`, in both directions, and `ci.yml` depends on that: it
+// sets `GATES_GPU=0` so the renderer every gate uses there is a stated decision rather than a property of
+// the runner, and `BLACKFRAME_GPU=1` so the one gate whose defect IS a GPU driver behaviour keeps asking
+// for a GPU wherever it runs. Without this precedence those two lines contradict each other and the
+// broader one silently wins.
+export function wantsGpu(name) {
+  const own = process.env[`${name}_GPU`];
+  if (own === '0') return false;
+  if (own === '1') return true;
+  return process.env.GATES_GPU !== '0';
+}
+
+// True when the string `describe().renderer` returned names a software rasterizer rather than a GPU.
+// Matched on the renderer string because that is the only thing the page can actually report: chromium
+// answers `--use-angle=d3d11` with ANGLE over D3D11 on a GPU ("ANGLE (NVIDIA, NVIDIA GeForce RTX 4090
+// … D3D11)") and with ANGLE over Vulkan/SwiftShader where there is none ("ANGLE (Google, Vulkan 1.3.0
+// (SwiftShader Device (Subzero) …), SwiftShader driver)"). `llvmpipe` and `softpipe` are Mesa's software
+// rasterizers, which a Linux runner without SwiftShader can land on instead.
+//
+// WARP is the one an independent review added, and it is the dangerous one: on a Windows box with no
+// usable GPU, `--use-angle=d3d11` lands on Microsoft's own software D3D11 device, which reports "ANGLE
+// (Microsoft, Microsoft Basic Render Driver Direct3D11 …, D3D11)". Nothing in that string says software
+// and the earlier pattern classified it as a GPU, which would have handed `nudge` limits measured on an
+// RTX 4090 to a CPU rasterizer and reddened a healthy scene with nothing in the log to explain it.
+const SOFTWARE_RENDERERS = /swiftshader|llvmpipe|softpipe|software|basic render driver|\bwarp\b/i;
+export function isSoftwareRenderer(name) {
+  return SOFTWARE_RENDERERS.test(String(name));
+}
+
+// Chromium's MASKED renderer string, which names no device at all: `src/main.js`'s `rendererName()` falls
+// back to `gl.getParameter(gl.RENDERER)` when `WEBGL_debug_renderer_info` is unavailable, and that
+// returns "WebGL 2.0 (OpenGL ES 3.0 Chromium)" whatever is underneath. It is neither a GPU nor a software
+// rasterizer as far as any caller can tell, and guessing is worse than stopping: the two limit sets in
+// `tools/nudge.js` differ by more than a factor of two. Also covers the initial 'unknown' a tool carries
+// before `openScene` has answered.
+const MASKED_RENDERER = /^webgl \d+\.\d+ \(opengl es [\d.]+ chromium\)$/i;
+export function isUnrecognisedRenderer(name) {
+  const s = String(name ?? '').trim();
+  return s === '' || s === 'unknown' || MASKED_RENDERER.test(s);
+}
+
+// The renderer, as a gate prints it in the line that proves it ran.
+//
+// A gate that ASKED for the GPU and got SwiftShader is measuring a different thing from the one it asked
+// for -- that is the normal case on CI -- and it says so here rather than printing a renderer string that
+// only a reader who knows the ANGLE spellings can classify. A gate that asked for software and got it
+// says that too, so `GATES_GPU=0` is visible in the log it produced.
+export function rendererTag(name, wantedGpu) {
+  if (isUnrecognisedRenderer(name)) return `${name} [UNRECOGNISED: this names no device, so nothing here can tell a GPU from a CPU rasterizer]`;
+  const software = isSoftwareRenderer(name);
+  if (wantedGpu && software) return `${name} [SOFTWARE FALLBACK: the GPU was asked for and none was available]`;
+  if (!wantedGpu && !software) return `${name} [GPU, though software was asked for]`;
+  return `${name} [${software ? 'software' : 'GPU'}]`;
+}
+
 // Playwright's default action timeout is 30 s. One frame of this scene at 1200x1100 through SwiftShader
 // takes minutes on a machine without a GPU (a CI runner), so every gate gives its page far longer before
 // it calls a screenshot a failure.
@@ -106,7 +176,18 @@ export function collectErrors(page, sink) {
 // Five of the six ways this wait can end are exercised by out/scratch/openscene-proof/run.mjs, with the
 // results in docs/learning/gate-proofs.md. The sixth is the `state !== 'ready'` branch below, which no
 // page shaped like index.html can reach.
-export async function openScene(page, url, { gotoTimeoutMs = GOTO_TIMEOUT_MS, readyTimeoutMs = READY_TIMEOUT_MS } = {}) {
+// `settleFrames` is how many further animation frames to wait for before reading the scene's
+// description. TWO is the default and is what every gate that captures pixels needs: the second frame is
+// what gives the compositor the canvas `page.screenshot` captures, and a race that fires occasionally
+// looks exactly like a pass.
+//
+// ZERO is for a gate that never looks at a pixel. `placement` and `clearance` cast rays against the
+// scene graph on the CPU; no frame enters their verdicts, and the scene has already rendered two frames
+// by the time it calls itself ready, so `describe()` still reports a real frame's counters. It saves two
+// whole frames per page plus the round-trip that waits on them -- nothing on a GPU, and on SwiftShader
+// about 10 s of frames at `placement`'s 1200x1100 (measured at 5.0 s a frame) inside a round-trip nearer
+// 14 s, less at `clearance`'s 640x480, and more than either on a shared runner, which is where it counts.
+export async function openScene(page, url, { gotoTimeoutMs = GOTO_TIMEOUT_MS, readyTimeoutMs = READY_TIMEOUT_MS, settleFrames = 2 } = {}) {
   // A rejection channel for the two things that must not wait out the ceiling. Raising the ceiling would
   // otherwise make a broken page slow to fail; these keep it fast.
   //
@@ -171,14 +252,29 @@ export async function openScene(page, url, { gotoTimeoutMs = GOTO_TIMEOUT_MS, re
     + `(page load ${((loaded - started) / 1000).toFixed(1)} s, first frames ${((readyAt - loaded) / 1000).toFixed(1)} s; `
     + `ceilings ${(gotoTimeoutMs / 1000).toFixed(0)} s and ${(readyTimeoutMs / 1000).toFixed(0)} s)`,
   );
-  // Two more animation frames so the compositor has presented the rendered canvas, then the scene's own
-  // description -- in ONE evaluate, because this function is called once per page and `npm test` opens
-  // about a dozen, and a second round-trip here costs a whole frame on every one of them. `describe()`
-  // reads `renderer.info.render.*`, which `render()` repopulates each frame and `autoReset = false`
-  // keeps, so reading it in the microtask after the second rAF gives the same numbers as reading it a
-  // frame later.
-  return page.evaluate(async () => {
-    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  // `settleFrames` more animation frames so the compositor has presented the rendered canvas, then the
+  // scene's own description -- in ONE evaluate, because this function is called once per page and
+  // `npm test` opens about a dozen, and a second round-trip here costs a whole frame on every one of
+  // them. `describe()` reads `renderer.info.render.*`, which `render()` repopulates each frame and
+  // `autoReset = false` keeps, so reading it in the microtask after the last rAF gives the same numbers
+  // as reading it a frame later.
+  // The wait is CHAINED rather than a loop of separate awaits, so `settleFrames = 2` is the same
+  // structure this was before it took a parameter -- `requestAnimationFrame(() =>
+  // requestAnimationFrame(done))` -- and not something that has to be argued equivalent through when a
+  // microtask gets its turn relative to the frame callback list. `shot`'s render is a byte-for-byte
+  // contract and this function is on its path.
+  return page.evaluate(async (frames) => {
+    if (frames > 0) {
+      await new Promise((done) => {
+        let left = frames;
+        const step = () => {
+          left -= 1;
+          if (left > 0) requestAnimationFrame(step);
+          else done();
+        };
+        requestAnimationFrame(step);
+      });
+    }
     return window.__scene.describe();
-  });
+  }, settleFrames);
 }

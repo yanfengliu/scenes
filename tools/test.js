@@ -20,6 +20,12 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
+import { isMainModule } from './serve.js';
+// An import must never start a gate. Everything below runs only when node was asked to run THIS file;
+// `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
+// the diff that added it is three lines rather than the whole tool. Proved inert, per tool, by
+// out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
+if (isMainModule(import.meta.url)) {
 
 // Each gate, and the text it prints when its checks have actually completed. Every marker is printed
 // after that tool's work, so it cannot come from a tool that skipped its main block or died early.
@@ -29,6 +35,10 @@ import { readFileSync } from 'node:fs';
 // `record: skipped ...` where it is switched off, which is a decision in the log rather than silence,
 // and still satisfies the check.
 const GATES = [
+  // First, and it opens no browser: every tool must load and do nothing when imported. It runs before
+  // the rest because it is the cheapest gate here (about 7 s) and because a tool that runs itself on
+  // import is a tool whose every other result is suspect.
+  ['tools/import-inert.js', ['import-inert:']],
   ['tools/shot.js', ['renderer:']],
   ['tools/compare.js', ['cell color distance', 'grayscale SSIM']],
   ['tools/placement.js', ['placement:']],
@@ -100,3 +110,5 @@ if (failed) {
   process.exit(1);
 }
 console.log('PASS');
+
+}

@@ -10,10 +10,38 @@
 // either way. Proved rather than argued: `out/render.png` came back byte-identical, sha256
 // d29b76dd027263314e3b5436063f4d9d068c887e3ca8fb2d72589b47fb5ac203 on SwiftShader before and after the
 // change, and `npm run compare` read the same 0.0749 / 0.4733 off it.
+//
+// ---- RENDERER ---------------------------------------------------------------------------------------
+// SWIFTSHADER, AND THIS IS THE ONE GATE THAT TAKES NO GPU SWITCH. On 2026-09-15 every other gate moved to
+// the GPU, because none of their verdicts depended on the CPU rasterizer. This one's does, and it is the
+// reason the switch exists at all: the number `docs/PLAN-scores.md` records has to be the same number on
+// this machine and on a CI runner, and a CPU rasterizer is deterministic across machines while a GPU
+// driver is not. So there is deliberately no `SHOT_GPU`, and `GATES_GPU` does not reach here: a flag that
+// could move these pixels is a flag that could move them by accident.
+//
+// The GPU frame was measured rather than assumed, and it is CLOSE: the same code with the launch flag as
+// the only variable renders 0.074947 / 0.473324 on SwiftShader and 0.074844 / 0.474234 on this machine's
+// RTX 4090, byte-identical across three GPU runs. Close is not the same. 348,221 of 1,320,000 channel
+// values differ at the scoring resolution, the worst by 189 levels, and 0.0009 of SSIM is most of the
+// 0.0010 this repo calls its cross-machine noise floor. The full measurement and what it would take to
+// move the scored path onto the GPU are in docs/devlog/detailed/2026-09-15-gpu-gates.md.
+//
+// And the renderer it ACTUALLY got is CHECKED, not just printed. A machine where the software rasterizer
+// was unavailable and chromium quietly handed back a GPU would write a different `out/render.png` and
+// `compare` would pass it: the GPU frame scores 0.0748 / 0.4742 against thresholds of 0.0763 / 0.4703.
+// The contract would be silently rewritten by a green run. So this tool fails instead, which is the only
+// place in the repo that can tell the difference. Added 2026-09-15 after an independent review pointed
+// out it was the cheapest gate left unwritten.
 import { mkdirSync, rmSync } from 'node:fs';
 import { startServer } from './serve.js';
-import { launch, collectErrors, openScene, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
+import { launch, collectErrors, openScene, isSoftwareRenderer, rendererTag, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
 import { SHOT } from '../src/layout.js';
+import { isMainModule } from './serve.js';
+// An import must never start a gate. Everything below runs only when node was asked to run THIS file;
+// `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
+// the diff that added it is three lines rather than the whole tool. Proved inert, per tool, by
+// out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
+if (isMainModule(import.meta.url)) {
 
 const OUT = 'out/render.png';
 const started = Date.now();
@@ -26,6 +54,22 @@ try {
   page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   errors = collectErrors(page);
   const info = await openScene(page, `${server.url}/`);
+  // Before anything is rendered to disk: this frame is the contract, and the contract is a SwiftShader
+  // frame. Thrown rather than returned so it lands in the same `catch` as every other failure here and
+  // the render is removed by the `rmSync` below, instead of leaving a GPU frame at out/render.png for
+  // `compare` to score.
+  if (!isSoftwareRenderer(info.renderer)) {
+    throw new Error(
+      `this render must come from a software rasterizer and this chromium gave "${info.renderer}". `
+      + 'out/render.png is the byte-for-byte contract docs/PLAN-scores.md records, and a GPU renders it '
+      + 'differently while still scoring inside the thresholds -- 0.0748 / 0.4742 on an RTX 4090 against '
+      + '0.0749 / 0.4733 on SwiftShader -- so a GPU frame here would rewrite the contract and pass. '
+      + 'Nothing in this tool asks for a GPU, so this means the software rasterizer was unavailable: '
+      + 'check that chromium still accepts --enable-unsafe-swiftshader (tools/lib/browser.js, WEBGL_ARGS). '
+      + 'If this renderer IS a CPU rasterizer under a name this repo has not met, add it to '
+      + 'isSoftwareRenderer in tools/lib/browser.js.',
+    );
+  }
   // One evaluate for the three things that have to happen before the shot, in the same order they
   // happened in when they were three: hide the page's own chrome (`addStyleTag` appends exactly this
   // element), pin the clock at t = 0 -- the scene animates, and the scored frame is that one every run --
@@ -41,7 +85,7 @@ try {
   mkdirSync('out', { recursive: true });
   await page.screenshot({ path: OUT, type: 'png' });
   console.log(`wrote ${OUT} (${SHOT.width}x${SHOT.height})`);
-  console.log(`renderer: ${info.renderer}; draw calls: ${info.drawCalls}; triangles: ${info.triangles}`);
+  console.log(`renderer: ${rendererTag(info.renderer, false)}; draw calls: ${info.drawCalls}; triangles: ${info.triangles}`);
   console.log(`rendered the scored frame in ${((Date.now() - started) / 1000).toFixed(0)} s`);
 } catch (err) {
   failure = err;
@@ -58,4 +102,6 @@ if (errors.length || failure) {
   // A render from a page with errors is not evidence: remove it so compare cannot score it.
   rmSync(OUT, { force: true });
   process.exit(1);
+}
+
 }
