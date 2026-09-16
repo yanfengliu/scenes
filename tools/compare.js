@@ -16,17 +16,33 @@
 // last digits of the score -- becomes a property of the graphics driver. The scored numbers must not
 // move for that reason, so the decode browser stays on the CPU path, permanently and without a lever.
 //
+// ---- WHAT THE PROVENANCE CHECKS COVER, AND WHAT THEY DO NOT ----------------------------------------
+// Since 2026-09-16 this tool refuses four things, not one: a render older than any source file (the
+// mtime rule), a missing `out/render.tree.json`, a sidecar whose recorded render digest is not the
+// `out/render.png` on disk, and a recorded scene source tree that is not the tree on disk. Together they
+// bind the score to a named scene, which is what replaced `out/views/1-photo.png` being byte-identical
+// to `out/render.png` (tools/lib/treehash.js says why that went).
+//
+// **`japan.webp` is half of what this tool scores and is bound by NONE of them.** It is not in the mtime
+// list below — `['index.html', ...readdirSync('src')]` — and `sourceTree()` excludes it deliberately, so
+// a changed reference photo moves every score with no guard anywhere in this repo. That is the largest
+// hole in the score's provenance and it is named here rather than left to be discovered. (The mtime list
+// is also non-recursive while the tree hash is recursive, so a scene added in a subdirectory of `src/` is
+// invisible to the mtime rule and caught by the hash.)
+//
 // Measured rather than assumed, on 2026-09-15: the same three files decoded by the same `decodeImage`
 // call in a software-launched browser and in a `--use-angle=d3d11 --enable-gpu-rasterization` one come
 // back byte-identical, and the scores off them are equal to eight decimals (out/scratch/
 // decode-renderer.mjs, recorded in docs/devlog/detailed/2026-09-15-gpu-gates.md). So the risk did not
 // materialise on THIS driver -- which is exactly why the lever is absent rather than defaulted: the
 // measurement covers one machine and the contract covers every machine.
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { launch } from './lib/browser.js';
 import { decodeImage, fileToDataUrl, pngDataUrlToBuffer } from './lib/image.js';
 import { cellDistance, ssimGray } from './lib/metrics.js';
 import { LANDMARK_MARKS, PHOTO, SHOT } from '../src/layout.js';
+import { sourceTree, shortHash, diffTrees } from './lib/treehash.js';
 import { isMainModule } from './serve.js';
 // An import must never start a gate. Everything below runs only when node was asked to run THIS file;
 // `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
@@ -36,6 +52,7 @@ if (isMainModule(import.meta.url)) {
 
 const PHOTO_PATH = 'japan.webp';
 const RENDER_PATH = 'out/render.png';
+const RENDER_TREE_PATH = 'out/render.tree.json';
 const COLS = 24;
 const ROWS = 22;
 const W = PHOTO.width;
@@ -62,6 +79,61 @@ const renderMtime = statSync(RENDER_PATH).mtimeMs;
 if (renderMtime < newest.mtime) {
   const age = ((newest.mtime - renderMtime) / 1000).toFixed(1);
   console.error(`FAIL: ${RENDER_PATH} is ${age} s older than ${newest.f}; run npm run shot so the score is of the current scene`);
+  process.exit(1);
+}
+
+// And the same claim made by CONTENT rather than by clock. The mtime rule above catches a source edited
+// after the render; it does not catch a source reverted to an older copy, a checkout that rewrote mtimes,
+// or a render carried in from another tree. `shot` records the tree it rendered from beside the render,
+// so this can check the render really is of the tree being scored — and it is the record `treecheck`
+// compares against a views sweep. See tools/lib/treehash.js.
+if (!existsSync(RENDER_TREE_PATH)) {
+  console.error(
+    `FAIL: ${RENDER_TREE_PATH} is missing, so there is no record of which scene source ${RENDER_PATH} was `
+    + 'rendered from and this score cannot be bound to a tree. npm run shot writes it beside the render; '
+    + 'a render from before 2026-09-16 has none. Run npm run shot again.',
+  );
+  process.exit(1);
+}
+let recorded;
+try {
+  recorded = JSON.parse(readFileSync(RENDER_TREE_PATH, 'utf8'));
+} catch (err) {
+  // A raw JSON stack trace here would name the file and nothing else. This is a gate's failure surface.
+  console.error(
+    `FAIL: ${RENDER_TREE_PATH} could not be read as JSON (${err.message}), so the tree ${RENDER_PATH} was `
+    + 'rendered from is unknown and this score cannot be bound to a scene. It is written whole by '
+    + 'npm run shot; a truncated one means that run was interrupted. Run npm run shot again.',
+  );
+  process.exit(1);
+}
+if (!recorded.sourceTree) {
+  console.error(
+    `FAIL: ${RENDER_TREE_PATH} carries no scene source tree, so there is no record of which scene `
+    + `${RENDER_PATH} was rendered from and this score cannot be bound to one. npm run shot writes that `
+    + 'field; a sidecar without it was written by an older tool or by a run that was interrupted. Run '
+    + 'npm run shot again.',
+  );
+  process.exit(1);
+}
+const renderSha = createHash('sha256').update(readFileSync(RENDER_PATH)).digest('hex');
+if (recorded.renderSha256 !== renderSha) {
+  console.error(
+    `FAIL: ${RENDER_TREE_PATH} describes a render with sha256 ${shortHash(recorded.renderSha256)} and `
+    + `${RENDER_PATH} is ${shortHash(renderSha)}, so the tree record belongs to a different frame than the `
+    + 'one about to be scored. Run npm run shot, which writes both together.',
+  );
+  process.exit(1);
+}
+const treeNow = sourceTree();
+if (recorded.sourceTree !== treeNow.hash) {
+  const changed = diffTrees({ files: recorded.sourceFiles }, treeNow, 'the render', 'the tree on disk');
+  console.error(
+    `FAIL: ${RENDER_PATH} was rendered from scene source ${shortHash(recorded.sourceTree)} and the tree on `
+    + `disk is ${shortHash(treeNow.hash)}, so this score would be of a scene that no longer exists.\n`
+    + `  ${changed.join('\n  ')}\n`
+    + '  Run npm run shot so the render and the score come from one tree.',
+  );
   process.exit(1);
 }
 
@@ -215,11 +287,21 @@ try {
     cells: Array.from(cells.cells, (d) => Number(d.toFixed(4))),
     cellsPhoto: meansToHex(cells.meansA),
     cellsRender: meansToHex(cells.meansB),
+    // Which scene these numbers describe, carried over from the render's own sidecar rather than read
+    // again here: the score belongs to the frame, and the frame belongs to that tree.
+    sourceTree: recorded.sourceTree,
+    sourceFileCount: recorded.sourceFileCount,
+    // The per-file list travels with the hash, so `treecheck` can tell a reviewer WHICH file differs
+    // between a sweep and a score rather than handing back two hashes. Without it the sweep-to-score
+    // pairing — the pairing that tool exists for — could only ever report bare digests.
+    sourceFiles: recorded.sourceFiles,
+    renderSha256: renderSha,
     renderedAt: new Date().toISOString(),
   };
   writeFileSync('out/scores.json', JSON.stringify(scores, null, 2));
   console.log(`cell color distance (24x22 grid, lower is better): ${cells.mean.toFixed(4)}`);
   console.log(`grayscale SSIM at 64 px (higher is better): ${ssim.value.toFixed(4)}`);
+  console.log(`scored out/render.png (sha256 ${shortHash(renderSha)}) from scene source tree ${shortHash(recorded.sourceTree)} over ${recorded.sourceFileCount} files`);
   console.log('wrote out/compare.png, out/overlay.png, out/scores.json');
 } catch (err) {
   failure = err;

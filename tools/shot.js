@@ -32,10 +32,12 @@
 // The contract would be silently rewritten by a green run. So this tool fails instead, which is the only
 // place in the repo that can tell the difference. Added 2026-09-15 after an independent review pointed
 // out it was the cheapest gate left unwritten.
-import { mkdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene, isSoftwareRenderer, rendererTag, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
 import { SHOT } from '../src/layout.js';
+import { sourceTree, shortHash, diffTrees } from './lib/treehash.js';
 import { isMainModule } from './serve.js';
 // An import must never start a gate. Everything below runs only when node was asked to run THIS file;
 // `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
@@ -44,7 +46,15 @@ import { isMainModule } from './serve.js';
 if (isMainModule(import.meta.url)) {
 
 const OUT = 'out/render.png';
+// Written beside the render, naming the tree it came from. `compare` refuses to score a render whose
+// sidecar does not match the tree on disk, and `treecheck` is what compares this to a views sweep.
+// See tools/lib/treehash.js for why the old binding (1-photo.png byte-identical to render.png) is gone.
+const OUT_TREE = 'out/render.tree.json';
 const started = Date.now();
+// Read BEFORE the page is opened, so it is the tree the browser is about to load and not whatever is on
+// disk when the screenshot lands. Read again at the end and compared: an edit that arrives mid-run makes
+// the frame a mixture, and a mixture must not be recorded as either tree.
+const treeAtStart = sourceTree();
 const server = await startServer({ port: 0, quiet: true });
 const browser = await launch();
 let errors = [];
@@ -84,8 +94,34 @@ try {
   }, HIDE_UI_CSS);
   mkdirSync('out', { recursive: true });
   await page.screenshot({ path: OUT, type: 'png' });
+  // The tree must not have moved under the run. If it did, this frame is a mixture of two trees and
+  // neither hash describes it, so there is nothing honest to record: fail, and let the `rmSync` below
+  // take the render with it.
+  const treeAtEnd = sourceTree();
+  if (treeAtEnd.hash !== treeAtStart.hash) {
+    throw new Error(
+      `the scene source changed while this render was being made: ${shortHash(treeAtStart.hash)} when the `
+      + `page was opened, ${shortHash(treeAtEnd.hash)} after the screenshot. The frame is a mixture of two `
+      + 'trees and out/render.png is the contract docs/PLAN-scores.md records, so the frame this run took '
+      + 'has been REMOVED rather than left for compare to score. '
+      + `Changed: ${diffTrees(treeAtStart, treeAtEnd, 'the open', 'the screenshot').join('; ')}. `
+      + 'Let the edit settle and run npm run shot again.',
+    );
+  }
+  writeFileSync(OUT_TREE, `${JSON.stringify({
+    render: OUT,
+    renderSha256: createHash('sha256').update(readFileSync(OUT)).digest('hex'),
+    renderer: rendererTag(info.renderer, false),
+    width: SHOT.width,
+    height: SHOT.height,
+    sourceTree: treeAtEnd.hash,
+    sourceFileCount: treeAtEnd.count,
+    sourceFiles: treeAtEnd.files,
+    wroteAt: new Date().toISOString(),
+  }, null, 1)}\n`);
   console.log(`wrote ${OUT} (${SHOT.width}x${SHOT.height})`);
   console.log(`renderer: ${rendererTag(info.renderer, false)}; draw calls: ${info.drawCalls}; triangles: ${info.triangles}`);
+  console.log(`scene source tree ${shortHash(treeAtEnd.hash)} over ${treeAtEnd.count} files, recorded in ${OUT_TREE}`);
   console.log(`rendered the scored frame in ${((Date.now() - started) / 1000).toFixed(0)} s`);
 } catch (err) {
   failure = err;
@@ -99,8 +135,11 @@ if (errors.length) {
 }
 if (failure) console.error(`FAIL: ${failure.message}`);
 if (errors.length || failure) {
-  // A render from a page with errors is not evidence: remove it so compare cannot score it.
+  // A render from a page with errors is not evidence: remove it so compare cannot score it. The sidecar
+  // goes with it — a tree record left beside a deleted render would describe the PREVIOUS render, and
+  // compare and treecheck both read it as if it described this one.
   rmSync(OUT, { force: true });
+  rmSync(OUT_TREE, { force: true });
   process.exit(1);
 }
 

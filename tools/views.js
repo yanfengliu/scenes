@@ -28,6 +28,23 @@
 // 2026-09-15 is a SwiftShader digest. The manifest names the renderer on its own line for exactly this
 // reason, and a review comparing digests across a renderer change is comparing nothing.
 //
+// AND A DIGEST ONLY BINDS ANYTHING IF IT REPRODUCES. Until 2026-09-16 pose 7's did not: it is the pose
+// the frame clamp corrects, and the clamp and the controls' polar limit take three (update, clamp) pairs
+// to agree, while the two rAF settle frames give the page's loop an unfixed number of turns. So the
+// camera landed on the second or the third of those states run to run and the bytes moved with it —
+// which silently made the SWEEP digest, taken over all seven, unquotable too. Each pose is now settled to
+// a fixed point before it is shot; the block that does it is in the pose evaluate below.
+//
+// WHAT BINDS THIS SWEEP TO THE SCORE. `out/views/1-photo.png` was byte-identical to `out/render.png`
+// until 2026-09-15, which is how a review holding a sweep and a score could see they were of one tree.
+// That went when this tool moved to the GPU (11 s against 291 s) and `shot` stayed on SwiftShader (the
+// scored contract), and what replaced it was an inference: that nobody edited `src/` in between. So the
+// manifest now records the sha256 of the tree these frames were rendered from — `index.html` and every
+// file under `src/` — beside each pose digest, `shot` records the same hash in `out/render.tree.json`,
+// and `npm run treecheck` refuses to call a sweep and a score the same tree when the two disagree. The
+// hash is read from disk before the first pose and again before the manifest is written, so "the tree
+// held still during the run" is checked here rather than assumed. See tools/lib/treehash.js.
+//
 // EVERY IMAGE OPERATION IN PAGE JAVASCRIPT RUNS ON A SECOND, BLANK PAGE, and that is not tidiness. (The
 // screenshots themselves stay on the scene page, obviously — that is where the scene is. What moved is
 // everything that decodes, resamples or composes a file AFTERWARDS.)
@@ -48,18 +65,31 @@
 // controls, so a pose that would be corrected for a user is corrected here too. Each pose's printed
 // position is read back from the camera after the frames that were actually rendered, so it is the pose
 // in the file, not the pose that was asked for.
+// `isMainModule` comes from serve.js and is never hand-built here: the hand-built form is how four tools
+// came to skip their whole main block on every CI run for three days (docs/learning/gate-proofs.md).
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { startServer } from './serve.js';
+import { isMainModule, startServer } from './serve.js';
 import { launch, collectErrors, openScene, openInspector, rendererTag, wantsGpu, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
 import { decodeImage } from './lib/image.js';
+import { sourceTree, shortHash, diffTrees } from './lib/treehash.js';
 import * as L from '../src/layout.js';
 
 const OUT_DIR = 'out/views';
 // The clock is pinned so two runs of this tool are comparable frame for frame.
 const CLOCK = 0;
+// How many (controls.update, clampCamera) pairs a pose may take to stop moving before this tool says it
+// never will. Measured on this tree, pairs that MOVE the camera, pose 1 to 7: 0, 0, 1, 10, 0, 2, 6. So
+// the observed maximum is TEN, at pose 4, and 32 is 3.2x over it. A pair is arithmetic, not a frame, so
+// the budget is cheap.
+//
+// Do not read "three" here from `out/scratch/pose7.mjs`: that probe watched camera Y converge in three
+// pairs, and the loop below tests bit-equality over all six components of position AND target, which
+// takes pose 7 six. A budget justified by the wrong measurement is a budget nobody can defend, and this
+// comment said "pose 7 takes three; the rest take one" until an independent critic checked it against the
+// tool's own printed counts (2026-09-16).
+const MAX_SETTLE = 32;
 
 // The orbit target for every pose that is not the photo view: the photo camera's optical axis at the
 // cherry trunk's depth, which is what OrbitControls uses for the photo view itself.
@@ -129,6 +159,10 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wants
   let errors = [];
   let failure = null;
   const rendered = [];
+  // The tree these frames are rendered from, read before the page is opened and again before the
+  // manifest is written. Recording it is what binds a sweep to a compare score now that `1-photo.png` is
+  // no longer byte-identical to `out/render.png`: see tools/lib/treehash.js, and `npm run treecheck`.
+  const treeAtStart = sourceTree();
   try {
     server = await startServer({ port: 0, quiet: true });
     // launch() throws when chromium is not cached (`npx playwright install chromium` once). Inside the
@@ -166,7 +200,7 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wants
       // part of it and then be reported as the clamp's doing. Damping is off for this update so a pose is
       // reproducible: with it on, update() would carry residue from the pose before this one.
       const placed = await page.evaluate(
-        ({ position, target, clock }) => {
+        ({ position, target, clock, maxSettle }) => {
           const s = window.__scene;
           const damping = s.controls.enableDamping;
           s.controls.enableDamping = false;
@@ -175,12 +209,50 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wants
           s.controls.update();
           const afterControls = s.camera.position.toArray();
           if (typeof s.clampCamera === 'function') s.clampCamera();
+          const afterClamp = s.camera.position.toArray();
           s.controls.enableDamping = damping;
           s.setTime(clock);
-          return { afterControls, afterClamp: s.camera.position.toArray() };
+          // ---- SETTLE THE POSE TO A FIXED POINT OF THE FRAME LOOP'S OWN PAIR ----------------------
+          // Poses 1, 2 and 5 already are one: the clamp is a no-op for them and `enableDamping = false;
+          // update()` above zeroed the controls' deltas, so every later (update, clamp) rewrites the
+          // same position. POSES 3, 4, 6 AND 7 ARE NOT — 1, 10, 2 and 6 moving pairs respectively, and
+          // pose 4 is the worst of them, not pose 7. Pose 7 is simply the one that was NOTICED, because
+          // it is the only one where the disagreement crosses a pixel boundary: the clamp pushes its
+          // camera out of the machiya's wall to a place the controls' own polar limit then pulls back.
+          // Its camera y over successive pairs (out/scratch/pose7.mjs) is -2.030806 at the clamp, then
+          // -1.840034, -1.839704, -1.839703, and bit-identical for the next seventeen — three pairs to
+          // settle Y, six to settle all six components of position and target, which is what is tested.
+          //
+          // The two settle frames below are rAF frames, and how many of the PAGE's own loop frames the
+          // compositor fits inside them is not fixed. So the pose that was actually rendered landed on
+          // the second or the third of those states run to run, the frame differed, and pose 7's
+          // digest was never reproducible — which makes it unquotable, and a sweep digest taken over
+          // all seven unquotable with it. That is the whole point of the manifest.
+          //
+          // So iterate the loop's pair here, with damping restored exactly as the loop has it, until
+          // the camera and the target stop moving at all. Bit equality, not a tolerance: the probe
+          // shows a true fixed point, and a tolerance would hide the day it stops being one.
+          const state = () => s.camera.position.toArray().concat(s.controls.target.toArray());
+          let settle = 0;
+          for (; settle < maxSettle; settle++) {
+            const before = state();
+            s.controls.update();
+            if (typeof s.clampCamera === 'function') s.clampCamera();
+            if (state().every((v, i) => v === before[i])) break;
+          }
+          return { afterControls, afterClamp, afterSettle: s.camera.position.toArray(), settle, settled: settle < maxSettle };
         },
-        { position: pose.position, target: pose.target, clock: CLOCK },
+        { position: pose.position, target: pose.target, clock: CLOCK, maxSettle: MAX_SETTLE },
       );
+      if (!placed.settled) {
+        // Not a page error, so nothing else here would catch it, and it is the exact condition that made
+        // pose 7 unreviewable. Said out loud rather than left in the bytes.
+        console.warn(
+          `WARNING: ${pose.name} did not reach a fixed point of (controls.update, clampCamera) in `
+          + `${MAX_SETTLE} iterations, so the frame the compositor happens to catch is not reproducible `
+          + 'and this pose\'s digest cannot be quoted in a review. See the settle block in tools/views.js.',
+        );
+      }
       await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
       // Read the camera back AFTER those two frames. Each of them ran controls.update() and clampCamera()
       // again, so the pose that was actually rendered is this one, not the one the evaluate above returned.
@@ -194,13 +266,21 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wants
       rendered.push({ ...pose, ...placed, ...shot, file });
       const fmt = (v) => v.map((n) => n.toFixed(2)).join(', ');
       const differs = (a, bb) => a.some((n, i) => Math.abs(n - bb[i]) > 0.005);
-      // Three corrections, reported apart: the controls' own limits (polar angle, distance), the frame
-      // loop's clamp (the floor, the street corridor, the roof zone), and anything the two rendered frames
-      // then did on top of both.
+      // Four corrections, reported apart: the controls' own limits (polar angle, distance), the frame
+      // loop's clamp (the floor, the street corridor, the roof zone), the settle that runs the two of them
+      // against each other until they agree, and anything the two rendered frames then did on top of all
+      // three. The last one is measured from the SETTLED position, not from the clamp: measuring it from
+      // the clamp reported the settle's own movement as drift, which is how this line read on the run that
+      // introduced the settle.
       const notes = [];
       if (differs(pose.position, placed.afterControls)) notes.push('controls limit');
       if (differs(placed.afterControls, placed.afterClamp)) notes.push('frame clamp');
-      if (differs(placed.afterClamp, shot.position)) notes.push('drift over the two rendered frames');
+      // How many (update, clamp) pairs actually MOVED the camera. Zero is the floor and the normal case:
+      // the loop always applies one more pair than it counts, and that last one is what proves the pose
+      // does not move. So any number here is a pose the clamp and the controls argued about, and used to
+      // be rendered at whichever of those intermediate states the compositor happened to catch.
+      if (placed.settle > 0) notes.push(`${placed.settle} settle pairs`);
+      if (differs(placed.afterSettle, shot.position)) notes.push('drift over the two rendered frames');
       if (differs(placed.afterControls, placed.afterClamp)) clampFired = true;
       if (pose.expectClamp && !differs(placed.afterControls, placed.afterClamp)) {
         console.warn(`WARNING: ${pose.name} exists to be corrected by the frame clamp and was not — either the clamp is not running or the pose has become reachable, and either way this run proves nothing about the clamp`);
@@ -252,9 +332,35 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wants
     // One digest over all seven, so a review can quote ONE value and re-running the tool strands it.
     // Comparing seven 12-character digests by eye is the check nobody actually performs.
     const sweepDigest = createHash('sha256').update(rendered.map((r) => `${r.name} ${r.digest}`).join('\n')).digest('hex').slice(0, 12);
+    // Same tree at the end as at the beginning, or these seven frames are not one sweep of one scene and
+    // the hash below would name a tree that only half of them came from. A warning rather than a throw:
+    // this tool fails only on a page error, and the honest thing is to write the frames and say loudly
+    // that they are a mixture.
+    const treeAtEnd = sourceTree();
+    const treeMoved = treeAtEnd.hash !== treeAtStart.hash;
+    if (treeMoved) {
+      console.warn(
+        `WARNING: the scene source changed while this sweep was being rendered — ${shortHash(treeAtStart.hash)} `
+        + `at the first pose, ${shortHash(treeAtEnd.hash)} at the last. These frames are a mixture of two trees, `
+        + `so the sweep digest binds to neither: ${diffTrees(treeAtStart, treeAtEnd, 'the first pose', 'the last').join('; ')}. `
+        + 'Re-run npm run views on a tree that is holding still.',
+      );
+    }
     const manifest = [
       `# npm run views — sweep ${sweepDigest}`,
       `# ${new Date().toISOString()}; renderer: ${rendererTag(info.renderer, gpu)}; clock pinned at t = ${CLOCK}; ${L.SHOT.width}x${L.SHOT.height}`,
+      `# scene source tree ${treeAtEnd.hash} over ${treeAtEnd.count} files (index.html + src/**)`
+      + `${treeMoved ? ` -- MIXTURE: it was ${treeAtStart.hash} at the first pose, so these frames are not one tree` : ''}`,
+      '# That line is the binding. `out/views/1-photo.png` was byte-identical to `out/render.png` until',
+      '# 2026-09-15, which is how a sweep used to be tied to the score; since the GPU move views renders on',
+      '# the GPU and shot on SwiftShader by design, so the two differ whatever the tree is. What ties them',
+      '# instead, since 2026-09-16, is this hash against the one shot records in out/render.tree.json.',
+      '# `npm run treecheck` compares them and fails when a sweep and a score are being quoted as if they',
+      '# were the same tree and are not.',
+      '# Every pose below is a fixed point of the frame loop\'s own (controls.update, clampCamera) pair, so',
+      '# two runs of an unchanged tree on the same renderer produce the same digests. Before 2026-09-16',
+      '# pose 7 was not, and its digest moved run to run.',
+      ...treeAtEnd.files.map((f) => `#   ${f.path.padEnd(24)} ${f.sha256.slice(0, 16)}`),
       '# The digests below belong to THAT RENDERER: the same tree renders different frames on a GPU and on',
       '# SwiftShader, so a digest from one never matches the other, and a review quoting one is a review of',
       '# that one sweep. Every digest quoted in a review before 2026-09-15 came from SwiftShader.',
@@ -262,10 +368,15 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wants
       '# re-running this tool replaces the bytes and strands that review rather than letting it inherit new',
       '# pixels. The sweep digest is over the seven frame digests, so it moves when any frame moves and is',
       '# the only line here that does not change between two runs of an unchanged tree.',
-      ...rendered.map((r) => `${r.name.padEnd(26)} ${r.digest}  luma ${r.meanLuma.toFixed(1).padStart(5)}  eye ${r.position.map((v) => v.toFixed(2)).join(', ')}  ${resolve(r.file)}`),
+      // A pose that never reached a fixed point is marked HERE and not only warned about on stdout. The
+      // warning scrolls past; the manifest is what a review quotes, and a digest that will not come back
+      // has to say so beside itself. This is the same hole the MIXTURE marker closes one level up, and it
+      // was left open in the first version of this work until an independent critic named it.
+      ...rendered.map((r) => `${r.name.padEnd(26)} ${r.digest}  luma ${r.meanLuma.toFixed(1).padStart(5)}  eye ${r.position.map((v) => v.toFixed(2)).join(', ')}  ${resolve(r.file)}`
+        + (r.settled === false ? `  -- NOT A FIXED POINT after ${MAX_SETTLE} (update, clamp) pairs: this digest is not reproducible and must not be quoted` : '')),
     ].join('\n');
     writeFileSync(`${outDir}/index.txt`, `${manifest}\n`);
-    if (!quiet) console.log(`\nwrote ${rendered.length} views to ${outDir}/ at ${L.SHOT.width}x${L.SHOT.height}, sweep digest ${sweepDigest}, listed in ${outDir}/index.txt:`);
+    if (!quiet) console.log(`\nwrote ${rendered.length} views to ${outDir}/ at ${L.SHOT.width}x${L.SHOT.height}, sweep digest ${sweepDigest}, from scene source tree ${shortHash(treeAtEnd.hash)} over ${treeAtEnd.count} files, listed in ${outDir}/index.txt:`);
     if (!quiet) for (const r of rendered) console.log(`  ${resolve(r.file)}  sha256 ${r.digest}`);
     if (!quiet) console.log('there is no contact sheet: look at each frame at its own size (see this file\'s header)');
     if (!quiet) console.log('these poses are set directly; npm run record is the one that drives the controls');
@@ -285,18 +396,7 @@ export async function renderViews({ outDir = OUT_DIR, quiet = false, gpu = wants
   return { rendered, errors, failure };
 }
 
-// Works on Linux as well as Windows. The sibling tools build the URL by hand as
-// `file:///${process.argv[1].replace(/\\/g, '/')}`, which matches on Windows and NEVER on Linux, where
-// argv[1] already starts with a slash and the template yields `file:////home/...` with four. That is why
-// blackframe, record, shimmer and paintcheck have never run in CI (see
-// docs/work/0_japan-street-scene/plan.md). pathToFileURL builds the same URL node's loader does, on both,
-// and survives spaces and percent-encoding as well.
-function isMainModule() {
-  if (!process.argv[1]) return false;
-  return pathToFileURL(resolve(process.argv[1])).href === new URL(import.meta.url).href;
-}
-
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   const { errors, failure } = await renderViews();
   if (errors.length) {
     console.error(`FAIL: ${errors.length} page error(s):`);
