@@ -40,7 +40,7 @@ Per iteration, all of them, before the integration owner pushes:
 - [x] Iteration 1, contrast and placement (merged cb9a17c): close the measured cells above and build `tools/views.js`. Target: cell distance at or below 0.077, SSIM at or above 0.45, or the measured ceiling reported with what stops it.
 - [x] Iteration 2, content (merged 28bd01d, gated 3c646d2): the machiya row and the bare slab; the rest of the block-out carries to a later iteration. Was: retire the block-out the orbit sweep shows. The corner house at the bend, the far houses as machiya with tiles and lattices, roof undersides with rafters, the right roof mass as tiles, the dormer body, the paved bands.
 - [x] Iteration 3, re-targeted from the heat map on 2026-09-15 (merged 2026-09-16): the right half and the bottom third, where the error moved after iteration 2, plus two iteration-1 survivors (the annex canopy still tile where the photo has dark wood; the shrub still brown) and shopfronts on the far row. Sky and atmosphere move to iteration 4; the fixed list below shifts by one.
-- [ ] Iteration 4, the cherry's depth: dark limbs visible through the canopy, a shadowed magenta interior against backlit edges, strand structure, card variety.
+- [ ] Iteration 4, re-targeted 2026-09-16 (in flight): content every orbit pose shows wrong — the hill and mountains, ground fog bands, the left row's backs, the right roof mass, the bend — plus the right-machiya cells that survived three colour iterations, treated as shadow and placement. The sky band now scores better than the frame mean (0.058 against 0.066) and the canopy box best of all (0.034), so sky and the cherry's depth move down. Was: the cherry's depth: dark limbs visible through the canopy, a shadowed magenta interior against backlit edges, strand structure, card variety.
 - [ ] Iteration 5, street life: stone variation and wetness, the drain, moss, two or three more figures, shop goods under the noren, signs, pots, a bicycle, only where the photo view does not regress.
 - [ ] Iteration 6, close-up realism: materials at orbit distance, tile and board edges, wood grain, foliage cards that hold up close.
 - [ ] Then the loop again, from the heat map and the sweep.
@@ -53,6 +53,8 @@ One expensive gate runs on this machine at a time (a full `npm test`, or `animat
 | --- | --- | --- | --- | --- |
 | iteration 3 | done: merged 2026-09-16, 0.0660 / 0.5286 | right-side stone and kawara, two iteration-1 survivors, shopfronts on the far row | src/, PLAN-scores.md, its devlog | nothing |
 | gpu-gates | done: merged 0b81d68, suite green on main at 2 min 46 s | every gate whose verdict allows it renders on the GPU; shot stays on SwiftShader and refuses a GPU | tools/, AGENTS.md Gates, gate-proofs | nothing |
+| iteration 4 | worker iter4-content, worktree from a06a1c4 | content from the sweep: the hill and mountains as geometry, ground fog bands, the left row's open backs, the right roof mass, the bend; the persistent right-machiya cells treated as shadow and placement | src/, PLAN-scores.md, its devlog | the gate slot by request |
+| tools-followups | worker tools-followups, worktree from 95b295e | clearance classifies the new walkway slabs and spill leaves as buildings; the sweep lost its digest binding to the scored frame when views moved to the GPU | tools/, AGENTS.md Gates, gate-proofs | the gate slot by request |
 | integration | this session | merge, suite in the primary checkout, push, CI to a conclusion | the primary checkout | each lane's handoff |
 
 ## Outcome
