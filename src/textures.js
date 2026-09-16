@@ -623,7 +623,16 @@ export function cardTexture(kind, { seed = 1, size = 128, alphaTest = 0.5 } = {}
 // A texture whose rows follow the photo's rows between vTop and vBottom: each row's mean is the color the
 // gradient stops give at that photo row (exact, corrected per row), modulated by a tree-clump pattern
 // (rounded crowns lighter on their sun side, dark between). Not tiled; the hill mesh maps photo v to it.
-export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, sunU = 0.62, glareWidth = 0.16 }) {
+// `ridgeAt` and `treeRise` turn the top of this texture into a TREE LINE. The hill mesh runs `treeRise`
+// of photo frame above its ridge polyline, and every texel in that strip is transparent unless a crown
+// reaches it, so the hill's skyline against the glare is trees with sky between them instead of the
+// polyline itself. Without them the mesh's own top edge is the silhouette and it is a straight line:
+// `npm run views` has called the hill "a flat dark speckled slab with a hard straight silhouette" in
+// every sweep since iteration 2. `u0`/`u1` are the photo columns the texture's own u spans.
+// Bound: the crowns are a function of photo u alone, so the skyline is the same shape from every angle —
+// it is a cut-out, not geometry. At 300 to 500 m that is what a tree line looks like; walk the camera
+// far enough left and the cut-out would flatten, and no pose in `npm run views` gets near that.
+export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, sunU = 0.62, glareWidth = 0.16, ridgeAt = null, treeRise = 0, u0 = 0, u1 = 1 }) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -631,11 +640,16 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, su
   const img = ctx.createImageData(size, size);
   const d = img.data;
   const noiseB = noise2D(seed + 11);
-  // Tree crowns: one jittered point per cell of a 760x420 grid (about 1 m on the hill, which is what the
-  // photo's grain shows at this distance); each texel belongs to its nearest point.
+  // Tree crowns: one jittered point per cell of a grid, each texel belonging to its nearest point.
   // Inside a crown the sun side (toward +u, up) is light and the far side dark; between crowns, dark gaps.
-  const CW = 760;
-  const CH = 420;
+  //
+  // The grid's density is per unit of PHOTO frame, not per texture: 571 crowns across a frame width and
+  // 560 down one, which is the 760 x 420 this was written with over the u 0.27 to 1.6 and v 0.05 to 0.80
+  // it then spanned. Hardcoding 760 x 420 ties the grain to the texture's extent, and when the hill was
+  // carried out to u -3.0 in iteration 4 the same grid made every crown three and a half times wider in
+  // the frame -- the photo view's forest turned into blocks.
+  const CW = Math.max(64, Math.round(571 * (u1 - u0)));
+  const CH = Math.max(64, Math.round(560 * (vBottom - vTop)));
   const rand = mulberry32(seed);
   const px = new Float32Array(CW * CH);
   const py = new Float32Array(CW * CH);
@@ -688,7 +702,28 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, su
   // The warm band under the ridge is the sun's glare washing over it, so it belongs near the sun's own
   // column and nowhere else: away from it the hill is its dark green at every row. Before this the band
   // ran the whole width and the hill beside the sun read 0.10 too bright in the cells at u 0.72 to 0.80.
+  //
+  // `sunU` and `glareWidth` are in THIS TEXTURE's u, not in photo u, and the caller converts. They were
+  // the photo's own 0.62 and 0.16 against a texture spanning photo u 0.27 to 1.6, which put the band's
+  // centre at photo u 1.095 -- off the right edge of the frame -- so the scored hill saw only its tail.
+  // How much of a tail is the part worth being exact about, because an earlier draft of this comment said
+  // "about 0.01, the stops were dead constants" and that is wrong by about 17x where it matters: measured
+  // on a06a1c4 the old glare was 0.012 at photo u 0.646, 0.052 at 0.729, 0.099 at 0.771 and **0.174** at
+  // 0.813, a mean of about 0.081 over the six cells the hill is first under, and 0.82 by u 1.0. So the
+  // three upper stops were MIS-PLACED, not inert: they put a warm wash at the frame's right edge and
+  // almost nothing where the photo's own glare is, which is the same brown speckled slab either way.
+  // Inside the mesh past u 1.0 the band reached 1.0, so half the hill in an orbit pose was pure hillRidge.
   const glareAt = (u) => Math.exp(-(((u - sunU) / glareWidth) ** 2));
+  // How high the trees reach above the ridge at this photo column, as a fraction of `treeRise`. Three
+  // scales: single crowns a few texels wide (a crown is about 3 px of the 1200 px frame here), groups of
+  // a dozen, and whole stands. A column whose value is below 0 has no trees at all, which is what opens
+  // the gaps the skyline needs.
+  const treeNoise = noise2D(seed + 29);
+  // Mean about 0.72, reaching past 1 on the tallest stands and down to 0.3 in the notches, so the average
+  // skyline sits about a third of `treeRise` below the polyline and its tallest trees touch it. A lower
+  // mean opens the skyline up and lifts the cells along it into the sky: at a mean of 0.6 with treeRise
+  // 0.02, cell (0.729, 0.114) rendered #dccfb6 against a photo of #9f9d96.
+  const canopyAt = (tu) => 0.3 + 0.34 * treeNoise(tu * 430, 0.5) + 0.26 * treeNoise(tu * 74, 3.5) + 0.22 * treeNoise(tu * 13, 7.5);
   for (let y = 0; y < size; y++) {
     const v = vTop + ((vBottom - vTop) * (y + 0.5)) / size;
     const target = colorAt(v);
@@ -698,19 +733,33 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, su
     for (let x = 0; x < size; x++) {
       const u = x / size;
       const vv = y / size;
-      // Crowns about 5 m across on the hill, over slower undulations of the slope beneath.
+      // Crowns about 5 m across on the hill, over stands of them, over slower undulations of the slope
+      // beneath. The middle scale is what an orbit pose needs: with only the crown field and `big`, the
+      // hill read as uniform sandpaper from anywhere nearer than the photo camera, because one crown is
+      // two texels and the next structure up was 9 cycles across the whole hill.
       const big = noiseB(u * 9, vv * 6);
-      let k = crown(u, vv) + (big - 0.5) * 0.3;
+      const stands = noiseB(u * 52 + 11, vv * 30 + 5);
+      let k = crown(u, vv) + (big - 0.5) * 0.3 + (stands - 0.5) * 0.12;
       row[x] = k;
       mean += k;
     }
     mean /= size;
     for (let x = 0; x < size; x++) {
-      const k = row[x] / mean;
+      const k = 1 + (row[x] / mean - 1) * 0.7;
       const g = glareAt(x / size);
       const i = (y * size + x) * 4;
       for (let c = 0; c < 3; c++) d[i + c] = clamp255(Math.round((deep[c] + (target[c] - deep[c]) * g) * k));
-      d[i + 3] = 255;
+      // The tree line. `ridgeAt` is the photo's own skyline, which is the top of the TALLEST trees in
+      // that column, so the strip from there down to ridge + treeRise is where the crowns live: `h` runs
+      // 1 at the skyline to 0 at the foot of the strip, and a column keeps only as much of it as its
+      // crowns reach. Below the strip (h <= 0) the hill is solid.
+      let alpha = 255;
+      if (ridgeAt && treeRise > 0) {
+        const pu = u0 + (u1 - u0) * ((x + 0.5) / size);
+        const h = (ridgeAt(pu) + treeRise - v) / treeRise;
+        if (h > 0 && h > canopyAt(pu)) alpha = 0;
+      }
+      d[i + 3] = alpha;
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -719,5 +768,19 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, su
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.anisotropy = 4;
+  // The mean of the texels that are actually drawn, for the material's own `mean`. `albedoScaleOf` is
+  // exact only AT the mean it is given, and this texture's mean is not any one of its stops: the glare
+  // reaches a fifth of its width and the rest of it sits near the deepest stop. Handing it `hillMid`
+  // scaled the whole hill by the ratio a much lighter colour wants, which is a large part of why the
+  // render's hill came out 40 percent light with its stops measured on target.
+  let n = 0;
+  const sum = [0, 0, 0];
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) continue;
+    n++;
+    for (let c = 0; c < 3; c++) sum[c] += d[i + c];
+  }
+  const mean = sum.map((s) => Math.max(1, Math.min(255, Math.round(s / Math.max(1, n)))));
+  texture.userData.mean = (mean[0] << 16) | (mean[1] << 8) | mean[2];
   return texture;
 }

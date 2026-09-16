@@ -202,11 +202,20 @@ export function buildPaving(b) {
   const landing = [];
   gridSlabsAlongStreet(landing, S.stairsEndZ, -22, 7.0, onStreet, 0.9, 0.6, () => true, () => 1, landingColor);
   // Beyond the bend the street's left third stays in the light (photo u 0.33-0.38 at v 0.68-0.73) while its
-  // middle is in shadow, and it runs on behind the corner house.
+  // middle is in shadow, and it ends at the corner house's own front face.
+  //
+  // FAR_STREET_END was -42 until iteration 4, and the corner house and the bend's block-out stand from
+  // z = -34.5 back, so 7.5 m of paved road ran THROUGH three buildings. `npm run clearance` prints that
+  // every run as the scene's own open defect, exempting up to 40 rows past z = -33.5; on the base tree it
+  // was reporting 34 rows of which 27 leave under 0.60 m of clear run. Ending the paving where the street
+  // is actually closed off is the fix for the paving's half of it: the road now stops at a building, which
+  // is what the photo shows, and `bend()` widens the corner house so it covers the band's whole width.
+  // What this does NOT do is retire the exemption itself, which lives in tools/ and is the integration
+  // owner's to move.
   const farStreet = [];
   const farStreetLit = [];
-  gridSlabsAlongStreet(farStreet, -22, -42, 5.2, onStreet, 0.9, 0.6, (cx, cz) => cx > L.streetCenterX(cz) - 1.2);
-  gridSlabsAlongStreet(farStreetLit, -22, -42, 5.2, onStreet, 0.9, 0.6, (cx, cz) => cx <= L.streetCenterX(cz) - 1.2);
+  gridSlabsAlongStreet(farStreet, -22, L.FAR_STREET_END, 5.2, onStreet, 0.9, 0.6, (cx, cz) => cx > L.streetCenterX(cz) - 1.2);
+  gridSlabsAlongStreet(farStreetLit, -22, L.FAR_STREET_END, 5.2, onStreet, 0.9, 0.6, (cx, cz) => cx <= L.streetCenterX(cz) - 1.2);
   const landingMean = balancedMean(C.landingSlab, mortarOf(C.landingSlab), 0.05);
   const farLitMean = balancedMean(C.landing, mortarOf(C.landing), 0.05);
   const farMean = balancedMean(C.farStreet, mortarOf(C.farStreet), 0.05);
@@ -214,7 +223,7 @@ export function buildPaving(b) {
   b.add(instanced('far street slabs', slab, surface('stone', farMean, { seed: 16, instancedUv: true }), farStreet), 'far street slabs');
   b.add(instanced('far street lit slabs', slab, surface('stone', farLitMean, { seed: 21, instancedUv: true }), farStreetLit), 'far street lit slabs');
   ribbon(b, 'landing', S.stairsEndZ, -22, 7.0, mortarOf(C.landingSlab));
-  ribbon(b, 'far street', -22, -42, 5.2, mortarOf(C.farStreet));
+  ribbon(b, 'far street', -22, L.FAR_STREET_END, 5.2, mortarOf(C.farStreet));
 
   function gridSlabsAlongStreet(items, zNear, zFar, width, place, colWidth, rowDepth, keep = () => true, shadeOf = null, colorOf = null) {
     // Rows follow the street's centre line, which shifts left through the bend.

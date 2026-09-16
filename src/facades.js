@@ -185,6 +185,83 @@ export function buildFacades(b) {
 
   // ---- the noren under the right eave ---------------------------------------------------------------
   noren(b, M);
+
+  rightMachiyaBack(b, M);
+}
+
+// The right machiya's back and its two ends. The photo camera never sees any of it -- the building's own
+// front wall is between -- and until iteration 4 it was nothing: `right house ground`, `right house ground
+// far` and `right house upper` are boxes from x = 5.0 to x = 13.0, so from the east their back face is one
+// blank plaster slab 19 m long and 10 m tall. `npm run views` pose 3 looks straight at it and has called it
+// a bare pale slab in every sweep since iteration 2.
+//
+// Three instanced sets, so it costs three draw calls whatever it carries: a plinth and a base band along
+// the foot, a rail under the eaves with vertical posts between the bays, and shuttered windows on the
+// upper floor. Every piece stands 4 cm proud of the wall face it is on.
+//
+// Its PRNG is its own and it runs last in `buildFacades`, so nothing before it is renumbered. Nothing here
+// is in the photo view, and `npm run compare` is the check for that rather than this sentence.
+function rightMachiyaBack(b, M) {
+  const rand = mulberry32(8831);
+  const unit = new THREE.BoxGeometry(1, 1, 1);
+  const PROUD = 0.04;
+  const backX = M.back;
+  const bands = [];
+  const posts = [];
+  const shutters = [];
+  const zN = M.z1;
+  const zF = M.z0;
+  const length = zN - zF;
+  const zc = (zN + zF) / 2;
+  // THE UPPER STOREY IS SHORTER THAN THE GROUND FLOOR. `right house ground far` runs the whole z range but
+  // `right house upper` stops at M.upperZ0 (-13.5) against M.z0 (-21.0), so everything above M.eaveTop
+  // over the last 7.5 m has no wall behind it. A first pass ran the posts and both upper rails the whole
+  // length and pose 3 showed them standing proud of the parapet with the top beam ending in mid-air.
+  const zUpperF = M.upperZ0;
+  const upperLen = zN - zUpperF;
+  const upperC = (zN + zUpperF) / 2;
+  // The foot: a stone plinth and the dark base band over it, as on the street face. These run the whole
+  // length, because the ground floor does.
+  bands.push({ position: [backX + PROUD, -0.4, zc], scale: [0.1, 1.4, length], tint: 1, uv: [0, 0] });
+  bands.push({ position: [backX + PROUD, M.plinthTop + 0.9, zc], scale: [0.08, 0.5, length], tint: 1, uv: [0, 0] });
+  // The rail at the head of the ground floor runs the whole length too; the one under the roof only over
+  // the upper storey.
+  bands.push({ position: [backX + PROUD, M.eaveTop - 0.15, zc], scale: [0.08, 0.3, length], tint: 1, uv: [0, 0] });
+  bands.push({ position: [backX + PROUD, M.roofY - 0.25, upperC], scale: [0.08, 0.35, upperLen], tint: 1, uv: [0, 0] });
+  // Bay posts, and a shuttered window in every other bay. A post over the upper storey runs from the base
+  // band to the roof rail; past it, only to the ground floor's own head.
+  const bay = 2.1;
+  const n = Math.max(2, Math.round(length / bay));
+  const pitch = length / n;
+  for (let i = 0; i <= n; i++) {
+    const z = zN - i * pitch;
+    const top = z >= zUpperF ? M.roofY : M.eaveTop;
+    posts.push({ position: [backX + PROUD, (M.plinthTop + top) / 2, z], scale: [0.11, top - M.plinthTop, 0.18], tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] });
+  }
+  for (let i = 0; i < n; i++) {
+    if (i % 2 === 1) continue;
+    const z = zN - (i + 0.5) * pitch;
+    if (z >= zUpperF) shutters.push({ position: [backX + PROUD + 0.01, M.eaveTop + 0.95, z], scale: [0.06, 1.3, pitch * 0.62], tint: 1 + jitter(rand, 0.04), uv: [rand(), 0] });
+    shutters.push({ position: [backX + PROUD + 0.01, M.plinthTop + 1.9, z], scale: [0.06, 1.5, pitch * 0.62], tint: 1 + jitter(rand, 0.04), uv: [rand(), 0] });
+  }
+  // One more post at the upper storey's own end. The bays are 2.111 m and land at z = -12.556 and
+  // -14.667, so `M.upperZ0` = -13.5 falls between two of them and the roof rail's step down had nothing
+  // under it. It is pushed after the shutter loop on purpose: `rand` is shared, and adding a draw before
+  // that loop would renumber every shutter's jitter for a post nobody would notice moving.
+  posts.push({ position: [backX + PROUD, (M.plinthTop + M.roofY) / 2, zUpperF], scale: [0.11, M.roofY - M.plinthTop, 0.18], tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] });
+  // The two ends get the same rail line so the building does not read as open there either.
+  for (const z of [zN, zF]) {
+    const out = z === zN ? 0.06 : -0.06;
+    bands.push({ position: [(M.front + backX) / 2, M.eaveTop - 0.15, z + out], scale: [backX - M.front, 0.3, 0.1], tint: 1, uv: [0, 0] });
+    bands.push({ position: [(M.front + backX) / 2, M.plinthTop + 0.9, z + out], scale: [backX - M.front, 0.5, 0.1], tint: 1, uv: [0, 0] });
+  }
+  // Bound, and it is visible: the bays are a fixed 2.1 m with the shutters on every other one, so the
+  // run of nine reads as a stamped pattern rather than as a building that was built. The tint jitter is
+  // the only variation there is. It is content the next iteration can break up; naming it is cheaper than
+  // faking it.
+  b.add(instanced('right house back bands', unit, surface('wood', C.woodBase, { seed: 103, instancedUv: true }), bands), 'right house back bands');
+  b.add(instanced('right house back posts', unit, surface('wood', C.woodUpperRight, { seed: 104, instancedUv: true }), posts), 'right house back posts');
+  b.add(instanced('right house back shutters', unit, surface('woodWide', C.eaveDark, { seed: 105, instancedUv: true }), shutters), 'right house back shutters');
 }
 
 // A koshi lattice: vertical slats of `size` at `pitch` spacing along z, standing on the face at x and

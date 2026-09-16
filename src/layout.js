@@ -406,6 +406,12 @@ export function farRowFrontX(z) {
   return Math.max(interpolateZ(FAR_ROW.frontLine, z), streetCenterX(z) - FAR_ROW.keepOff);
 }
 
+// Where the far street's paving stops, which is the corner house's own front face at the bend. It ran to
+// z = -42 until iteration 4, 7.5 m THROUGH the corner house and the bend's block-out; `npm run clearance`
+// reports that region every run as the scene's open defect. src/background.js widens the corner house to
+// cover the paved band's whole width here, so the street ends at a building rather than under one.
+export const FAR_STREET_END = -34.4;
+
 // Depths (metres along the optical axis) chosen for frontal elements.
 export const DEPTHS = {
   cherry: 18,
@@ -419,27 +425,76 @@ export const DEPTHS = {
 
 // Flat colors sampled from the photo (sRGB hex); the sampling boxes are listed in the devlog. A few
 // small things have no clean region in the photo and are set by eye: skin, sign, lamp, lantern,
-// paperLantern, awning, evergreen (only a sliver shows), platform, groundBase, fog.
+// paperLantern, awning, evergreen (only a sliver shows), platform, valleyWood, valleyField, fog.
 export const COLORS = {
   skyTopWhite: 0xe8e9ea,
   skyTopBlue: 0x9bc4e4, // the photo's own top row (cells 0.06-0.30 at v 0.02); the paler sample it replaced left the sky washed
-  skyTopGrey: 0x7d8c98,
+  // The sky at the far end of the azimuth ramp, away from the sun. It was a desaturated slate, 0x7d8c98,
+  // and the photo has no slate in it: its top row is blue all the way to the frame's left edge (cells
+  // (0.063, 0.023) #99bedc and (0.104, 0.023) #9bc4e4, which is skyTopBlue itself). The ramp reaches
+  // about a third of the way in at the frame's edge and runs on past it, so most of what this colour
+  // paints is the orbit sky; it is a deeper blue than skyTopBlue rather than a grey. Set by eye as
+  // skyTopBlue darkened toward the photo's own darkest top-row cell, (0.188, 0.023) #8faecf: no box in
+  // the photo holds this part of the sky, because it is not in the frame.
+  skyTopGrey: 0x8fb6da,
   skyWarmNear: 0xf8dbaf,
-  skyWarmFar: 0xecd3bc,
+  // The warm band away from the sun. NOT its box: the box is (0.20,0.13)-(0.45,0.19) #e7bfa2 and this is
+  // set by eye between that and the old 0xecd3bc, because the band's own rows disagree — at v 0.159 the
+  // photo wants the box (cells (0.271, 0.159) #e1b498 and (0.313, 0.159) #ecc09d, against a render of
+  // #e9d1ca and #ebd3ca) and at v 0.205 it wants lighter than the box ((0.229, 0.205) #f3d9ba). The old
+  // value was 26 levels light on blue and made the whole band read pale pink beside the photo's orange.
+  skyWarmFar: 0xe9c5ab,
   skyHorizon: 0xeed5b4,
   skySun: 0xfdf7e1,
-  skyHalo: 0xf6e4cf,
-  cirrus: 0xd8cfd2, // the cirrus at the top left, cells (0.10, 0.05) and (0.15, 0.09)
+  // The glare around the sun, which the shader now spreads further (exp(-theta / 10.0)) and squashes
+  // vertically (elevWeight 45). The old 0xf6e4cf is a pale cream and the photo's own glow is orange:
+  // cells (0.479, 0.114) #edcaac, (0.521, 0.114) #f9dfbe, (0.479, 0.159) #fadfaa. Set by eye against those
+  // three rather than sampled: no box in the photo holds glare with no cloud in it, and the glare is what
+  // this colour is for -- the clouds have `cirrus` and `cloudPuff` of their own.
+  skyHalo: 0xf7dcb2,
+  // The cloud where the sun does not reach it. The old 0xd8cfd2 was read off cells (0.10, 0.05) and
+  // (0.15, 0.09), which are cloud mixed with the sky behind it, and it is pink: painted over the whole
+  // cirrus field it turned the photo's blue top-left lavender. This is a cloud's own body in the blue,
+  // box (0.30,0.05)-(0.37,0.075) #cbdcea, and `src/sky.js` now mixes it toward `cirrusLit` by how much of
+  // the sun reaches that direction rather than by how thick the streak is.
+  cirrus: 0xcbdcea,
   cirrusLit: 0xe8b98e, // their orange undersides, cell (0.19, 0.07)
   cloudPuff: 0xf3cfc4, // the pink puffs near the sun, cells (0.45, 0.10) and (0.52, 0.07)
-  hillRidge: 0xdda586,
-  hillHaze: 0x928171,
-  hillMid: 0x615d52,
-  hill: 0x4a4139,
+  // The forested hill, as four stops down the photo rows (src/background.js passes them to
+  // makeHillTexture). The photo's hill is a grey-green mass with the sun's glare washing over it near
+  // u 0.62, and the old values were a warm orange ramp: over the six cells the hill is first under, the
+  // render read #9f8a6c, #64523f, #c7af7b and #7b654b against a photo of #9f9d96, #5e6663, #dcb698 and
+  // #625e55 -- the right luminance and 30 to 40 levels of missing blue. Boxes: (0.72,0.085)-(0.80,0.13)
+  // #7d827d just under the skyline, (0.64,0.14)-(0.71,0.185) #a1806b where the glare crosses it.
+  // These four are the hill's own colour by row AWAY from the sun; the texture mixes each row toward the
+  // deepest stop by how far the column is from the sun's, so the glare is what the warm values are for.
+  //
+  // NONE of the four is a box and none is set by eye either: they are FITTED, which is a third provenance
+  // this repo's rule does not name, and the fit did not land. Two measured points of the surface's own
+  // transfer (texture value in, rendered cell out) gave a per-channel affine map, and the stops were
+  // solved from it against the photo's (0.646, 0.159) #dcb698, (0.729, 0.159) #625e55 and (0.771, 0.159)
+  // #575653. Only the third improved. Over the six cells `hill` is first under, the summed distance went
+  // 0.474 to 0.499, WORSE by 0.025, and the iteration's SSIM gain here is the tree line and not these.
+  // The reason the fit is unreliable is written down rather than worked around: the material's own `mean`
+  // is now computed from the drawn texels, so changing a stop rescales the texture and moves the transfer
+  // the stop was solved against. A next attempt should iterate the fit to a fixed point, or hold `mean`
+  // constant while solving.
+  hillRidge: 0x91816f,
+  hillHaze: 0x776d61,
+  hillMid: 0x5e5a54,
+  // The hill's deepest stop, and the one the glare mixes every other row toward away from the sun's own
+  // column. It replaces `hill`, which was this AND the far ground's colour at once, so tuning the hill's
+  // skyline moved the ground beside the far street; the ground carries its own vertex colours now.
+  // Fitted with the three above and no box of its own: the photo's hill away from the sun is (0.771,
+  // 0.159) #575653 and (0.813, 0.159) #363124, and one value cannot be both.
+  hillDeep: 0x3c3c40,
   nearRidge: 0x6b7a5f,
   mountainFar: 0xb9c0c8,
   mountainMid: 0xacb5bf,
-  mountainFarthest: 0xcdc8cc,
+  // The palest range, at the top of the stack. Its four scored cells at v 0.250 read #dcd0ca to #e4d1bf in
+  // the photo against #cec6cd to #d8cbce in the render -- warm against cool -- and this is set by eye from
+  // them rather than from a box: every box over that band holds two ranges and the sky between them.
+  mountainFarthest: 0xdfd0c2,
   mountainBlue: 0x6ca8c4,
   cherryDense: 0xbca2ae,
   cherryEdge: 0xd8c4c5,
@@ -670,9 +725,20 @@ export const COLORS = {
   sign: 0x3f6fb0,
   platform: 0x8a8d92,
   farRoof: 0x87887b,
+  // `far roof d`, the block immediately past the left row, which closes the hole those two cells were
+  // (see src/background.js). Its roofs stand in the left row's own shade in the photo where `farRoof`
+  // is the sunlit grey-green of the blocks beyond: cells (0.146, 0.386) #583d2d and (0.104, 0.386)
+  // #654631 against the render's #7b8275 and #6a5f50. Set by eye off those two cells, because the
+  // region is 40 px across in the photo and every box over it holds roof, wall and gap together.
+  farRoofNear: 0x5a4838,
   farWall: 0xacafac,
   farWallLow: 0x776f5f, // below the far roofs; over the band the walls actually fill the photo reads #aaa18d at (0.313,0.659), #b18962 at (0.313,0.705) and #8b8e92 at (0.354,0.705), so the old 0x4e4a3f (taken at (0.354,0.659), the one dark cell there) was 55 levels low
-  groundBase: 0x3a3a36,
+  // The valley beyond the town (src/background.js, outerGround). Set by eye, and marked as such: the
+  // photo shows this land only as a pale hazed glimpse past the far houses at u 0.19 to 0.28, v 0.33 to
+  // 0.40, and every metre of what the sweep sees of it lies outside the photo frame. Woods and open
+  // ground, mixed by a slow noise and hazed toward `fog` with distance.
+  valleyWood: 0x414838,
+  valleyField: 0x5d5f4b,
   fog: 0xdccfc4,
 };
 

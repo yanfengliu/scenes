@@ -140,7 +140,15 @@ function skyEnvironment(renderer) {
 // instead. Measured both ways on the same tree: casting, 0.0760 / 0.4632; not casting, 0.0758 / 0.4659,
 // and 7 draw calls and 22k triangles cheaper. That cell delta is twice iteration 1's noise floor, so it
 // is real but small, and this is a trade and not a free win.
-const NO_CAST = /^(far row|sky|hill|mountains|near ridge|ground base|far plots|hillside|cherry blossoms|cherry strands|petals|evergreen|shrub|left plant|weeds|moss|sun|fill|far roof|corner house|bend|noren)/;
+// `far house` is here for the same reason as `far roof`, and it is here because renaming two meshes took
+// them out of this list by accident. Iteration 4 called its new shared ridge-cap and eave-lip sets
+// `far roof ridges` and `far roof lips`, which this pattern already excluded; renaming them to `far house`
+// to stop them satisfying `PLACEMENT_CHECKS`'s `far roof` prefix put 37 instances at 22 to 34 m into the
+// shadow pass and cost exactly 2 draw calls in the shot (366 with them casting, 364 without). A NAME is
+// load-bearing here, which is the kind of coupling worth one line of comment.
+// `ground base` no longer exists (iteration 4 replaced it with `outer ground`, which is matched below);
+// the token is kept because the pattern costs nothing and an old branch may still build one.
+const NO_CAST = /^(far row|sky|hill|mountains|near ridge|ground base|outer ground|far plots|hillside|cherry blossoms|cherry strands|petals|evergreen|shrub|left plant|weeds|moss|sun|fill|far roof|far house|corner house|bend|noren)/;
 const CAST_SIZE = 1.6;
 const CAST_BOX = { x0: -14, x1: 14, y0: -14, y1: 14, z0: 6, z1: -34 };
 
