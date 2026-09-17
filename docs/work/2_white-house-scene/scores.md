@@ -18,28 +18,51 @@ Both metrics are computed by `SCENE=whitehouse npm run compare`, which scores `o
 | Blockout, first frame | 0.1981 | 0.1398 |
 | Tonality and facade pass | 0.1428 | 0.1223 |
 | Tree line reworked for the orbit views | 0.1448 | 0.1262 |
-| **Current** | **0.1448** | **0.1262** |
+| Occlusion term, pediment, hedge, trees | 0.1240 | 0.2845 |
+| World layout corrected: the north grounds were behind the wall | 0.1138 | 0.3519 |
+| Porch interior, capitals, pediment rise | **0.1045** | **0.3927** |
+
+## The layout fix, which is the largest single correction in this scene's history
+
+Every feature of the north grounds was authored from an inverted photograph row, by two compounding errors:
+the row-to-distance constant was the one for the terrace's plane rather than the lawn's, and the world z was
+written as `dn - 47.863` instead of `47.863 - dn`. The bed, the fountain, the drive and the fence were
+therefore built one building-length *behind* the north wall, the portico's columns sat *inside* the wall, and
+the south lawn slab — the only ground on the camera's side — was the whole foreground of the photo view.
+
+The lesson is worth keeping: **a calibration landmark can be exact while the world around it is wrong.** Four
+landmarks landed on their photograph rows to 0.00 px for three passes while the grounds were on the wrong
+side of the building, because all four are on the wall's own plane. What caught it was rendering the scene
+from directly above (`out/critic/topdown.mjs`) and probing the objects' own bounding boxes — not any scored
+number, and not any of the crops taken from the photograph's own viewpoint.
+
+Two more defects that hid behind the same symptom: the mowing passes west of centre were painted pure black
+(`passTint` indexed `[-1]`, and a hex multiplied by `undefined` becomes `NaN`, whose `<< 16` is 0), and the
+drive was 40 flat boxes floating 1.9 m clear at their near ends. Both were in the frame's bottom third.
 
 ## What the numbers mean here, and what they do not
 
-Scene 1, after five iterations of its own loop, reads 0.0596 / 0.5713. The two are not comparable
-subjects and the gap is not a like-for-like measure of quality: scene 1 is a dark, cluttered, high-frequency
-frame whose every surface has a sampled colour, and this one is a white building under a bright sky, where
-a single exposure error moves every cell at once and where more than a third of the frame is lawn and sky
-at two flat tones. A white building is the hardest subject this pair of metrics can be given.
+Scene 1 reads 0.0571 / 0.5856 after its own iteration 6. The two are not comparable subjects and the gap is
+not a like-for-like measure of quality: scene 1 is a dark, cluttered, high-frequency frame, and this one is a
+white building under a bright sky where a single exposure error moves every cell at once and where more than
+a third of the frame is lawn and sky at flat tones. A white building is the hardest subject this pair of
+metrics can be given.
 
-The SSIM row is the honest one to read second: it is a grayscale structural match at 64 px, so it rewards
-large shapes and ignores the window pediments, the sash bars and the dentils that the facade pass added.
-It fell 0.0085 with that pass and cell distance fell 0.055 at the same time. Each change was measured
-against both and kept only where the pair improved; the facade detail was kept because its cell-distance
-gain was an order of magnitude larger than its SSIM cost.
+The scores are also blind to the thing the owner asked for. `out/critic/measure.mjs` measures it instead, on
+the render against the photograph: detail as a high-pass luma standard deviation, edge energy, and the
+near-black coverage. Across this session those moved **detail to 0.53 of the photograph's, edge energy to
+0.36, luma p5 from 84.0 to 12.6 against the photograph's 7.5, and pixels below luma 16 from 1.9% to 5.9%
+against the photograph's 6.9%.** A render whose fifth-percentile pixel is a mid grey has no shadows, and no
+cell-distance score can say so.
 
 ```json
 {
-  "cellDistanceMax": 0.1477,
-  "ssimMin": 0.1212
+  "cellDistanceMax": 0.1066,
+  "ssimMin": 0.3877
 }
 ```
 
-The margins are scene 1's: 2% on cell distance and 0.005 on SSIM, below the 0.0010 cross-machine SSIM
-noise floor the repo measured on scene 1 and well above the run-to-run spread this scene has shown.
+The margins are scene 1's: 2% on cell distance and 0.005 on SSIM, below the 0.0010 cross-machine SSIM noise
+floor the repo measured on scene 1 and well above the run-to-run spread this scene has shown. They were moved
+here from 0.1477 / 0.1212 by the layout fix, which is the rule working as intended — thresholds follow the
+achieved scores down, and are never raised to make a red gate green.
