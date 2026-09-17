@@ -1,9 +1,11 @@
 # The White House scene's scores
 
 `SCENE=whitehouse npm test` asserts the two numbers below against this file's single json block, the way
-`npm test` asserts scene 1's against `docs/PLAN-scores.md`. The thresholds follow the same rule scene 1's do:
-they move toward the achieved scores at the end of an iteration, they are never loosened to make a red gate
-green, and a worse score is a regression to fix rather than a reason to raise a limit.
+`npm test` asserts scene 1's against `docs/PLAN-scores.md`. The thresholds started from scene 1's rule and
+have followed this scene's own achieved scores since: they move toward the achieved scores at the end of an
+iteration, they are never loosened to make a red gate green, and a worse score is a regression to fix rather
+than a reason to raise a limit. They have tightened twice on 2026-09-17 alone, 0.1066 / 0.3877 to
+0.1061 / 0.4086 to 0.0968 / 0.4157.
 
 THIS FILE HOLDS EXACTLY ONE FENCED JSON BLOCK, and it is the thresholds: tools/test.js takes the FIRST block
 it finds, so a second one above it is read as the thresholds and fails with a JSON parse error naming a word
@@ -22,6 +24,11 @@ Both metrics are computed by `SCENE=whitehouse npm run compare`, which scores `o
 | World layout corrected: the north grounds were behind the wall | 0.1138 | 0.3519 |
 | Porch interior, capitals, pediment rise | 0.1045 | 0.3927 |
 | Grounds: a hole to the sky closed, and the mowing passes re-measured | 0.1040 | 0.4136 |
+| Porch tones: the columns' and the tympanum's occlusion | 0.1019 | 0.4151 |
+| Roofline: the measured roofscape, and the pediment's raking cornice | 0.1009 | 0.4198 |
+| Lawn blade speckle, and the colour path that was eating its hue | 0.0975 | 0.4138 |
+| Trees: 150 and 175 facet-toned lobes | 0.0949 | 0.4207 |
+| Ground voids gated, the terrain mended, and the crowns corrected | 0.0949 | 0.4207 |
 
 ## A hole to the sky, which no scored number could see
 
@@ -65,19 +72,44 @@ metrics can be given.
 
 The scores are also blind to the thing the owner asked for. `out/critic/measure.mjs` measures it instead, on
 the render against the photograph: detail as a high-pass luma standard deviation, edge energy, and the
-near-black coverage. Across this session those moved detail to 0.53 of the photograph's, edge energy to 0.36,
-luma p5 from 84.0 to 12.6 against the photograph's 7.5, and pixels below luma 16 from 1.9% to 5.9% against
-the photograph's 6.9%. A render whose fifth-percentile pixel is a mid grey has no shadows, and no
-cell-distance score can say so.
+near-black coverage. A render whose fifth-percentile pixel is a mid grey has no shadows, and no cell-distance
+score can say so — at the start of today's session the frame's detail was 0.561 of the photograph's, its edge
+energy 0.385, and its fifth percentile 1.91x the photograph's, while both scored numbers were inside their
+thresholds. The section below has the whole table.
+
+## The session's realism numbers, which no scored metric can see
+
+Both scored numbers are 24x22 cell means and a 64 px grayscale SSIM, so a frame can gain on them while
+getting flatter. The instrument that watches the other thing is
+`node out/critic/measure.mjs whitehouse.webp out/wh/render.png`, and these are its readings before the
+session's realism passes and on the shipped frame. A ratio of 1.0 is the photograph; detail and edge move
+toward it, the p1 and p5 ratios are the render's percentile over the photograph's, and below-16 is coverage.
+
+| measurement, render over photograph | before | after | what it was |
+| --- | --- | --- | --- |
+| detail (high-pass luma sd) | 0.561 | **0.893** | a flat render reads 0.4; the lawn's blade speckle and the facet-toned crowns are most of the gain |
+| edge energy (levels/px) | 0.385 | **0.860** | the same two passes, measured as mean absolute gradient |
+| luma p5 ratio | 1.91 | **1.07** | the tree pass landed it on the photograph's own row (1.0026) from 1.91, the groundcover pass moved it to 1.06, and the crown correction blackframe required settled it at 1.07 |
+| pixels below luma 16 | 5.71% | **6.94%** | the photograph's own coverage is 6.86%; the frame's dark end is now within 0.08 of it |
+| luma p1 ratio | 1.07 | **2.64** | the one line that moved away, and the frame's remaining black-end residual: the darkest 1% is 2.64x the photograph's |
+
+The last line is the one to read with the p5 line: the 5th percentile matches while the 1st does not, so the
+frame's shadow floor is right in mass and too light in its very darkest pixels. Note that the two instruments
+disagree at the third digit on purpose and not by accident — `measure.mjs` compares at the photograph's own
+600x550, and `out/wh/scratch/real.mjs`, the arm checker used inside the passes, compares at 600x450 and reads
+the same frame as detail 0.88 and edge 0.78. A number quoted from one is not a number from the other.
 
 ```json
 {
-  "cellDistanceMax": 0.1061,
-  "ssimMin": 0.4086
+  "cellDistanceMax": 0.0968,
+  "ssimMin": 0.4157
 }
 ```
 
-The margins are scene 1's: 2% on cell distance and 0.005 on SSIM, below the 0.0010 cross-machine SSIM noise
-floor the repo measured on scene 1 and well above the run-to-run spread this scene has shown. They have moved
-from 0.1477 / 0.1212 to here across this session's passes, which is the rule working as intended: thresholds
-follow the achieved scores down, and are never raised to make a red gate green.
+The margins are scene 1's: 2% on cell distance and 0.005 on SSIM, taken off this scene's own achieved
+0.0949 / 0.4207, below the 0.0010 cross-machine SSIM noise floor the repo measured on scene 1 and well above
+the run-to-run spread this scene has shown. They have tightened twice today — 0.1066 / 0.3877 at the session's
+start to 0.1061 / 0.4086 once the porch, the roofline and the lawn had moved the scores, and then to
+0.0968 / 0.4157 after the tree pass and the groundcover pass — from 0.1477 / 0.1212 earlier in the scene's
+history, which is the rule working as intended: thresholds follow the achieved scores down, and are never
+raised to make a red gate green.
