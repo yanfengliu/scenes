@@ -1,12 +1,16 @@
-// npm run compare: score out/render.png against japan.webp and write the comparison sheets.
+// npm run compare: score the active scene's render against its reference photo and write its sheets.
+// `SCENE=<id>` names the scene; unset is scene 1, which scores out/render.png against japan.webp.
 //
 // Prints two scores (see tools/lib/metrics.js for their bounds):
 //   cell color distance  mean over a 24x22 grid of the per-cell mean-color distance, 0..1, lower is better
 //   ssim                 grayscale SSIM at 64 px wide, -1..1, higher is better
-// Writes out/compare.png  photo | render | 50% overlay | heat-map, four 600x550 panels side by side
-//        out/overlay.png  render at 50% over the photo at 1200x1100 with a 0.1 grid and the plan's
-//                         landmark boxes, for checking each landmark's position
-//        out/scores.json  the scores plus the per-cell distances, read by npm test
+// Writes the active scene's out/compare.png  photo | render | 50% overlay | heat-map, four panels the
+//                         size of its reference photo, side by side
+//                         out/overlay.png  render at 50% over the photo at the scene's shot size with a
+//                         0.1 grid and the plan's landmark boxes, for checking each landmark's position
+//                         out/scores.json  the scores plus the per-cell distances, read by npm test
+// Those three, the render and its sidecar are all the scene's own; for scene 1 they are the out/ paths
+// above, which is what this tool wrote before it knew about scenes.
 //
 // ---- RENDERER ---------------------------------------------------------------------------------------
 // SWIFTSHADER, AND IT TAKES NO GPU SWITCH EITHER, for a reason that is NOT the one `shot` has. This tool
@@ -23,9 +27,9 @@
 // bind the score to a named scene, which is what replaced `out/views/1-photo.png` being byte-identical
 // to `out/render.png` (tools/lib/treehash.js says why that went).
 //
-// **`japan.webp` is half of what this tool scores and is bound by NONE of them.** It is not in the mtime
-// list below — `['index.html', ...readdirSync('src')]` — and `sourceTree()` excludes it deliberately, so
-// a changed reference photo moves every score with no guard anywhere in this repo. That is the largest
+// **The reference photo is half of what this tool scores and is bound by NONE of them.** It is not in the
+// mtime list below — `['index.html', ...readdirSync('src')]` — and `sourceTree()` excludes it deliberately,
+// so a changed reference photo moves every score with no guard anywhere in this repo. That is the largest
 // hole in the score's provenance and it is named here rather than left to be discovered. (The mtime list
 // is also non-recursive while the tree hash is recursive, so a scene added in a subdirectory of `src/` is
 // invisible to the mtime rule and caught by the hash.)
@@ -41,7 +45,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { launch } from './lib/browser.js';
 import { decodeImage, fileToDataUrl, pngDataUrlToBuffer } from './lib/image.js';
 import { cellDistance, ssimGray } from './lib/metrics.js';
-import { LANDMARK_MARKS, PHOTO, SHOT } from '../src/layout.js';
+import { LANDMARK_MARKS } from '../src/layout.js';
 import { sourceTree, shortHash, diffTrees } from './lib/treehash.js';
 import { isMainModule } from './serve.js';
 // An import must never start a gate. Everything below runs only when node was asked to run THIS file;
@@ -50,13 +54,24 @@ import { isMainModule } from './serve.js';
 // out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
 if (isMainModule(import.meta.url)) {
 
-const PHOTO_PATH = 'japan.webp';
-const RENDER_PATH = 'out/render.png';
-const RENDER_TREE_PATH = 'out/render.tree.json';
+// Which scene this run is for, and its photo and paths. A dynamic import inside the guard, so
+// `node -e "import('./tools/compare.js')"` does not even load the registry, and so a mistyped SCENE
+// prints one FAIL line naming the ids that exist instead of a stack trace out of this module's imports.
+let active;
+try {
+  active = await import('./lib/scene.js');
+} catch (err) {
+  console.error(`FAIL: ${err.message}`);
+  process.exit(1);
+}
+const { scene, renderPath: RENDER_PATH, treePath: RENDER_TREE_PATH, scoresPath: SCORES_PATH, comparePath: COMPARE_PATH, overlayPath: OVERLAY_PATH, lightAnchorPath: ANCHOR_PATH } = active;
+const PHOTO_PATH = scene.photo;
 const COLS = 24;
 const ROWS = 22;
-const W = PHOTO.width;
-const H = PHOTO.height;
+// The photo's own size: both images are decoded and resampled to it, so it is the resolution the two
+// scores are read at. For scene 1 that is 600x550, which is what this line did before it asked the scene.
+const W = scene.photoSize.width;
+const H = scene.photoSize.height;
 
 function meansToHex(means) {
   const out = [];
@@ -213,7 +228,7 @@ if (recorded.sourceTree !== treeNow.hash) {
 //     A wider limit here would be slack nobody can red-prove.
 //   - It is blind to a change that moves no light: a geometry shift, a colour swap that keeps the mean.
 const LIGHT_TOLERANCE = 0.15;
-const ANCHOR_PATH = 'out/light-anchor.json';
+// ANCHOR_PATH is the active scene's own (out/light-anchor.json for scene 1, named at the top of this file).
 let anchor = null;
 if (existsSync(ANCHOR_PATH)) {
   try {
@@ -226,7 +241,7 @@ if (existsSync(ANCHOR_PATH)) {
   }
 }
 // Written before the comparison decides anything, so a disagreement cannot repeat against a stale figure.
-mkdirSync('out', { recursive: true });
+mkdirSync(scene.out, { recursive: true });
 writeFileSync(ANCHOR_PATH, `${JSON.stringify({
   sourceTree: recorded.sourceTree,
   renderSha256: recorded.renderSha256,
@@ -273,8 +288,8 @@ try {
   const photo = await decodeImage(page, PHOTO_PATH, { width: W, height: H });
   const render = await decodeImage(page, RENDER_PATH, { width: W, height: H });
   if (photo.srcWidth !== W || photo.srcHeight !== H) throw new Error(`${PHOTO_PATH} is ${photo.srcWidth}x${photo.srcHeight}, expected ${W}x${H}`);
-  if (render.srcWidth !== SHOT.width || render.srcHeight !== SHOT.height) {
-    throw new Error(`${RENDER_PATH} is ${render.srcWidth}x${render.srcHeight}, expected ${SHOT.width}x${SHOT.height}`);
+  if (render.srcWidth !== scene.shot.width || render.srcHeight !== scene.shot.height) {
+    throw new Error(`${RENDER_PATH} is ${render.srcWidth}x${render.srcHeight}, expected ${scene.shot.width}x${scene.shot.height}`);
   }
 
   const cells = cellDistance(photo.data, render.data, W, H, COLS, ROWS);
@@ -399,15 +414,19 @@ try {
       cols: COLS,
       rows: ROWS,
       cellValues: Array.from(cells.cells),
+      // The landmark marks are SCENE 1's, imported from src/layout.js, and they are the one thing in this
+      // tool that is still scene 1 by construction: an overlay drawn for another scene carries scene 1's
+      // boxes and names. They are annotation only -- they move no score -- and the registry has no field
+      // for another scene's list yet. Named here so the next scene's overlay is not read as its own.
       marks: LANDMARK_MARKS,
-      shotW: SHOT.width,
-      shotH: SHOT.height,
+      shotW: scene.shot.width,
+      shotH: scene.shot.height,
     },
   );
 
-  mkdirSync('out', { recursive: true });
-  writeFileSync('out/compare.png', pngDataUrlToBuffer(sheets.compare));
-  writeFileSync('out/overlay.png', pngDataUrlToBuffer(sheets.overlay));
+  mkdirSync(scene.out, { recursive: true });
+  writeFileSync(COMPARE_PATH, pngDataUrlToBuffer(sheets.compare));
+  writeFileSync(OVERLAY_PATH, pngDataUrlToBuffer(sheets.overlay));
   const scores = {
     cellDistance: cells.mean,
     ssim: ssim.value,
@@ -431,16 +450,16 @@ try {
     renderSha256: renderSha,
     renderedAt: new Date().toISOString(),
   };
-  writeFileSync('out/scores.json', JSON.stringify(scores, null, 2));
+  writeFileSync(SCORES_PATH, JSON.stringify(scores, null, 2));
   console.log(`cell color distance (24x22 grid, lower is better): ${cells.mean.toFixed(4)}`);
   console.log(`grayscale SSIM at 64 px (higher is better): ${ssim.value.toFixed(4)}`);
-  console.log(`scored out/render.png (sha256 ${shortHash(renderSha)}) from scene source tree ${shortHash(recorded.sourceTree)} over ${recorded.sourceFileCount} files`);
+  console.log(`scored ${RENDER_PATH} (sha256 ${shortHash(renderSha)}) from scene source tree ${shortHash(recorded.sourceTree)} over ${recorded.sourceFileCount} files`);
   console.log(
     `drawn at post-chain rung ${recorded.post.rung}, a ${recorded.post.width}x${recorded.post.height} target `
     + `with ${recorded.post.samples} samples; the chain measured mean luma ${recorded.post.verdict.meanLuma} `
     + `against a plain-render reference of ${recorded.post.verdict.referenceLuma}`,
   );
-  console.log('wrote out/compare.png, out/overlay.png, out/scores.json');
+  console.log(`wrote ${COMPARE_PATH}, ${OVERLAY_PATH}, ${SCORES_PATH}`);
 } catch (err) {
   failure = err;
 } finally {

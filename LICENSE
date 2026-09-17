@@ -1,8 +1,23 @@
 MIT License
 
-This licence covers the code in this repository. It does NOT cover japan.webp, the
-photograph the scene was matched against: that image is a third-party work included
-here only as the reference the gates measure against, and no rights to it are granted.
+This licence covers the code in this repository. It does NOT cover the two reference
+photographs, which are third-party works included here only as the references their
+scenes are measured against, and no rights to them are granted:
+
+  japan.webp        the Kyoto street scene's reference. Third-party photograph; the
+                    source and its licence were not recorded when it was added.
+
+  whitehouse.webp   the White House scene's reference. "The White House June 2024"
+                    by DJTechYT, from Wikimedia Commons:
+                    https://commons.wikimedia.org/wiki/File:The_White_House_June_2024.jpg
+                    Licensed CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/
+                    Changes made: cropped to 4:3 and resampled to 1200x900. It is
+                    included unmodified in content, at reduced size, as the image the
+                    White House scene's gates score against. Note the share-alike term:
+                    a redistribution of THIS IMAGE, or of a modified version of it,
+                    must carry the same licence and this attribution. The 3-D scene
+                    itself is a model of the building, not a derivative of the
+                    photograph, and stays under the MIT licence above.
 
 
 Copyright (c) 2026 Yanfeng Liu

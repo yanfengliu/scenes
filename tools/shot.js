@@ -1,5 +1,10 @@
-// npm run shot: render the photo view at 1200x1100 in headless chromium and save out/render.png.
+// npm run shot: render the active scene's photo view in headless chromium and save its scored frame.
 // Fails on any console error, uncaught page error, or failed request.
+//
+// Scene 1 is the default and its frame is 1200x1100 at out/render.png; `SCENE=<id>` names another scene
+// and the viewport and every output path come from that scene's entry in src/scenes.js (through
+// tools/lib/scene.js). The page is opened at the repo root for scene 1, whose id is what a bare URL
+// already loads; another scene asks for itself with `?scene=<id>`.
 //
 // THE RENDER IS THE CONTRACT: 1200x1100, the photo view, the clock pinned at t = 0, the page's own chrome
 // hidden, the whole post chain. `docs/PLAN-scores.md` records what that frame scores and `npm test`
@@ -77,7 +82,6 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene, isSoftwareRenderer, rendererTag, postWarnings, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
-import { SHOT } from '../src/layout.js';
 import { sourceTree, shortHash, diffTrees } from './lib/treehash.js';
 import { isMainModule } from './serve.js';
 // An import must never start a gate. Everything below runs only when node was asked to run THIS file;
@@ -86,11 +90,22 @@ import { isMainModule } from './serve.js';
 // out/scratch/import-inert.mjs; the bound is in docs/learning/gate-proofs.md.
 if (isMainModule(import.meta.url)) {
 
-const OUT = 'out/render.png';
+// Which scene this run is for, and where its artifacts live. A dynamic import inside the guard, so
+// `node -e "import('./tools/shot.js')"` does not even load the registry, and so a mistyped SCENE prints
+// one FAIL line naming the ids that exist instead of a stack trace out of this module's own imports.
+let active;
+try {
+  active = await import('./lib/scene.js');
+} catch (err) {
+  console.error(`FAIL: ${err.message}`);
+  process.exit(1);
+}
+const { scene, isDefaultScene, renderPath: OUT, treePath: OUT_TREE } = active;
+// The viewport, under the name the rest of this file already uses for it.
+const SHOT = scene.shot;
 // Written beside the render, naming the tree it came from. `compare` refuses to score a render whose
 // sidecar does not match the tree on disk, and `treecheck` is what compares this to a views sweep.
 // See tools/lib/treehash.js for why the old binding (1-photo.png byte-identical to render.png) is gone.
-const OUT_TREE = 'out/render.tree.json';
 const started = Date.now();
 
 // The contract frame is the full chain. This throws unless it was.
@@ -197,7 +212,10 @@ try {
   page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   errors = collectErrors(page);
   const readyStarted = Date.now();
-  const info = await openScene(page, `${server.url}/`);
+  // A bare URL is what index.html already resolves to scene 1, which is the default; any other scene asks
+  // the page for itself by id. Scene 1's URL, and so the provenance of its contract frame, is unchanged.
+  const sceneUrl = isDefaultScene ? `${server.url}/` : `${server.url}/?scene=${encodeURIComponent(scene.id)}`;
+  const info = await openScene(page, sceneUrl);
   // How long the scene took to become ready, recorded beside the frame. It is not asserted and it is not
   // a performance number: it is the one field that both known bad frames share. The 2026-09-17 flake read
   // 13.7 s and the watchdog ratchet this loop caught read 14.5 s, against 18.1 s or more in every one of
@@ -239,7 +257,7 @@ try {
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
     return window.__scene.describe().post;
   }, HIDE_UI_CSS);
-  mkdirSync('out', { recursive: true });
+  mkdirSync(scene.out, { recursive: true });
   await page.screenshot({ path: OUT, type: 'png' });
   // The frame is on disk; now refuse it if it was not drawn by the full chain. Thrown, like the renderer
   // check above, so the `rmSync` in the failure path takes the render and its sidecar with it: a frame

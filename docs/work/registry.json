@@ -15,6 +15,10 @@
     {
       "id": 1,
       "theme": "realism-and-content"
+    },
+    {
+      "id": 2,
+      "theme": "white-house-scene"
     }
   ]
 }
