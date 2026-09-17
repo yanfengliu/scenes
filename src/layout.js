@@ -586,6 +586,25 @@ export const COLORS = {
   // Fitted with the three above and no box of its own: the photo's hill away from the sun is (0.771,
   // 0.159) #575653 and (0.813, 0.159) #363124, and one value cannot be both.
   hillDeep: 0x3c3c40,
+  // The hill's NEAR FACE, below the quarter-of-a-column line `hillShading` gates it on. Set by eye, and it
+  // says so: the foot of that surface is 200 m NEARER than its ridge, which is less haze and more of the
+  // forest's own colour, so it is a greener and slightly lighter version of `hillDeep` rather than a new
+  // hue. What it is for is pose 2, where the hill fills a third of the frame as one flat value.
+  //
+  // ELEVEN SCORED CELLS SEE IT, and an earlier version of this comment said none did. The claim came from
+  // taking the deepest cell whose FIRST hit is hill, or blossom directly over hill, at v <= 0.25 — that is
+  // (0.729, 0.250) at t = 0.165 — and treating it as the deepest cell the hill reaches at all. It is not:
+  // the cherry's cards are alpha-tested, so 33 of the 391 cell rays that reach the hill have nothing
+  // OPAQUE in front of them, and 11 of those land on a face whose vertex colours are live. The deepest is
+  // (0.688, 0.432) at **t = 0.368**, where the relief ramp is 0.88 and this colour is mixed in at 0.34 —
+  // 2.2x the quoted figure and well past the gate. Measured by an independent critic with
+  // out/scratch/critic/hillvisible.mjs and tvalues.mjs; the five worst are (0.646, 0.432), (0.604, 0.432),
+  // (0.688, 0.432), (0.688, 0.341) and (0.604, 0.386).
+  //
+  // What that costs TODAY is +0.0006 over two cells, which is why it was not caught by a score. What it
+  // means is that this colour and `RELIEF` are NOT free: raising either moves those eleven cells by an
+  // amount nothing bounds. Anyone changing them measures them.
+  hillBody: 0x464b42,
   nearRidge: 0x6b7a5f,
   mountainFar: 0xb9c0c8,
   mountainMid: 0xacb5bf,
@@ -625,6 +644,24 @@ export const COLORS = {
   topEaveUnder: 0x161616,
   tileLeftLight: 0x8f9093,
   stoneBlocks: 0x8a7b6f,
+  // The tall left ashlar wall darkens DOWN its own face, and one flat value could not carry it: over its
+  // nineteen scored cells the photo runs #bfab9a at world y 3.4 to #706761 at y 1.2, and the render was
+  // 27 to 31 levels light at the top and 24 dark at the foot. Placed by y with out/scratch/posefind.mjs on
+  // the photo pose: y 3.4 #bfab9a, 2.9 #7a6657, 2.7 #958276, 2.4 #9a8d83, 2.0 #84766d, 1.5 #756d65,
+  // 1.3 #706761. The base is the lightest of them, because `scaleHex` can only darken. `stoneBlocks` above
+  // still carries the PLATFORM's front wall and the left wall's mortar body, neither of which moved.
+  //
+  // THE FOUR BELOW ARE A SMOOTHED FIT TO THAT LADDER, NOT THE READINGS. Following the readings point for
+  // point COST 0.0003 of cell distance while gaining 0.00085 of SSIM, because the y 2.9 reading (#7a6657)
+  // is one dark cell in an otherwise light column and a stop there puts a dark band across the wall.
+  // Smoothed, both scores gain. What the smoothing costs is one cell and it is named: (0.021, 0.659) is
+  // this iteration's worst single regression, 0.0511 to 0.1366, and it is exactly that reading.
+  stoneBlocksLeftBase: 0xbfab9a,
+  stoneBlocksLeftUpper: 0xa89684,
+  stoneBlocksLeftMid: 0x998a7e,
+  stoneBlocksLeftLower: 0x8c7f74,
+  stoneBlocksLeftFoot: 0x7d736b,
+  stoneBlocksLeftLow: 0x6e655f,
   stoneBlocksTop: 0xd8cabb, // the left stone wall's top course, box (0.00,0.50)-(0.05,0.55) #ccbdb0; cell (0.021,0.523) is #d1c2b6 against #a38f80
   // The low plaster wall and its tiled cap. Over the band the wall fills, (0.085,0.815)-(0.34,0.905) reads
   // #635946 in the photo; the nine cells it is in front of average #776b5e against #8d867f in the render.
@@ -705,9 +742,56 @@ export const COLORS = {
   house1Wall: 0x39241c,
   house3Wall: 0xbcae9c,
   plant: 0x4a5230,
+  // The potted plant on the left low wall. Its five scored cells read #3c2719, #32201b, #4d4c19, #412b1e
+  // and #453225 -- a dried, dark, WARM plant, not the green `plant` above, which it shared and which left
+  // every one of them 20 to 30 levels light and 15 too green.
+  leftPlant: 0x40301d, // the per-channel mean of those five cells, exactly
+  // The small pot on the right walkway. Its one scored cell is #182011 against a rendered #3c3e45: it sits
+  // in the fence's own shadow, where the big pot beside it does not. `pot` is unchanged. The hex is that
+  // cell lifted by about 11 levels and set by eye, because the cell is one 50 px square holding the pot,
+  // its plant and the flagstone behind it, so it is not a clean sample of the pot.
+  potSmall: 0x23281c,
   shrubDark: 0x2a3320,
   plaster: 0xcfc6b8,
-  stoneWallLeft: 0x8e8983, // box (0.13,0.88)-(0.24,0.98) #8b8580; its seven cells average #837d79 against #7c7269
+  // The LIGHTEST band of the left retaining wall, and it has to be the lightest: every stone carries a
+  // per-instance colour through `scaleHex`, which can only darken. It was 0x8e8983, one flat value over a
+  // face the photo runs from #a9a39f to #5e5650 across four metres of street.
+  //
+  // The ladder that says so is `out/scratch/wallladder.mjs`, which solves for the photo position whose ray
+  // meets the wall plane x = -2.8 a given depth below its own top and samples there — the only way to read
+  // a wall this camera sees nearly end-on, where one compare cell spans 0.4 m of its height. Reading DOWN
+  // from the top at each z, 0.00 / 0.15 / 0.30 / 0.45 / 0.60 / 0.80 m:
+  //   z -5.30  #968c83 #8c837c #948c83 #918881 #8b837d
+  //   z -6.14  #9e9893 #ada8a3 #b2aba7 #aca59f #9f9995
+  //   z -6.98  #bbb7b7 #9a948f #656057 #564f45 #504842
+  //   z -7.82  #817a79 #807b7c #807d7c #7d7976 #69635e
+  //   z -8.66  #716d6a #5c5652 #827c77 #6d6a64 #5d5c58
+  //   z -9.50  #756a62 #88817a #76706c #696768 #67666b
+  // and the nine scored cells on this wall agree with it where they meet: (0.188, 0.932) lands at z -6.14,
+  // 0.21 m below the top, and reads #a9a39f against the ladder's #ada8a3; (0.229, 0.977) lands at z -6.98,
+  // 0.74 m down, and reads #5e5650 against #564e45. So the wall is LIT to about z -6.7 and in shade past
+  // it, which is a shadow edge and not a material change, and one colour was answering for both.
+  // The base is the LIGHTEST value the set carries and a little over it, because every stone takes a
+  // per-instance colour through `scaleHex`, which can only darken. Nothing displays at this hex.
+  stoneWallLeft: 0xaeaaa6,
+  // The mortar body behind the stones. It is NOT only joints: the band runs from x -3.5 to -2.85 while
+  // the stones cover -3.25 to -2.80 and the low wall's foot starts at -3.15, so 0.25 m of its top face is
+  // uncovered and this camera looks straight down on it. `npm run probe` hit it first at three of six points inside
+  // cell (0.188, 0.932). It is a literal and not `mortarOf(stoneWallLeft)`, so it stops moving when the
+  // ramp's base does: the two cells whose first hit IS this band read 0.0283 and 0.0103 with it, against
+  // 0.0393 and 0.0535 before. (It is one level off `mortarOf(0xa8a29d)`, which is where it started, and
+  // 0xa8a29d is no longer the base.)
+  stoneWallLeftCore: 0x8a8580,
+  // The wall's face, read off out/scratch/wallladder.mjs and the nine scored cells (the ladder itself is
+  // printed above `TOP_STOPS` in src/walls.js). TOP is within 0.15 m of the wall's own top line, BODY is
+  // 0.6 m down and further; between them the two mix.
+  stoneWallLeftTopNear: 0x8c827b,
+  stoneWallLeftTopLit: 0xa9a39f,
+  stoneWallLeftTopFar: 0x75716e,
+  stoneWallLeftBodyNear: 0x8d857f,
+  stoneWallLeftBodyLit: 0x9a9390,
+  stoneWallLeftBodyShade: 0x5e5650,
+  stoneWallLeftBodyFar: 0x6f6a67,
   // The right retaining wall and the ribbon skirts. It was the fence's stone core as well until iteration
   // 5 gave that its own `fenceCoreStone`: the two walls are different stone in the photo. The old 0x4d5559 came from box
   // (0.60,0.80)-(0.70,0.95), which is mostly the main stairs in their own shadow, not the wall. The wall's
@@ -715,7 +799,38 @@ export const COLORS = {
   // (0.73,0.88)-(0.775,0.935), and the fence's core above it #778086 at (0.755,0.865)-(0.79,0.905).
   // Its base and its near end are darker (#3a4549 over (0.66,0.90)-(0.72,0.96)), so this is one colour on a
   // ramp and the value here is the mean the twenty-five cells of the four meshes ask for, not the face's.
-  stoneWallRight: 0x5c6465,
+  // Since iteration 6 this is the BASE of a ramp along the street rather than a mean: the base is the
+  // lightest value the set carries, because every stone takes a per-instance colour through `scaleHex`
+  // and that can only darken. UNLIKE `stoneWallLeft`, THIS ONE DOES DISPLAY: `stoneWallRightNotch` below
+  // is the same hex, so `scaleHex` returns white there and the notch band shows at exactly this value. An
+  // earlier version of this line said nothing displays at it, which is true of the left wall and not here.
+  //
+  // `out/scratch/wallladder.mjs` on this wall's own plane (x = 1.3, top = the notch line), reading DOWN
+  // from the top at 0.00 / 0.20 / 0.40 / 0.70 m:
+  //   z  -5.43  #414d4f #202b2d #4b5864 #354553
+  //   z  -6.86  #1e2121 #29292a #232022 #11181b
+  //   z  -8.29  #4e5c6b #5f7287 #667a92 #778aa4
+  //   z  -9.71  #878e93 #a0a7af #7b838c #768597
+  //   z -11.14  #656566 #868b92 #868e95 #959ea5
+  // `RIGHT_WALL_NOTCH` (z -12.5 to -8.0) is where the wall is cut down to 0.5 m and the light reaches it,
+  // and the two sides of that edge are two of the frame's worst cells: (0.604, 0.932) lands at z -8.9 on a
+  // photo of #707b87 and (0.646, 0.932) at z -6.2 on #364146, with one colour answering for both.
+  //
+  // THE LADDER IS NOT THE WHOLE STORY HERE AND IT WAS TAKEN AS IF IT WERE, which cost a measured arm.
+  // Read as "near black to z -7.5, light blue past it" it gave cell distance 0.0587 -> 0.0593 (SSIM 0.5755
+  // -> 0.5777), because `out/scratch/posefind.mjs` puts THREE scored cells at z -6.1 to -6.2 and the photo
+  // reads #556575, #364146 and #4c5354 at them — the same z, 0.3 of cell distance apart. Whatever varies
+  // there is not along the street and this wall cannot carry it. So the ramp below moves only where the
+  // cells agree: it darkens the near end and the z -7.4 shoulder, lifts the NOTCH, and leaves z -5.9 to
+  // -6.6 at the value the one flat colour already had.
+  stoneWallRight: 0x707b87,
+  // The ribbon skirts under the street's paved bands (src/paving.js) shared `stoneWallRight` until
+  // iteration 6 turned that into a ramp base. This is the value it had, so no skirt moved.
+  skirtStone: 0x5c6465,
+  stoneWallRightNear: 0x3a464c, // the near end and the z -7.4 shoulder (cells at z -4.9 to -5.3 and -7.1)
+  stoneWallRightMid: 0x5c6465, // z -5.9 to -6.6: the flat value the whole wall used to carry
+  stoneWallRightNotch: 0x707b87, // inside the notch, where the light gets in (cell (0.604, 0.932) at z -8.9)
+  stoneWallRightFar: 0x5c6465, // past the notch, back to the flat value; the same hex as Mid, and both are used
   // The retaining wall's mortar BODY, which from the photo camera shows its top strip (x 1.35 to 2.1, at
   // terrace height) and its own shaded face at x = 1.35 -- not the stone faces that catch the light.
   // Lifting it with the stones cost +0.086 over its eleven cells while the stones and the fence cores
@@ -745,8 +860,31 @@ export const COLORS = {
   annexLower: 0x55483f,
   annexFarLower: 0x201a15, // all three of its cells ask for the same 0.55x: (0.271,0.750) #29221e, (0.271,0.795) #291e18, (0.271,0.841) #382c22 against #514137, #45362d, #5f4e44
   annexFarUpper: 0xa08b72,
-  canopy: 0x979899,
+  // The door canopy over the annex's entrance. Its SEVEN scored cells are not one colour and were being
+  // answered by one: the photo reads #b1a79f and #af8455 on the tile field (both LIGHT), #8a5932 and
+  // #6a5a4a on the fascia and #78563c and #645345 on the eave caps (all four WARM BROWN, which is timber
+  // and not kawara). The old 0x979899 is a grey that is none of them, and the fascia and the caps were
+  // derived from it, so the frame's worst cell (0.271, 0.614) rendered #89817c against a photo of #8a5932
+  // -- the red is right and the blue is 74 levels high.
+  //
+  // Where the three hexes come from, since the cells alone do not give them: `canopyFascia` is the
+  // per-channel mean of its two cells (#8a5932 and #6a5a4a give 0x7a573f, exactly), `canopyCap` is the
+  // mean of its two (#78563c and #645345 give 0x6e553f, exactly), and `canopy` is the mean of its two
+  // (#b1a79f and #af8455 give 0xb0957a) with the blue two levels lower, SET BY EYE: the tile field runs
+  // from neutral at its top to warm at its eave and one hex has to serve both ends.
+  canopy: 0xb09578,
+  canopyFascia: 0x7a573f,
+  canopyCap: 0x6e553f,
   steps: 0x96959a,
+  // The main flight's treads are not one value along their length. Over its 22 scored cells the photo is
+  // 20 to 23 levels LIGHTER than the render on the two far rows (v 0.841 and 0.886, which `stairsEndZ`
+  // puts at about z -12 to -14) and within 5 levels of it on the two near rows (v 0.932 and 0.977, about
+  // z -6 to -9). So the treads carry a ramp along z, per slab, and `stepsFar` is its base: `scaleHex` can
+  // only darken, so the LIGHT end has to be the material's own mean and `steps` above is what the near end
+  // darkens to. `stair risers` and the mortar body under them still take `steps` and have not moved.
+  // It is `steps` plus the 20 levels the far rows measured, not a box sampled from the photo: those rows
+  // are stair treads seen nearly edge-on and no box there holds only tread.
+  stepsFar: 0xaaa9ae,
   // Since iteration 2 this is no longer the landing's own slabs: those carry `landingSlab`, `landingShade`
   // and `landingLeft` below. What is left on it is the lit far-street slabs, the right terrace's paved
   // bands, and the hemisphere light's ground tint in src/lighting.js, so changing it still moves the rig
@@ -867,6 +1005,13 @@ export const COLORS = {
   // region is 40 px across in the photo and every box over it holds roof, wall and gap together.
   farRoofNear: 0x5a4838,
   farWall: 0xacafac,
+  // The far houses' own trim, carried as per-instance colours on the shared `far house lips` set (see
+  // src/background.js). All three are DARKER than that set's own mean, which is `darker(farRoof, 0.88)`,
+  // because a per-instance colour can only darken. Set by eye: no box in the photo holds any of them --
+  // these faces are the houses' flanks and back, which the photo camera never sees at all.
+  farLipBand: 0x6d6658, // the floor band under the gable
+  farLipStone: 0x585349, // the stone plinth where the wall meets the slope
+  farLipShutter: 0x332c25, // shuttered openings on the long faces
   farWallLow: 0x776f5f, // below the far roofs; over the band the walls actually fill the photo reads #aaa18d at (0.313,0.659), #b18962 at (0.313,0.705) and #8b8e92 at (0.354,0.705), so the old 0x4e4a3f (taken at (0.354,0.659), the one dark cell there) was 55 levels low
   // The valley beyond the town (src/background.js, outerGround). Set by eye, and marked as such: the
   // photo shows this land only as a pale hazed glimpse past the far houses at u 0.19 to 0.28, v 0.33 to

@@ -79,7 +79,7 @@ export function buildRoofs(b) {
   // on z alone and is applied per tile, so it costs no draw call and no random draw.
   const annexTileColor = (p) => scaleHex(mixHex(C.tileAnnex, C.tileAnnexFar, Math.min(1, Math.max(0, (-p.z - 11.4) / 1.0))), C.tileAnnex);
   tileRoof(b, rand, geos, 'annex roof', steppedRoofCorners(L.LEFT_ANNEX_ROOF), { color: C.tileAnnex, fasciaColor: C.eaveEdge, boardColor: C.house1Wall, rafterColor: C.house1Wall, colorOf: annexTileColor });
-  tileRoof(b, rand, geos, 'door canopy', steppedRoofCorners(L.LEFT_CANOPY), { color: C.canopy, fasciaColor: darker(C.canopy, 0.75), boardColor: C.annex, rafterColor: C.annex });
+  tileRoof(b, rand, geos, 'door canopy', steppedRoofCorners(L.LEFT_CANOPY), { color: C.canopy, fasciaColor: C.canopyFascia, capColor: C.canopyCap, boardColor: C.annex, rafterColor: C.annex });
 
   // House 3's short roof on the photo's eave line; its wall stands 0.1 m behind the eave and the roof
   // overhangs the far end by 0.3 m.
@@ -129,12 +129,23 @@ export function buildRoofs(b) {
     ridge: true,
     fascia: false,
   });
+  // The back slope. Until iteration 6 it was a bare tile plane: no cap row at its eave, no ridge, and a
+  // 0.05 m board, so `npm run views` pose 3 — which is the pose that looks straight at it — showed the
+  // whole roof as one flat light-blue sheet ending in a scalloped line. None of this is in the photo
+  // frustum (`out/scratch/meshes.mjs` marks both the tiles and the board as outside it), so the three
+  // additions here cannot move a scored cell; the eave cap row and the ridge are the two draw calls this
+  // iteration spends, and the board's depth is free.
   tileRoof(b, rand, geos, 'right roof back', [v(M.back + 0.5, topEave, M.roofZ0), v(topRidgeX, topRidgeY, M.roofZ0), v(topRidgeX, topRidgeY, M.z1), v(M.back + 0.5, topEave, M.z1)], {
     color: C.tileRight,
+    capColor: C.topRoofRight,
     boardColor: C.topEaveUnder,
+    // 0.30 m, against the 0.05 m default: this is the roof's own thickness at its eave, seen end-on from
+    // every pose on the right flank, and it is what makes the roof read as a roof rather than as paper.
+    boardThickness: 0.30,
     rafters: false,
-    caps: false,
+    ridge: true,
     fascia: false,
+    decorRand: mulberry32(9311),
   });
 
   fenceRoof(b, rand, geos);
@@ -314,6 +325,12 @@ export function tileRoof(b, rand, geos, name, corners, opts) {
   const seed = 40 + Math.floor(rand() * 1000);
   const halfPlanes = opts.halfPlanes ?? [];
   const keeps = (p) => halfPlanes.every((f) => f(p) >= 0);
+  // `decorRand` is the stream the EAVE CAPS and the RIDGE TILES draw their tint and UV offset from, and it
+  // defaults to the shared one, so every roof that does not pass it lays exactly the tiles it always did.
+  // It exists because turning caps or a ridge on for one roof otherwise adds two draws per piece to a
+  // stream the roofs after it share: `fence roof tiles` is built from this same `rand` and is in the photo
+  // view, and iteration 2 measured a reseed of that kind at 0.0004 of cell distance and 0.0054 of SSIM.
+  const decorRand = opts.decorRand ?? rand;
 
   // Pan tiles in rows from the eave up, aligned columns, each row overlapping the one below.
   const tiles = opts.collect ? opts.collect.tiles : [];
@@ -342,7 +359,7 @@ export function tileRoof(b, rand, geos, name, corners, opts) {
         // lifted point. Harmless for the annex roof's 1 m ramp and not harmless for a sharp threshold.
         const onPlaneEave = onEave.clone();
         const q = onEave.addScaledVector(normal, 0.045);
-        const cap = { position: [q.x, q.y, q.z], basis, tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] };
+        const cap = { position: [q.x, q.y, q.z], basis, tint: 1 + jitter(decorRand, 0.05), uv: [decorRand(), 0] };
         if (opts.colorOf) cap.color = opts.colorOf(onPlaneEave);
         caps.push(cap);
       }
@@ -362,14 +379,16 @@ export function tileRoof(b, rand, geos, name, corners, opts) {
       const onEdge = iN.clone().addScaledVector(along, start + c * 0.3);
       if (opts.ridgeKeep && !opts.ridgeKeep(onEdge)) continue;
       const p = onEdge.addScaledVector(normal, 0.06);
-      ridge.push({ position: [p.x, p.y, p.z], basis: basisAlong(along, normal), tint: 1 + jitter(rand, 0.05), uv: [rand(), 0] });
+      ridge.push({ position: [p.x, p.y, p.z], basis: basisAlong(along, normal), tint: 1 + jitter(decorRand, 0.05), uv: [decorRand(), 0] });
     }
     if (!opts.collect) b.add(instanced(`${name} ridge`, geos.ridge, surface('kawara', opts.ridgeColor ?? darker(color, 0.9), { seed: seed + 2, instancedUv: true }), ridge), `${name} ridge`);
   }
 
   // Roof board under the tiles, the fascia along the eave, and rafters below the board.
   if (opts.boardColor !== undefined) {
-    const t = 0.05;
+    // The board under the tiles. `boardThickness` is the roof's visible depth at its eave; the default is
+    // the 0.05 m every roof in the scene had before iteration 6, so passing nothing changes nothing.
+    const t = opts.boardThickness ?? 0.05;
     const down = normal.clone().multiplyScalar(-t);
     let poly = [oN, iN, iF, oF];
     for (const f of halfPlanes) poly = clipPolygon(poly, f);

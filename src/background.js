@@ -10,7 +10,7 @@ import { makeHillTexture, noise2D } from './textures.js';
 import { buildSky } from './sky.js';
 import { mulberry32, jitter } from './random.js';
 import { tileRoof } from './roofs.js';
-import { darker } from './paving.js';
+import { darker, scaleHex } from './paving.js';
 
 const C = L.COLORS;
 
@@ -22,7 +22,15 @@ const C = L.COLORS;
 // carried smoothly; columns at u >= 0.80 read the right house's roof (their sky reference drops to
 // luma 177 there) and are left where they were.
 // `mountains` reads it too: every card's top edge is tucked under it, so none of them ends in mid-sky.
-const HILL_RIDGE_LINE = [[-3.0, 0.94], [-1.4, 0.47], [-0.5, 0.375], [0.05, 0.345], [0.27, 0.305], [0.36, 0.285], [0.48, 0.225], [0.6, 0.172], [0.72, 0.115], [0.78, 0.092], [0.82, 0.08], [0.95, 0.075], [1.6, 0.07]];
+//
+// PAST u 1.05 THE POLYLINE IS NOT THE PHOTO'S, because the photo does not have one there: the frame stops
+// at u 1.0 and the right machiya covers the hill from u 0.85. It ran straight from (0.95, 0.075) to
+// (1.6, 0.07), which is 0.6 of a frame width — about 380 m of skyline — as one ruled line, and that is the
+// hard straight silhouette every sweep review since iteration 2 has named. The four points added beyond
+// 1.05 are secondary summits. They only ever RAISE the line (smaller v), which widens the gap the mountain
+// cards are hidden in rather than narrowing it, and the lowest of them is v 0.042 against `vTop` 0.03, so
+// the texture's top row still sits above the mesh.
+const HILL_RIDGE_LINE = [[-3.0, 0.94], [-1.4, 0.47], [-0.5, 0.375], [0.05, 0.345], [0.27, 0.305], [0.36, 0.285], [0.48, 0.225], [0.6, 0.172], [0.72, 0.115], [0.78, 0.092], [0.82, 0.08], [0.95, 0.075], [1.05, 0.070], [1.18, 0.045], [1.30, 0.064], [1.42, 0.042], [1.6, 0.058]];
 
 function ridgeVAt(u) {
   const ridge = HILL_RIDGE_LINE;
@@ -167,10 +175,82 @@ function hill(b) {
   // about 8 m of tree.
   const TREE_RISE = 0.015;
   const columns = 420;
-  const rows = 12;
+  // The rows the mesh has always had, as fractions of each column's own ridge-to-foot height.
+  const BASE_ROWS = 12;
+  // How many sub-rows each band from `SUBDIVIDE_FROM` down is cut into, and where that starts.
+  //
+  // WHY NOT JUST 30 EVEN ROWS. The relief below needs rows to carry it — at 12 a band is 0.073 of frame,
+  // 46 m at this depth, and a spur 100 m across came out as two facets. But `rows` is not free in the
+  // scored frame even where the geometry does not move: UV interpolation inside a triangle is
+  // perspective-correct, and this surface's depth changes 200 m from ridge to foot, so a coarser row makes
+  // the rendered texture row drift from the photo row it is meant to be. 30 EVEN rows measured
+  // **+0.0343 at the hill cell (0.771, 0.159) and +0.029 over the four blossom cells at v 0.205**, on a
+  // tree where every one of those cells has relief ramp exactly 0 — the tessellation alone. So the
+  // original twelve row positions are kept to the bit and the extra rows are inserted only BELOW them:
+  // the deepest scored cell at v <= 0.25 is t = 0.165 (a blossom cell at (0.729, 0.250)) and this starts
+  // at t = 0.25. That is NOT the deepest cell the hill reaches — see `reliefRamp` below and `hillBody` in
+  // src/layout.js — so this boundary protects the rows near the ridge and nothing further down.
+  const SUBDIVIDE_FROM = 3; // band index, so t >= 0.25
+  const SUBDIVIDE = 3;
+  const rowV = [];
+  for (let j = 0; j < BASE_ROWS; j++) {
+    const k = j >= SUBDIVIDE_FROM ? SUBDIVIDE : 1;
+    for (let s = 0; s < k; s++) rowV.push((j + s / k) / BASE_ROWS);
+  }
+  rowV.push(1);
+  const rows = rowV.length - 1;
   const ridgeV = ridgeVAt;
   const depthAt = (v) => L.DEPTHS.hill - ((v - 0.07) / 0.73) * 200;
+  // THE ONE AXIS THE PHOTO CANNOT SEE. Every vertex of this mesh is placed by `uvToWorld(u, v, depth)`,
+  // so moving a vertex in DEPTH slides it along its own ray through the photo camera and leaves its photo
+  // position exactly where it was. That is what lets the hill get spurs and gullies without touching the
+  // scored frame: the silhouette, the skyline and the texture mapping are all functions of (u, v).
+  // (Not bit-identical: UV interpolation inside a triangle is perspective-correct, so a vertex that moves
+  // in depth shifts the texture inside its own triangle. WHAT PROTECTS THE CELLS NEAR THE RIDGE IS NOT
+  // THAT THE SHIFT IS SMALL — it is that the relief is exactly 0 at BOTH vertices of every triangle they
+  // fall in, so there is no shift at all there. An earlier version of this comment bounded the shift by a
+  // COLUMN's 0.011 of frame; the depth changes along the ROW edge, not the column edge, and a row near the
+  // ridge is about five times wider in frame than a column, so that bound was taken from the wrong edge.
+  // Lower down the shift is real and is not separated from the two direct terms — see `hillBody` in
+  // src/layout.js for the eleven cells that see this mesh displaced.)
+  //
+  // The ramp is 0 at the ridge line and 0 again at the foot, and both ends are load-bearing. At the ridge
+  // the polyline IS the photo's own skyline (re-read column by column in iteration 4) and must not move
+  // for an orbit either. At the foot the hill meets `outer ground`: the hill's own foot at v 0.95 sits at
+  // y -184 m and that surface is at about -177 m there, so pulling the foot 80 m NEARER would raise it
+  // through the valley floor.
+  //
+  // `t` is the column's OWN height, ridge to foot, not a distance in frame. A fixed 0.09 of frame was the
+  // first version and it cost **+0.0519 over the seven cells at v 0.205**: the hill's skyline is at v 0.10
+  // where the photo frame is and at v 0.94 at the left end, so one frame-distance ramp is a third of the
+  // way down the hill in the photo and past its foot in the sweep. Normalised, relief starts a quarter of
+  // the way down every column, which is v 0.31 at u 0.77 and v 0.59 at u -1.4.
+  //
+  // THAT DOES NOT KEEP THE SCORED CELLS OUT OF IT, and this comment claimed it did. The cherry's cards are
+  // alpha-tested: 391 of the 528 cell rays reach this mesh and 33 have nothing OPAQUE in front, of which
+  // **11 land on a face this ramp has displaced**. The deepest is (0.688, 0.432) at t = 0.368, where the
+  // ramp is 0.88 — past the 0.25 gate, not the t = 0.165 an earlier version quoted (that is the deepest
+  // cell whose FIRST hit is hill-or-blossom-over-hill at v <= 0.25, which is a different question).
+  // See the note on `hillBody` in src/layout.js for the measurement and for what it means for `RELIEF`.
+  const reliefNoise = noise2D(9137);
+  const RELIEF = 46; // metres of depth at the largest octave; the sum reaches about 1.8x it
+  const smooth = (t) => { const c = Math.min(1, Math.max(0, t)); return c * c * (3 - 2 * c); };
+  const reliefRamp = (u, v) => {
+    const t = (v - ridgeV(u)) / Math.max(0.05, vBottom - ridgeV(u));
+    return smooth((t - 0.25) / 0.15) * (1 - smooth((t - 0.80) / 0.18));
+  };
+  const reliefAt = (u, v) =>
+    reliefRamp(u, v) *
+    RELIEF *
+    ((reliefNoise(u * 3.1 + 11, v * 2.2) - 0.5) +
+      (reliefNoise(u * 9.4 + 3, v * 5.1 + 7) - 0.5) * 0.55 +
+      (reliefNoise(u * 23 + 5, v * 11 + 2) - 0.5) * 0.25);
   const positions = [];
+  // The same surface with the relief taken out, built only so `hillShading` can subtract its normals.
+  const flat = [];
+  // How far down its own column each vertex is, 0 until a quarter of the way and 1 by 55%: the same gate
+  // the relief uses, so the body tone below cannot reach a scored cell either.
+  const down = [];
   const uvs = [];
   const u0 = ridge[0][0];
   const u1 = ridge[ridge.length - 1][0];
@@ -178,9 +258,13 @@ function hill(b) {
     const u = u0 + ((u1 - u0) * i) / columns;
     const top = ridgeV(u);
     for (let j = 0; j <= rows; j++) {
-      const v = top + ((vBottom - top) * j) / rows;
-      const p = L.uvToWorld(u, v, depthAt(v));
+      const v = top + (vBottom - top) * rowV[j];
+      const base = depthAt(v);
+      const p = L.uvToWorld(u, v, base + reliefAt(u, v));
+      const q = L.uvToWorld(u, v, base);
       positions.push(p.x, p.y, p.z);
+      flat.push(q.x, q.y, q.z);
+      down.push(smooth(((v - top) / Math.max(0.05, vBottom - top) - 0.25) / 0.30));
       uvs.push(i / columns, 1 - (v - vTop) / (vBottom - vTop));
     }
   }
@@ -197,6 +281,12 @@ function hill(b) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(index);
   geo.computeVertexNormals();
+  const flatGeo = new THREE.BufferGeometry();
+  flatGeo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3));
+  flatGeo.setIndex(index);
+  flatGeo.computeVertexNormals();
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(hillShading(geo.attributes.normal.array, flatGeo.attributes.normal.array, positions, down), 3));
+  flatGeo.dispose();
   // The glare's centre and width are in the texture's own u, which spans photo u0 to u1.
   const map = makeHillTexture({
     size: 4096,
@@ -217,7 +307,88 @@ function hill(b) {
   });
   // alphaTest, not transparent: the crowns above the ridge are a cut-out, and a transparent material here
   // would sort against the sky dome and the mountain cards instead of writing depth like the hill it is.
-  b.add(new THREE.Mesh(geo, makeMaterial({ map, mean: map.userData.mean, side: THREE.DoubleSide, fog: false, unlit: true, alphaTest: 0.5 })), 'hill');
+  b.add(new THREE.Mesh(geo, makeMaterial({ map, mean: map.userData.mean, side: THREE.DoubleSide, fog: false, unlit: true, alphaTest: 0.5, vertexColors: true })), 'hill');
+}
+
+// What the relief above is FOR. The hill is unlit and its texture is a function of (u, v) alone, so
+// displacing vertices in depth alone would change nothing but the silhouette: a bumpy unlit surface reads
+// exactly as flat as a flat one. This bakes two multipliers into the vertex colours.
+//
+// SHADE. The sun sits at photo (0.62, 0.12), which from the photo camera is direction
+// (0.137, 0.184, -0.973): the hill is backlit, every camera-facing facet has n . sun near -0.95, and a
+// spur that turns away catches more. The term is the facet's dot MINUS the same vertex's dot on the
+// un-displaced surface, so the hill stays as dark as the photo says it is while the spurs and gullies
+// model themselves, and a vertex with no relief is left alone to the bit. A second, smaller term does the
+// same for the sky: a facet lying back catches more of it than one standing up.
+//
+// HAZE, and this is the one that changes pose 2. The hill runs from photo u -3.0 to 1.6, which is 4.6
+// frame widths: the part the SCORED frame sees is 490 to 642 m away, and the left end the orbit sweep
+// sees is 1200 m. One flat `hillDeep` covered the lot, which is why every sweep review since iteration 2
+// has called it a dark speckled slab. The mix toward the fog colour is a function of the point's distance
+// from the PHOTO CAMERA, not from the pose being rendered: the hill is half a kilometre out and the
+// orbit's own `controls.maxDistance` is 120 m, so that distance is the same to within a tenth of the ramp
+// from every pose a user can reach.
+//
+// ITS GATE IS DISTANCE ALONE — it does NOT take `down[]`, and a devlog line saying haze and the body tone
+// were "both gated on the same quarter-of-a-column line" was wrong about this half. What keeps it out of
+// the scored frame is the 700 m start against a measured maximum of **642.4 m** over any vertex of any
+// hill triangle that overlaps the photo frame (638.7 m for vertices strictly inside it), at u 0.998,
+// v 0.073 — 58 m of margin. An earlier version of this line said 620 m at u 1.0, v 0.114, which is 19 m
+// low and at the wrong point. Measured by an independent critic, out/scratch/critic/hillreach.mjs.
+//
+// The multiplier is computed as (the displayed colour wanted) / hillDeep per channel, which is exact
+// where the texel IS hillDeep — the whole hill away from the sun's own column — and close elsewhere.
+function hillShading(normal, flatNormal, positions, down) {
+  const n = positions.length / 3;
+  const sunPoint = L.uvToWorld(L.SUN.u, L.SUN.v, 100);
+  const eye = L.CAMERA.eye;
+  const sun = [sunPoint.x - eye.x, sunPoint.y - eye.y, sunPoint.z - eye.z];
+  const sunLen = Math.hypot(...sun);
+  sun.forEach((_, i) => { sun[i] /= sunLen; });
+  // THE BASELINE IS THE SAME SURFACE WITH THE RELIEF TAKEN OUT, vertex by vertex, and it has to be:
+  // the shade is a DIFFERENCE from it, so where the relief ramp is zero the difference is exactly zero
+  // and the scored cells cannot move. Two weaker baselines were measured first. A mesh-wide mean shifts
+  // every row near the ridge, which is the only part the photo frame sees. A PER-ROW mean is not zero
+  // either, because a row of this mesh is not a line of constant v — it runs at a fixed fraction of each
+  // column's own ridge-to-foot height and so follows the skyline's shape — and it left the hill cell
+  // (0.771, 0.159) 0.0343 worse and the four blossom cells at v 0.205 0.029 worse with the relief ramp
+  // at 0 under every one of them.
+  const dots = new Float32Array(n);
+  const ups = new Float32Array(n);
+  const dot = (a, i) => {
+    const nz = a[i * 3 + 2];
+    // The mesh is DoubleSide and `computeVertexNormals` can hand back either face, so take the side that
+    // points at the camera: the hill is a surface, not a solid, and a flipped normal would invert a spur.
+    const flip = nz < 0 ? -1 : 1;
+    return [flip * (a[i * 3] * sun[0] + a[i * 3 + 1] * sun[1] + nz * sun[2]), flip * a[i * 3 + 1]];
+  };
+  for (let i = 0; i < n; i++) {
+    const [d, up] = dot(normal, i);
+    const [d0, up0] = dot(flatNormal, i);
+    dots[i] = d - d0;
+    ups[i] = up - up0;
+  }
+  const deep = [(C.hillDeep >> 16) & 255, (C.hillDeep >> 8) & 255, C.hillDeep & 255];
+  const body = [(C.hillBody >> 16) & 255, (C.hillBody >> 8) & 255, C.hillBody & 255];
+  const fog = [(C.fog >> 16) & 255, (C.fog >> 8) & 255, C.fog & 255];
+  const colors = new Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const shade = Math.max(0.45, Math.min(2.1, 1 + 1.15 * dots[i] + 0.5 * ups[i]));
+    const d = Math.hypot(positions[i * 3] - eye.x, positions[i * 3 + 1] - eye.y, positions[i * 3 + 2] - eye.z);
+    const t = Math.max(0, Math.min(1, (d - 700) / 1000));
+    const haze = t * t * (3 - 2 * t) * 0.62;
+    const bodyMix = down[i];
+    for (let c = 0; c < 3; c++) {
+      const tone = deep[c] + (body[c] - deep[c]) * bodyMix;
+      const want = (tone * shade + (fog[c] - tone * shade) * haze) / 255;
+      // sRGB in, sRGB out: both the wanted colour and hillDeep are display values, and their ratio is
+      // what the map (decoded to linear) has to be scaled by. Taking the ratio in sRGB and applying it in
+      // linear is not the same number, so convert both ends.
+      const lin = (x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4);
+      colors[i * 3 + c] = lin(want) / Math.max(1e-4, lin(deep[c] / 255));
+    }
+  }
+  return colors;
 }
 
 // The ground the far houses and the pines stand on (see farGroundY): plots on both sides of the far
@@ -410,6 +581,7 @@ function farHouses(b) {
   // since iteration 2. A ridge and a lip are what makes a roof read as a roof at this distance.
   const ridgeGeo = ridgeTileGeometry(0.16, 0.5);
   const lipGeo = new THREE.BoxGeometry(1, 1, 1);
+  const lipBase = darker(C.farRoof, 0.88);
   const ridges = [];
   const lips = [];
   // One material per distinct tile colour, built on first use. The first entry's seed is the 51 this had
@@ -455,9 +627,50 @@ function farHouses(b) {
     for (const zEave of [zFront + o, zBack - o]) {
       lips.push({ position: [(x0 + x1) / 2, yEave - 0.19, zEave], scale: [span + 0.1, 0.1, 0.14], uv: [0, 0] });
     }
+    // WHAT THESE HOUSES ARE FROM THE SIDE. `house lower` is one blank box from the gable's band down to
+    // 0.6 m under the street, and these houses stand on the valley's edge, so that box is four to eight
+    // metres of nothing: `npm run views` pose 2 has called it "a plain tan box" since iteration 4 and
+    // out/scratch/posefind.mjs names `far roof d house lower` and `far roof c house lower` as the tall
+    // tower at its left edge. A floor band, a stone plinth and shuttered openings on both long faces are
+    // what a machiya on a slope has, and all of them go into the SHARED `far house lips` set — one unit
+    // box per instance, its own scale and its own colour — so the four houses cost no draw call between
+    // them. Their colours are per-instance, which is why `lipStone` and `lipShutter` are darker than the
+    // set's own mean: `scaleHex` can only darken.
+    // WHICH TWO FACES, and it is measured rather than chosen for tidiness. The photo camera stands at
+    // (0, 4.8, 0) looking along -z and these houses sit at x -6 to -12, z -29 to -36, so it is IN FRONT OF
+    // their +z face and their +x flank and BEHIND the other two; pose 2's eye is at x -19 and sees the -x
+    // flank, which is the face the sweep has been calling a plain tan box. Trim on all four faces was
+    // measured first and cost 0.0014 of SSIM on the GPU arm (0.58067 to 0.57932, against a margin of
+    // 0.0001), split about evenly between the bands and the openings. On the two the camera is behind it
+    // measured 0.058438 / 0.580678 against a control of 0.058440 / 0.580672 — inside the margin, and see
+    // the note below for the sliver that is left.
+    const wallH = yBand - yBase;
+    const xFace = x0; // the flank the photo camera is BEHIND (it sees the +x one, which carries no trim)
+    const zFace = zBack; // and the back
+    // HOW FAR PROUD, and it is not free. These bands stand OUTBOARD of a back-facing plane, and every
+    // house's x0 silhouette edge is inside the photo frame (u 0.055 / 0.094 / 0.170 / 0.277), so a band
+    // shows as a sliver past that edge. At the first version's 0.13 m proud an independent critic measured
+    // 4.3 to 5.8 px of sliver at 1200 px wide, and the whole trim cost 0.000002 of cell distance and
+    // 0.000006 of SSIM on the GPU arm — inside that tool's margin, but not the zero an earlier comment
+    // here claimed. Everything below is that geometry roughly halved: it still reads from the flank.
+    const band = (y, h, out, hex) => {
+      lips.push({ position: [xFace - out, y, (zBack + zFront) / 2], scale: [0.07, h, zFront - zBack], uv: [0, 0], color: scaleHex(hex, lipBase) });
+      lips.push({ position: [(x0 + x1) / 2, y, zFace - out], scale: [x1 - x0, h, 0.07], uv: [0, 0], color: scaleHex(hex, lipBase) });
+    };
+    if (wallH > 1.6) {
+      band(yBand - 0.35, 0.22, 0.04, C.farLipBand);
+      band(yBase + Math.min(1.2, wallH * 0.3), 0.9, 0.05, C.farLipStone);
+      // Shuttered openings on the storey between the band and the plinth, on the same two faces.
+      const openY = yBand - 1.25;
+      const w = Math.min(1.1, (x1 - x0) / 3.2);
+      for (const k of [-1, 1]) {
+        lips.push({ position: [xFace - 0.03, openY, (zBack + zFront) / 2 + k * (zFront - zBack) * 0.24], scale: [0.04, 0.95, Math.min(1.1, (zFront - zBack) / 3.2)], uv: [0, 0], color: scaleHex(C.farLipShutter, lipBase) });
+        lips.push({ position: [(x0 + x1) / 2 + k * (x1 - x0) * 0.24, openY, zFace - 0.03], scale: [w, 0.95, 0.04], uv: [0, 0], color: scaleHex(C.farLipShutter, lipBase) });
+      }
+    }
   }
   b.add(instanced('far house ridges', ridgeGeo, surface('kawara', darker(C.farRoof, 0.82), { seed: 54, instancedUv: true }), ridges), 'far house ridges');
-  b.add(instanced('far house lips', lipGeo, surface('kawara', darker(C.farRoof, 0.88), { seed: 55, instancedUv: true }), lips), 'far house lips');
+  b.add(instanced('far house lips', lipGeo, surface('kawara', lipBase, { seed: 55, instancedUv: true }), lips), 'far house lips');
 }
 
 // The machiya row that lines the right side of the far street, from the foot of the stairs into the

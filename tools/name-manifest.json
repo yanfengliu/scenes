@@ -1,9 +1,9 @@
 {
- "reason": "Critic round 1: the site scan was blind to whole-name idioms, so it missed clearance's own `o.name === 'cherry trunk'` lookup and placement's exact-name object lookup, and this gate's claim to cover every mesh-name rule was false. The scan now also matches name-bearing comparisons, splits and lookups (17 sites, was 14), and that trunk lookup is registered as a rule of its own (53 rules, was 52). No mesh name changed and no population moved.",
- "updated": "2026-09-16",
+ "reason": "Iteration 6: the right machiya back roof slope gained an eave cap row and ridge tiles, so \"right roof back caps\" and \"right roof back ridge\" are two new meshes (255 to 257). No mesh was renamed, no rule population moved, the shadow-caster count is unchanged at 98, and the site scan still finds the same 17 sites.",
+ "updated": "2026-09-17",
  "scene": {
-  "meshes": 255,
-  "names": 255,
+  "meshes": 257,
+  "names": 257,
   "shadowCasters": 98
  },
  "sites": [
