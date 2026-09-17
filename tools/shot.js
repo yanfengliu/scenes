@@ -74,10 +74,22 @@
 // Bounds, and they are real. This refuses a configuration and it does not refuse a dim frame: the rung
 // was NOT the mechanism of the 0e56fc677faf frame, which was drawn at the designed rung with the right
 // size and samples (see docs/devlog/detailed/2026-09-17-shot-rung.md). What is aimed at that class is
-// `compare`'s same-tree light check, and the verdict recorded here is what makes it diagnosable; no
-// ABSOLUTE figure for the light is asserted anywhere, because the light in this scene is a property of
-// the scene, an iteration lane moves it every iteration, and a pinned figure here is one someone has to
-// raise and would eventually raise past the defect.
+// `compare`'s same-tree light check, the ENVIRONMENT refusal below, and the verdict recorded here that
+// makes both diagnosable; no ABSOLUTE figure for the light is asserted anywhere, because the light in
+// this scene is a property of the scene, an iteration lane moves it every iteration, and a pinned figure
+// here is one someone has to raise and would eventually raise past the defect.
+//
+// ---- AND THE LIGHT THE FRAME WAS DRAWN WITH ---------------------------------------------------------
+// The signature of that unexplained frame is the loss of the sky's environment map: removing it puts 416
+// of 528 cells on the bad frame exactly, against 63 for the good one, with a residual below the rounding
+// of the recorded means over 86% of the frame. `src/lighting.js` now proves that map instead of building
+// it and walking away -- it measures the radiance the map carries, the image height three compiles its
+// cube-UV lookup from, which environment each lit program was built against, and what the map actually
+// adds to the photo view -- and reports all of it through `describe().env`. `checkEnvState` below refuses
+// the frame on that state, and the numbers go into the sidecar beside the post block. It costs no
+// round-trip: it rides the evaluate this tool already makes, and `describe()` builds the block without
+// rendering anything. Proved not to move a pixel: out/render.png is byte-identical across the change
+// (sha256 ef7a32617aa6f91f on SwiftShader, both before and after).
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { startServer } from './serve.js';
@@ -199,6 +211,96 @@ function checkPostState(atShot, atReady, warned) {
     + 'it measured, and any "page: post:" line above carries the numbers.',
   );
 }
+// The contract frame is also the frame the environment map actually reached. This throws unless it was.
+//
+// `src/lighting.js` builds an image-based light out of the sky dome, proves it, and reports what it
+// measured through `describe().env`; this is the half that refuses. It exists because of the one frame
+// this gate has drawn that nothing here could explain: on 2026-09-17 `out/render.png` came back
+// 0e56fc677faf scoring 0.0632 / 0.5718 from a tree that scored 0.05958 / 0.57134 in three other runs, and
+// the difference between those two frames is exactly this map's contribution -- 416 of 528 cells land on
+// the bad frame when the environment is removed, against 63 for the good one. The post-chain refusals
+// added the same day cover a DIFFERENT member of that class and are stated as not covering this one.
+// This is the check aimed at it.
+//
+// Three reasons, and each is the only one that survives a different future fault:
+//   - `ok` false is the proof itself failing: a black map, a map whose image height is 0 (which makes
+//     three's cube-UV lookup return black however much radiance the texture holds), lit materials
+//     compiled against a different environment, a swapped or cleared `scene.environment`, an intensity
+//     that is not the rig's, or a map that adds less light to the frame than the floor in ENV_PROBE.
+//     The reasons come up in `why` and every one of them is printed.
+//   - `builds` above 1 is the rig having had to make the map a second time. That frame may well be
+//     byte-identical to the contract -- the sky dome is deterministic, so a good rebuild is the same map
+//     -- and it is refused anyway, because the first build carrying no light is the 2026-09-17 event
+//     happening in front of us and a green run would bury it in a log nobody reads. This is the one
+//     refusal here that is about the machine rather than about the pixels.
+//   - No state at all means the page is not reporting it, and a frame with no record of its light is
+//     exactly what 2026-09-17 was.
+//
+// Its bound: the map and the contribution are measured ONCE, when the rig is built. A map that goes black
+// after that is invisible to this, and only the cheap half -- the identity of the texture, its height,
+// the intensity and the per-material binding -- is re-read at the shot. There is no watchdog for the
+// light the way there is one for the post chain.
+// ONE SCENE IS REQUIRED TO CARRY THIS, NOT EVERY SCENE, and that is the whole reason `required` exists.
+// The proof is in `src/lighting.js`, which is scene 1's rig; a second scene has its own folder under
+// `src/` and its own rig -- `src/whitehouse/lighting.js` assigns `scene.environment` with no proof around
+// it and `src/whitehouse/main.js`'s `describe()` returns no `env` at all. `tools/test.js` runs this tool
+// for every scene, so demanding the block unconditionally would have made `SCENE=whitehouse npm test` an
+// unconditional red on a scene this lane never touched. Caught by an independent review before it shipped.
+// A scene that reports a block is CHECKED whatever scene it is; only the default scene must have one.
+function checkEnvState(env, required) {
+  if (!env) {
+    if (!required) {
+      console.log(
+        "this scene's rig does not prove its environment map, so there is no light record beside this "
+        + 'frame. src/lighting.js does it for scene 1; a scene with its own rig under src/ carries its own '
+        + 'or carries none.',
+      );
+      return;
+    }
+    throw new Error(
+      'the page reported no environment state at all (window.__scene.describe().env was null), so there is '
+      + 'no record of the light this frame was drawn with and it cannot be accepted as the contract. '
+      + 'src/lighting.js sets it in installEnvironment, which buildLighting calls before src/main.js '
+      + 'builds the composer, so a null here means the rig was never built or the page is not this scene.',
+    );
+  }
+  const why = [];
+  if (env.ok !== true) why.push(...env.why);
+  if (env.builds > 1) {
+    // The second half of this sentence branches on whether the rebuild actually worked, because it did
+    // not in two of the four mutations that reach here and a message promising "the frame may be
+    // identical to the contract" about a frame drawn with a dead map would send a reader looking for
+    // something that is not there. Caught by an independent review after the headline had already been
+    // fixed for the same reason.
+    why.push(
+      `the sky's environment map had to be built ${env.builds} times, so the first build of it on this run `
+      + 'was black or the wrong shape'
+      + (env.ok === true
+        ? '. The frame may well be identical to the contract -- the dome is deterministic, so a rebuild '
+          + 'that works is the same map -- and it is refused anyway: a first build that carries no light is '
+          + 'the unexplained 2026-09-17 flake happening on this machine, and it must not be scored as if '
+          + 'nothing had happened. Run npm run shot again'
+        : ', and the rebuild did not fix it either, for the reason(s) above')
+      + '. docs/devlog/detailed/2026-09-17-env-proof.md says what to read next.',
+    );
+  }
+  if (!why.length) return;
+  // The headline says which of the two happened, because they are different faults and a message that
+  // said "did not get the light" about a frame that got all of it -- a rebuild that then worked -- would
+  // send a reader looking for a dark frame that does not exist.
+  const lead = env.ok !== true
+    ? 'this frame did not get the light the scene is supposed to have, so it is not the contract docs/PLAN-scores.md records:'
+    : 'this frame got the light it should have, and the map behind it did not build cleanly, so it is not the contract docs/PLAN-scores.md records:';
+  throw new Error(
+    `${lead}\n  ${why.join('\n  ')}\n`
+    + `  The map measured mean luma ${env.map.meanLuma} over its own texels and added `
+    + `${env.contribution.delta} of a luma level to the photo view (${env.contribution.withEnv} against `
+    + `${env.contribution.without} with the environment turned off), against a floor of ${env.floor}; `
+    + `${env.binding.mismatched} of ${env.binding.compiled} lit materials with a program disagree about `
+    + `which environment they were compiled for. The frame has NOT been left at ${OUT}. `
+    + 'src/lighting.js says what each of those numbers is and what a healthy one looks like.',
+  );
+}
 // Read BEFORE the page is opened, so it is the tree the browser is about to load and not whatever is on
 // disk when the screenshot lands. Read again at the end and compared: an edit that arrives mid-run makes
 // the frame a mixture, and a mixture must not be recorded as either tree.
@@ -250,16 +352,18 @@ try {
   // and let the frame loop present two more frames so the compositor has the canvas the screenshot
   // captures.
   //
-  // It returns `describe().post` as its LAST act, after both settle frames, so the post state recorded
-  // beside the render is the one the shot frame was drawn with rather than the one readiness reported.
-  // Free: this evaluate was already being made and already waiting out those frames.
-  const postAtShot = await page.evaluate(async (css) => {
+  // It returns `describe()`'s post-chain and environment state as its LAST act, after both settle frames,
+  // so what is recorded beside the render is what the shot frame was drawn with rather than what readiness
+  // reported. Free: this evaluate was already being made and already waiting out those frames, and
+  // `describe()` builds both blocks without rendering anything.
+  const { post: postAtShot, env: envAtShot } = await page.evaluate(async (css) => {
     const style = document.createElement('style');
     style.textContent = css;
     document.head.appendChild(style);
     window.__scene.setTime(0);
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-    return window.__scene.describe().post;
+    const described = window.__scene.describe();
+    return { post: described.post, env: described.env };
   }, HIDE_UI_CSS);
   mkdirSync(scene.out, { recursive: true });
   await page.screenshot({ path: OUT, type: 'png' });
@@ -267,6 +371,7 @@ try {
   // check above, so the `rmSync` in the failure path takes the render and its sidecar with it: a frame
   // drawn at a lesser rung must not be left for `compare` to score as the contract.
   checkPostState(postAtShot, info.post, postWarnings(page));
+  checkEnvState(envAtShot, isDefaultScene);
   // The tree must not have moved under the run. If it did, this frame is a mixture of two trees and
   // neither hash describes it, so there is nothing honest to record: fail, and let the `rmSync` below
   // take the render with it.
@@ -296,6 +401,11 @@ try {
     // designed; the verdict numbers inside it are the record that makes a flake diagnosable, and no
     // absolute figure for them is asserted anywhere (see the header).
     post: postAtShot,
+    // And the light feeding that chain: what src/lighting.js measured of the environment map it built,
+    // plus the cheap half re-read at the shot. `compare` refuses a sidecar without it or with a state
+    // that is not ok. No absolute figure is asserted anywhere for the same reason the post verdict's
+    // numbers are not: the light in this scene is a property of the scene and an iteration lane moves it.
+    env: envAtShot,
     wroteAt: new Date().toISOString(),
   }, null, 1)}\n`);
   console.log(`wrote ${OUT} (${SHOT.width}x${SHOT.height})`);
@@ -305,6 +415,15 @@ try {
     + `non-finite, mean luma ${postAtShot.verdict.meanLuma} against a plain-render reference of `
     + `${postAtShot.verdict.referenceLuma} (${postAtShot.verdict.lightKept} of it kept)`,
   );
+  if (envAtShot) {
+    console.log(
+      `environment map: mean luma ${envAtShot.map.meanLuma} over ${envAtShot.shape.width}x${envAtShot.shape.height} `
+      + `(${envAtShot.map.badTaps}% non-finite), adding ${envAtShot.contribution.delta} of a luma level to the `
+      + `photo view (${envAtShot.contribution.withEnv} against ${envAtShot.contribution.without} with it off, `
+      + `floor ${envAtShot.floor}); ${envAtShot.binding.compiled} of ${envAtShot.binding.lit} lit materials `
+      + `have a program and ${envAtShot.binding.mismatched} disagree${envAtShot.builds > 1 ? `; the map was built ${envAtShot.builds} times` : ''}`,
+    );
+  }
   // The watchdog's counters, printed whenever they are not all zero. A contradicted black reading does
   // not fail this gate -- the frame it was about turned out to be fine -- but it is the event that made
   // this run's first frames different from every other run's, and a log that hid it would hide the one
