@@ -14,7 +14,8 @@
 import * as THREE from 'three';
 import { DIMS, COLORS, TERRACE, NORTH_LAWN, frameWidthAtZ } from './layout.js';
 import { mulberry32, uniform } from '../random.js';
-import { albedoOf, makeMaterial } from '../materials.js';
+import { albedoOf, albedoScaleOf, makeMaterial } from '../materials.js';
+import { speckleTexture } from './grass.js';
 
 // A smooth 0..1 ramp, 0 at or below `a` and 1 at or above `b`. Used for every edge the mowing modulation
 // has, because a stepped edge is the defect this file was rewritten for.
@@ -130,6 +131,33 @@ export function buildGrounds(b) {
   const LAWN_LIFT = 1.15;
   const LAWN_BASE = tintHex(0x647828, 1.01375 * LAWN_LIFT);
   const lawnBase = albedoOf(LAWN_BASE);
+  // ---- BLADE-SCALE SPECKLE, which the flat lawn had no counterpart for and which is the whole of this pass
+  // The photograph's near lawn is dense blade speckle: measured over u 0.20-0.80, v 0.90-0.98 it has sd 29.5
+  // luma and a mean |gradient| of 23.5 levels/px, and the render's same box had sd 2.8 and 0.124. That
+  // measurement is out/wh/scratch/whlawnstat.mjs, and the generator, its pitches, its mean and why it is a
+  // modulation rather than geometry are in src/whitehouse/grass.js. WHAT IS HERE IS THE PART THAT IS THIS
+  // FILE'S: the mesh's own UVs and the decision not to touch the mowing field.
+  //
+  // THE UVs ARE PLANAR FROM (x, z) AT THE TEXTURE'S OWN WORLD PITCH, so the speckle is continuous across
+  // every cell of the 2 m grid -- a grid whose own edges would show as straight lines in a high-pass if each
+  // cell carried its own copy. A 1.5 m vertex spacing cannot carry an 8 cm grain, and does not have to: the
+  // grain is per-TEXEL, and all the mesh has to do is give the texture a world-locked coordinate.
+  //
+  // IT IS BOUND TO `aoMap` AND THE SECOND UV SET, NOT TO `map`, and the reason is in grass.js's header: a
+  // modulation that averages one cannot be an 8-bit map in the albedo slot, because that slot's map is
+  // multiplied by the material's colour as well, and the lawn's albedo is already in the vertex colours.
+  // `aoMap` multiplies `diffuseColor` once, on its own texture unit, and leaves the albedo path alone.
+  //
+  // THE MOWING FIELD IS UNTOUCHED. MOW_X and MOW_Z are still 0.020 and 0.072 and the vertex colours still
+  // carry them. What changed is the variance around them and the material's own colour, which is
+  // `albedoScaleOf(LAWN_BASE)` divided by the map's measured mean and then corrected per channel -- see the
+  // long note at the material. The photograph's lawn rows read luma 101 to 114
+  // (out/wh/scratch/meanbox.mjs), and the near-lawn box is measured against the zero-variance control after
+  // every change to either number.
+  const speckle = speckleTexture();
+  // The texture's own world pitch, read off the texture rather than from a second import of the config, so
+  // the UVs and the map cannot disagree about how many metres one tile covers.
+  const UV_PER_METRE = 1 / speckle.userData.metres;
   const PASS = 19.0; // the mowing passes' own width, across the frame
   const PASS_Z = 24.0; // and the slower change with depth
   const MOW_X = 0.020; // each pass's own reflectance against the mean
@@ -193,12 +221,16 @@ export function buildGrounds(b) {
   {
     const pos = [];
     const col = [];
+    const uv = [];
     const idx = [];
     for (let j = 0; j < zs.length; j++) {
       for (let i = 0; i < xs.length; i++) {
         pos.push(xs[i], groundY(zs[j]), zs[j]);
         const c = lawnColour(xs[i], zs[j]);
         col.push(c[0], c[1], c[2]);
+        // The speckle's own planar coordinate, in world metres over the texture's world pitch. RepeatWrapping
+        // takes the integer part; the field is built to tile on both axes, so the wrap is invisible.
+        uv.push(xs[i] * UV_PER_METRE, zs[j] * UV_PER_METRE);
       }
     }
     for (let j = 0; j < zs.length - 1; j++) {
@@ -214,11 +246,93 @@ export function buildGrounds(b) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    // THE SPECKLE'S OWN COORDINATE IS uv1, AND IT IS THE ONLY REASON THE MESH HAS TWO UV SETS. three binds
+    // `aoMap` to uv1 when the material has no `map` and the geometry carries the attribute, so the speckle
+    // gets its own texture unit and its own coordinate while the vertex colours keep the albedo and the
+    // mowing field untouched. Same planar (x, z) coordinate in world metres over the texture's world pitch;
+    // RepeatWrapping takes the integer part, and the field is built to tile on both axes, so the wrap is
+    // invisible. `uv` is also written because three falls back to it for any pass that still wants one.
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('uv1', new THREE.Float32BufferAttribute(uv.slice(), 2));
     geo.setIndex(idx);
-    geo.computeVertexNormals();
+    // EVERY VERTEX NORMAL IS +y, AND THAT IS THE SURFACE, NOT AN APPROXIMATION. `computeVertexNormals` was
+    // here and every interior normal it produced was already (0, 1, 0) to within float error, because the
+    // slab's own triangles are and the rise is linear; what it did NOT produce was exactness, and a normal a
+    // few ULP off +y is a shading term that changes when nothing moved -- the one thing `npm run nudge`
+    // measures. The mowing field is in the vertex colours and stays there; the normal is a constant.
+    const nrm = new Float32Array(pos.length);
+    for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    // ---- THE MATERIAL'S COLOUR: PER CHANNEL, BECAUSE THE SCALAR WAS THE BUG ----------------------------
+    // `lawnColour` puts the LAWN'S OWN ALBEDO times the mowing field into the vertex colours, so the colour
+    // path is the one the flat lawn already had. What is built here is `albedoScaleOf(LAWN_BASE)` -- exactly
+    // the scalar `makeMaterial({ mean: LAWN_BASE })` used to compute -- divided by the map's own measured
+    // linear mean:
+    //
+    //     colour = albedoScaleOf(LAWN_BASE) / speckle.userData.mean
+    //
+    // Pass C instead wrote `albedoOf(LAWN_BASE) * albedoScaleOf(LAWN_BASE) * (1/mean) * LEVEL` with a single
+    // fitted scalar LEVEL = 5.87, on the stated argument that "the scalar is uniform across the three
+    // channels, so it changes the level and not the hue". THAT ARGUMENT IS FALSE and it cost the lawn its
+    // colour. `albedoOf` and `albedoScaleOf` are PER-CHANNEL inverse tone-curve ratios -- measured,
+    // `albedoOf(LAWN_BASE)*albedoScaleOf(LAWN_BASE)` gives a material colour whose ratio to the flat
+    // material's own is 0.780, 1.153, 0.160 in R, G and B -- so any uniform scalar laid on top of them
+    // lands the three channels in three different places on the tone curve, and blue is the one that moves
+    // furthest. Measured on the near-lawn box (u 0.20-0.80, v 0.90-0.98), pass C's material rendered
+    // `#56750d` (85.5, 117.2, 12.9) against the flat lawn's own `#6f762f` (110.6, 118.2, 46.7): the blue
+    // channel lost 34 of its 47 levels, which is ~6.25x, and 85 % of the whole frame's cell-distance
+    // regression sat on the 120 lawn cells with exactly this signature (a per-channel offset at a nearly
+    // constant luma). Out of `out/wh/scratch/whhue.mjs`, and attributed by `whattr.mjs`/`whattrmap.mjs`.
+    //
+    // The `1/mean` alone is exact and is what makes the map a pure modulation; the texture's own residual is
+    // the second factor below, and it is the only fitted-looking number in this file.
+    //
+    // The same texture in the ALBEDO slot instead, which is where this started, reads 28.77 on that box --
+    // the albedo counted a second time, because three multiplies the material's colour by the map as well as
+    // by the vertex colours. That number is why the speckle is in the `aoMap` slot, whose `aomap_fragment`
+    // multiplication is the only one that leaves the albedo path alone.
+    //
     // DoubleSide because the camera clamp's floor is the wall's own grade, not the lawn's, so a user flying
     // north at 1 m can put the eye under the rise; a one-sided surface there is a hole to the sky.
-    const lawn = new THREE.Mesh(geo, makeMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.9 }));
+    const scale = albedoScaleOf(LAWN_BASE);
+    const compensation = speckle.userData.factor;
+    // ---- THE RESIDUAL CORRECTION, IN TWO MEASURED PARTS ------------------------------------------------
+    // PART 1, the texture's own variance: a modulation with variance does not display the same tone as a
+    // constant at the same mean, because the rig's tone curve is not linear -- the mean of T(m) over a
+    // distribution of m is not T(mean m). Measured on the near-lawn box, textured against the SAME material
+    // with the map flattened to its own mean (same albedo, same slot, same uv1, same compensation, same mip
+    // chain, only the variance differing): rgb(102.88, 116.19, 53.09) against rgb(109.73, 123.02, 54.74),
+    // i.e. the variance alone costs 6.2 luma and pulls red and blue about 6.5 % and 3 % further than green.
+    // The ratio between those two states, per channel, is 1.06653 / 1.05874 / 1.03092 -- re-measurable in one
+    // page load by `node out/wh/scratch/whcorr.mjs <mean> <sd>`, with both states named.
+    //
+    // PART 2, the lawn's chroma against the PHOTOGRAPH, which is not the same question and is measured
+    // separately. With part 1 alone the near-lawn box reads rgb(107.1, 120.2, 40.3) against the photograph's
+    // own lawn cells at rgb(98.2, 120.7, 43.1) and against `COLORS.lawnNear` 0x647b2c = (100, 123, 44): the
+    // texture had removed pass C's blue loss, but the render's own lawn colour still carried red 7 to 9 levels
+    // high and blue a few high, which is what makes the crop read yellow-olive beside the photograph's green.
+    // Cutting red to 0.91 and blue to 0.60 of part 1 lands the box at rgb(100.6, 119.3, 40.3), within 2.4 of
+    // the photograph in every channel, and it is what moved the scored cell distance 0.0992 -> 0.0975.
+    //
+    // BOTH PARTS ARE MEASURED, and the two chroma factors are the only place in this file where a number was
+    // found by moving it and watching the score. The blue factor has an optimum: 0.60 scores 0.0975, 0.30
+    // scores 0.1029, and 0.85 scores 0.0995, so it is a real minimum and not the edge of a cliff. They are
+    // recorded here as tuning, not as derivation, and they belong to this scene's rig and its photograph:
+    // re-measure both parts if the map's mean, its sd, or the rig's tone curve changes.
+    const VARIANCE_FIX = [1.06653 * 0.91, 1.05874, 1.03092 * 0.60];
+    const lawn = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      aoMap: speckle,
+      color: new THREE.Color().setRGB(
+        scale.r * compensation * VARIANCE_FIX[0],
+        scale.g * compensation * VARIANCE_FIX[1],
+        scale.b * compensation * VARIANCE_FIX[2],
+        THREE.LinearSRGBColorSpace,
+      ),
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      roughness: 0.9,
+      metalness: 0,
+    }));
     lawn.receiveShadow = true;
     b.add(lawn, 'north lawn');
   }
