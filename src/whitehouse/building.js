@@ -126,9 +126,9 @@ export const OCCLUSION = {
   //     is what the next pass should judge this surface by rather than this number.
   porchInterior: 0.55, // the porch's own shade: the wall behind the columns, the recess and both soffits
   soffit: 0.16, // the porch's ceiling alone: fully roofed, and the photograph's darkest large area
-  tympanum: 0.44, // the triangle inside a pediment, set back behind its raking cornices
+  tympanum: 0.65, // the triangle inside a pediment, set back behind its raking cornices
   porchFloor: 0.42, // the porch deck, which the colonnade and the entablature stand over
-  column: 0.55, // a shaft's own mean: it sees the sky above the entablature and the porch's shade below
+  column: 0.85, // a shaft's own mean: it sees the sky above the entablature and the porch's shade below
   underCornice: 0.68, // the wall a projecting cornice shades
   eaveUnder: 0.30, // the underside of any projecting band: a cornice, a belt course, a sill, a ramp
   baseCourse: 0.80, // the wall's lowest course, against the terrace and the planting
