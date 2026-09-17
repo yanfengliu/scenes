@@ -65,20 +65,125 @@ const DENTIL_PITCH = 0.42; // [estimate] from the photograph's own dentil row
 const DENTIL_WIDTH = 0.22;
 const PIER_PITCH = 6.2; // [estimate] the piers the balustrade breaks into, as the photograph shows
 
+// ---- how much ambient a structurally shaded face sees ------------------------------------------------
+// THE NUMBER THIS SCENE DID NOT HAVE, AND WHAT IT IS NOT.
+//
+// The term works by scaling the albedo, because three's indirect diffuse is linear in it and the direct
+// lights are not (see src/materials.js albedoOf). An occlusion of c therefore multiplies a surface's
+// AMBIENT by c, and the first two passes at these numbers were guesses. What the measurements then said,
+// and what a reader should take from this block before changing a value here:
+//
+//   * out/wh/scratch/probe.mjs: at c 0.44 the porch's soffit displayed luma 96 against the photograph's 71,
+//     and at c 0.12 it displayed 248 -- BRIGHTER, not darker, and the whole frame went with it (cell
+//     distance 0.1483 -> 0.1893, SSIM 0.1371 -> 0.1006). The reason is that an occluded surface also stops
+//     reflecting the environment map, and `makeMaterial` sets envMapIntensity = c for exactly that; at
+//     c 0.12 the soffit loses the environment's specular but keeps every direct light, and the sun reaches
+//     under the entablature from the north-east.
+//   * the values that measured best are the ones below, and they are the ones the brief's own comparison
+//     supports: at these numbers the porch's recess reads luma 116 at (0.5, 0.40) against the photograph's
+//     101, and the soffit 96 against 71.
+//
+// So these are NOT solved from a closed form and the arithmetic in an earlier version of this comment was
+// wrong. They are A/B'd, one surface class at a time, against the photograph's own boxes.
+export const OCCLUSION = {
+  // THE FIRST THREE ARE THE FRAME'S DARKNESS AND THEY WERE ALL SET TOO HIGH. The coordinator's own
+  // measurement (out/critic/measure.mjs) is the finding: the photograph's fifth-percentile pixel is luma 7.5
+  // with 6.9% of the frame below 16, and this render's was luma 84 with 1.9% below 16 -- NOTHING IN THE
+  // FRAME WAS ALLOWED TO BE DARK. These three are the surfaces the photograph is unambiguous about: the
+  // hedge band (sampled #12140c), the window glass (the darkest large-area tone on the facade) and the
+  // tympanum. Each was carrying a fraction of the ambient close enough to 1 that the sampled near-black hex
+  // could not survive the rig.
+  reveal: 0.30, // the window's own glass and reveal
+  // ---- THE PORCH'S INTERIOR: WHAT WAS MEASURED, WHAT WAS DONE, AND WHAT THE TERM IS NOT ----------------
+  // The defect is real and it is measured at 1200x900 over the porch between the two inner columns
+  // (out/critic/wh3band.mjs, u 0.47..0.53 -- clear of both shafts -- render luma against the photograph's):
+  //
+  //   v 0.38-0.40   the recess wall's head            195 against  63-92    2.1x
+  //   v 0.42-0.47   the recess between the columns    140 against  62-63    2.2x
+  //   v 0.44-0.52   the wall behind the shafts        226 against  43-74    3.4x
+  //   v 0.36-0.60   the two shafts themselves         142-175 against 99-146  1.2x
+  //
+  // so the photograph has the porch's interior at 0.4 of the shafts in front of it and this render had it at
+  // 1.3 -- the porch read as a flat panel with columns painted on it.
+  //
+  // WHAT WAS DONE ABOUT IT, and the pass has to be honest that this is not the occlusion term:
+  //   * `portico.js` had NO castShadow anywhere, so the sun -- which stands north-east and 42 degrees up,
+  //     i.e. in front of the north front -- reached straight into the recess. The pediment's raking cornices
+  //     and the frieze are casters now, and they put the porch in its own shade, which is what sky.js's own
+  //     comment claims the rig does. That is the part of this that is a real fix.
+  //   * THE OCCLUSION TERM IS NOT THE LEVER, and this is the finding of the bisect rather than of an
+  //     argument. out/critic/wh3occ.mjs sweeps the recess wall from 0.55 down to 0.03 IN ONE PAGE and reads
+  //     the frame at each value: the wall's displayed luma falls monotonically as the occlusion RISES
+  //     (134 at 0.55, 186 at 0.26, 248 at 0.03). That is the opposite of what the term means, and the
+  //     reason is in materials.js: the occlusion scales the ALBEDO by 1/occlusion as well as the ambient by
+  //     occlusion, and 1/occlusion grows faster than the ambient it is standing in for, so past about 0.55
+  //     every step "darker" is a step brighter. The wall also takes 0 luma from the sun in the shipped
+  //     frame (out/critic/wh3light.mjs: 227 with the sun, 227 with it switched off), so what sets its tone
+  //     is the sky hemisphere and the PMREM environment, neither of which this number touches.
+  //   * full renders at 0.26 and at 0.10 both made BOTH scores worse (cell 0.1120 -> 0.1167 -> 0.1218,
+  //     SSIM 0.3540 -> 0.3176 -> 0.2984), which is the same result the re-layout pass got from 0.42, 0.25
+  //     and 0.05. So the value is left at the one the evidence supports, and the crop beside the photograph
+  //     is what the next pass should judge this surface by rather than this number.
+  porchInterior: 0.55, // the porch's own shade: the wall behind the columns, the recess and both soffits
+  soffit: 0.16, // the porch's ceiling alone: fully roofed, and the photograph's darkest large area
+  tympanum: 0.44, // the triangle inside a pediment, set back behind its raking cornices
+  porchFloor: 0.42, // the porch deck, which the colonnade and the entablature stand over
+  column: 0.55, // a shaft's own mean: it sees the sky above the entablature and the porch's shade below
+  underCornice: 0.68, // the wall a projecting cornice shades
+  eaveUnder: 0.30, // the underside of any projecting band: a cornice, a belt course, a sill, a ramp
+  baseCourse: 0.80, // the wall's lowest course, against the terrace and the planting
+  planting: 0.08, // a clipped hedge's own interior: the photograph samples it at #12140c, nearly black.
+  // THIS ONE IS KEPT FROM THE DARK-SHADOW PASS even though the frame's own p5 did not move with it: the
+  // planting's 0.42 was measured against the hedge's box and left the band at luma 145 where the photograph
+  // has 18 to 45, and the coordinator's crop is unambiguous that the band must read dark.
+};
+
 // A six-over-six sash in plan-relief against the wall. Returns nothing; it adds to b. The glass is a dark
 // recess and the muntins and the meeting rail are the wall's own trim laid over it, which is how the
 // photograph reads at this scale: the sash is a grid of light bars on a dark rectangle.
+//
+// THE REVEAL IS TWO STEPS, NOT ONE FLAT SLAB. A single recessed plane reads as a rectangle painted on the
+// wall, which is what the coordinator's brief item 1 reports; what the photograph shows is a jamb that
+// catches its own light on one side and falls into shade on the other, and a head with a dark line under
+// it. So the reveal is the wall's own thickness stepped twice in z, each step darker than the one outside
+// it, and the outermost step is wide enough (0.12 m) that it survives to two pixels at this camera.
 function sash(b, name, cx, cy, w, h, depth) {
   const glass = { x0: cx - w / 2, x1: cx + w / 2, y0: cy - h / 2, y1: cy + h / 2, z0: depth.z0, z1: depth.z1 };
-  b.box(`${name} glass`, glass, COLORS.windowGlass);
+  b.box(`${name} glass`, glass, COLORS.windowGlass, { occlusion: OCCLUSION.reveal });
   const bar = 0.055; // [estimate] a muntin at the photograph's own 1 px
   const z = depth.z0 - 0.03;
-  b.box(`${name} meeting rail`, { x0: cx - w / 2, x1: cx + w / 2, y0: cy - bar / 2, y1: cy + bar / 2, z0: z, z1: z + 0.05 }, COLORS.windowTrim);
-  b.box(`${name} stile`, { x0: cx - bar / 2, x1: cx + bar / 2, y0: cy - h / 2, y1: cy + h / 2, z0: z, z1: z + 0.05 }, COLORS.windowTrim);
+  b.box(`${name} meeting rail`, { x0: cx - w / 2, x1: cx + w / 2, y0: cy - bar / 2, y1: cy + bar / 2, z0: z, z1: z + 0.05 }, COLORS.windowTrim, { occlusion: 0.72 });
+  b.box(`${name} stile`, { x0: cx - bar / 2, x1: cx + bar / 2, y0: cy - h / 2, y1: cy + h / 2, z0: z, z1: z + 0.05 }, COLORS.windowTrim, { occlusion: 0.72 });
   for (const side of [-1, 1]) {
     for (const frac of [1 / 3, 2 / 3]) {
       const y = cy + side * (h / 2) * (2 * frac - 1);
-      b.box(`${name} muntin ${side} ${frac.toFixed(2)}`, { x0: cx - w / 2, x1: cx + w / 2, y0: y - bar / 2, y1: y + bar / 2, z0: z, z1: z + 0.05 }, COLORS.windowTrim);
+      b.box(`${name} muntin ${side} ${frac.toFixed(2)}`, { x0: cx - w / 2, x1: cx + w / 2, y0: y - bar / 2, y1: y + bar / 2, z0: z, z1: z + 0.05 }, COLORS.windowTrim, { occlusion: 0.72 });
+    }
+  }
+}
+
+// The reveal's own two steps: an outer band of the wall's trim in half shade, and an inner return that is
+// the darkest surface in the opening. `w` and `h` are the GLASS's own size; the bands lie outside it, and
+// they are built from the wall face z0 inward to zw (the glass's own plane), so the opening is a real
+// recess in the wall's thickness rather than a rectangle painted on it.
+function revealSteps(b, name, cx, cy, w, h, z0, zw) {
+  // The outer step stands proud of the wall by 2 cm so no face of it is coplanar with the wall's own plane;
+  // a coplanar pair z-fights, and this scene has already paid for that once (see the north wall's bands).
+  for (const [tag, pad, zOut, zIn, occl, color] of [
+    ['outer', 0.13, z0 + 0.02, z0 - 0.14, 0.66, COLORS.windowTrim],
+    ['inner', 0.05, z0 - 0.14, zw, 0.34, COLORS.underPortico],
+  ]) {
+    const yBot = cy - h / 2;
+    const yTop = cy + h / 2;
+    b.box(`${name} reveal ${tag} head`, { x0: cx - w / 2 - pad, x1: cx + w / 2 + pad, y0: yTop, y1: yTop + 0.15, z0: zIn, z1: zOut }, color, { occlusion: occl });
+    b.box(`${name} reveal ${tag} sill`, { x0: cx - w / 2 - pad, x1: cx + w / 2 + pad, y0: yBot - 0.15, y1: yBot, z0: zIn, z1: zOut }, color, { occlusion: occl });
+    for (const side of [-1, 1]) {
+      b.box(
+        `${name} reveal ${tag} jamb ${side < 0 ? 'west' : 'east'}`,
+        { x0: side < 0 ? cx - w / 2 - pad : cx + w / 2, x1: side < 0 ? cx - w / 2 : cx + w / 2 + pad, y0: yBot, y1: yTop, z0: zIn, z1: zOut },
+        color,
+        { occlusion: occl },
+      );
     }
   }
 }
@@ -182,64 +287,86 @@ export function buildBuilding(b) {
 
   // ---- the terrace the north front stands on ----------------------------------------------------------
   // The "raised carriage ramp and parapet". Its top is the wall's own base at TERRACE.baseY; its face drops
-  // to the lawn at TERRACE.outerZ. Split either side of the centre so the portico's steps get the middle.
+  // to the lawn at TERRACE.outerZ. Split either side of the centre so the portico's own floor takes the
+  // middle (the two must not share a top face, or the two coplanar decks z-fight).
   //
-  // THE BAND THE PHOTOGRAPH SHOWS BELOW THE WALL'S BASE IS THIS TERRACE'S OUTER RIM, PLANTED. The terrace is
-  // 2.976 m tall because the wall's base is, and the camera is 9.086 m up at 47.863 m, so everything the
-  // frame shows between the wall's base row and the lawn is the terrace's own outer face. A separate hedge
-  // standing behind that face is not in the frame at any height that would not also hide the wall, which is
-  // why grounds.js no longer builds one. The face is therefore built as one prism with two parts: a shallow
-  // step of the terrace's own stone at the top -- the "parapet" of the raised ramp, which is the pale line
-  // the photograph shows just under the wall -- and the planted slope below it, which is the photograph's
-  // dark band. One prism, so nothing coincides with anything and nothing is hidden behind anything.
-  const stepGap = 13.5;
+  // IT PROJECTS NORTH, INTO +z, AND EVERY PROFILE COORDINATE BELOW IS NEGATED z: primitives.js's
+  // profileSolid reads its own profile along -z, so a feature at world z = +2 is passed as -2. The previous
+  // pass passed them unnegated, which put the whole terrace -- deck, step and planted rim -- at z -1.9 to
+  // -3.4, i.e. INSIDE AND BEHIND the north wall, and left only the deck's box face at z +0.2 showing in a
+  // frame that has the whole of the north grounds on that side of it.
+  //
+  // HOW DEEP IT IS, AND WHY 2.0 RATHER THAN 3.4. The terrace's face is invisible in the photograph: the
+  // dark band runs from the wall's base row (0.6180) straight down to the bed's far crest (0.6744) with
+  // nothing pale in it. What hides the face is the hedge in foliage.js, whose crowns stand on the ray to the
+  // wall's own base and reach 3.36 m tall over z 2.1..5.3; a face at 3.4 would stand IN FRONT of those
+  // crowns and be drawn as a pale band 50 px tall across the whole frame. So the terrace stops where the
+  // hedge's own crowns stop covering it.
+  const stepGap = 9.2; // the portico's floor takes the centre from here inward
   const tz = TERRACE.outerZ;
-  const rim = TERRACE.rim; // how much of the outer edge is stone step, and how far it steps
+  const rim = TERRACE.rim;
+  const deckZ = tz - 0.45; // where the stone lip starts
   for (const [name, x0, x1] of [['west', -halfW - 6, -stepGap], ['east', stepGap, halfW + 6]]) {
-    b.box(`north terrace ${name}`, { x0, x1, y0: -0.4, y1: y0, z0: -tz + rim.depth, z1: 0.2 }, COLORS.terraceStone, { metric: true });
-    const stepZ = tz - 0.35;
+    b.box(`north terrace ${name}`, { x0, x1, y0: -0.4, y1: y0, z0: -0.6, z1: deckZ }, COLORS.terraceStone, { metric: true });
     b.profileSolid(
       `north terrace ${name} parapet`,
       [
-        [stepZ, y0],
-        [tz, y0 - 0.35],
-        [tz, -0.4],
-        [stepZ, -0.4],
+        [-deckZ, y0],
+        [-tz, y0 - 0.35],
+        [-tz, -0.4],
+        [-deckZ, -0.4],
       ],
       x0,
       x1,
       COLORS.stoneTrim,
     );
+    // The planted band along the lip -- the photograph's dark edge, and the reason the terrace's own pale
+    // stone never reaches the frame. A thin layer ON the lip rather than a separate solid in front of it.
     b.profileSolid(
       `north terrace ${name} rim`,
       [
-        [stepZ - rim.depth, y0 - 0.35],
-        [stepZ, y0 - 0.35 - rim.drop],
-        [stepZ, -0.4],
-        [stepZ - rim.depth, -0.4],
+        [-deckZ, y0],
+        [-tz, y0 - 0.35],
+        [-tz, y0 - 0.35 - rim.drop],
+        [-deckZ, y0 - rim.drop],
       ],
       x0,
       x1,
       COLORS.terraceRim,
     );
   }
-  b.box('north terrace west return', { x0: -halfW - 6.3, x1: -halfW - 6, y0: -0.4, y1: y0 + 0.55, z0: -tz, z1: 0.2 }, COLORS.terraceStone);
-  b.box('north terrace east return', { x0: halfW + 6, x1: halfW + 6.3, y0: -0.4, y1: y0 + 0.55, z0: -tz, z1: 0.2 }, COLORS.terraceStone);
+  b.box('north terrace west return', { x0: -halfW - 6.3, x1: -halfW - 6, y0: -0.4, y1: y0 + 0.55, z0: 0, z1: tz }, COLORS.terraceStone);
+  b.box('north terrace east return', { x0: halfW + 6, x1: halfW + 6.3, y0: -0.4, y1: y0 + 0.55, z0: 0, z1: tz }, COLORS.terraceStone);
 
   // ---- the four walls --------------------------------------------------------------------------------
-  b.box('north wall', { x0: -halfW, x1: halfW, y0, y1: FACADE.parapet, z0: zN - wallT, z1: zN }, COLORS.wallMid, { metric: true });
+  // THE NORTH WALL IS ONE BOX PER BAND, NOT A BOX WITH THIN BANDS LAID ON IT. The previous pass built the
+  // wall at z -0.7..0 and then three 4 cm slabs at -0.02..0.02 INSIDE it, so every band's own faces were
+  // coplanar with the wall behind them and with each other's: out/wh/scratch/prof.mjs reads the render at
+  // row v 0.44 and finds the pixels alternating between #858e9d and #5e6d7f along the same row, which is two
+  // surfaces fighting for one depth. The bands are the wall now, stacked, each with its own colour, and
+  // nothing is coincident with anything.
+  //
+  // The wall's own vertical shading: the sky term is stronger high up and the ground's lower down, and the
+  // render cannot make that ramp out of a single box's flat normal at this size, so the wall is banded.
+  // Four bands is what the photograph's own profile resolves to at 1 m of height per pixel.
+  const WALL_BANDS = [
+    ['upper', 12.6, FACADE.parapet, COLORS.wallUpper, OCCLUSION.underCornice],
+    ['middle', 5.9, 12.6, COLORS.wallMid, 1],
+    ['lower', y0 + 1.1, 5.9, COLORS.wallLit, OCCLUSION.baseCourse],
+    ['base', y0, y0 + 1.1, COLORS.wallMid, OCCLUSION.baseCourse],
+  ];
+  for (const [tag, ya, yb, color, occl] of WALL_BANDS) {
+    // RECEIVING, AND ONLY THE NORTH FRONT NEEDS IT. The portico's entablature and pediment are casters now
+    // (portico.js), and the shadow they throw is the dark band the photograph shows across the CENTRE of the
+    // facade -- behind the colonnade, at v 0.38-0.42, where this render had the open wall's own frieze and
+    // cornice mouldings at luma 140-146 against the photograph's 61-64. A receiver is required for any of
+    // that to be drawn, and the facade's boxes never set it. The south and end walls keep the flag off: no
+    // caster in this scene is south of the building, so it would be a flag that changes nothing.
+    b.box(`north wall ${tag} band`, { x0: -halfW, x1: halfW, y0: ya, y1: yb, z0: zN - wallT, z1: zN }, color, { metric: true, occlusion: occl }).receiveShadow = true;
+  }
   b.box('south wall', { x0: -halfW, x1: halfW, y0: -DIMS.southLawnDrop, y1: FACADE.parapet, z0: zS, z1: zS + wallT }, COLORS.wallMid, { metric: true });
   b.box('west wall', { x0: -halfW, x1: -halfW + wallT, y0: -DIMS.southLawnDrop, y1: FACADE.parapet, z0: zS, z1: zN }, COLORS.wallMid, { metric: true });
   b.box('east wall', { x0: halfW - wallT, x1: halfW, y0: -DIMS.southLawnDrop, y1: FACADE.parapet, z0: zS, z1: zN }, COLORS.wallMid, { metric: true });
-  // The wall's own vertical shading: the sky term is stronger high up and the ground's lower down, and the
-  // render cannot make that ramp out of a single box's flat normal at this size, so the wall is banded.
-  // Three bands is what the photograph's own profile resolves to at 1 m of height per pixel.
-  for (const [name, ya, yb, color] of [
-    ['upper', 12.6, FACADE.parapet, COLORS.wallUpper],
-    ['lower', y0, 5.9, COLORS.wallLit],
-  ]) {
-    b.box(`north wall ${name} band`, { x0: -halfW, x1: halfW, y0: ya, y1: yb, z0: zN - 0.02, z1: zN + 0.02 }, color);
-  }
 
   // ---- the belt course and the cornice, on all four sides ---------------------------------------------
   b.box('north belt course', { x0: -halfW - 0.15, x1: halfW + 0.15, y0: FACADE.belt, y1: FACADE.belt + 0.26, z0: zN - wallT - 0.05, z1: zN + 0.16 }, COLORS.windowTrim, { metric: true });
@@ -340,7 +467,11 @@ export function buildBuilding(b) {
 
   // ---- the north front's eleven bays ------------------------------------------------------------------
   const winW = DIMS.windowWidth;
-  const glassZ = { z0: zN - 0.34, z1: zN - 0.20 };
+  // The opening's own depth in the wall: the face at z = -0.20, the glass at z = -0.64, so the reveal is
+  // 0.44 m of real recess and the glass is about a third of the way through the 0.7 m wall.
+  const REVEAL_FACE = zN - 0.20;
+  const firstGlass = { z0: zN - 0.64, z1: zN - 0.50 };
+  const secondGlass = { z0: zN - 0.56, z1: zN - 0.44 };
   for (let i = 1; i <= BAYS.count; i++) {
     const cx = BAYS.centreX(i);
     const behindPortico = BAYS.porticoBays.includes(i);
@@ -348,18 +479,18 @@ export function buildBuilding(b) {
     // console brackets. The photograph alternates the triangle and the segment, bay by bay, and the bay
     // nearest the portico on each side carries the triangle.
     const firstH = FACADE.firstHead - FACADE.firstSill;
-    b.box(`bay ${i} first floor reveal`, { x0: cx - winW / 2 - 0.06, x1: cx + winW / 2 + 0.06, y0: FACADE.firstSill - 0.06, y1: FACADE.firstHead + 0.06, z0: zN - 0.36, z1: zN - 0.04 }, COLORS.underPortico);
-    sash(b, `bay ${i} first floor sash`, cx, (FACADE.firstSill + FACADE.firstHead) / 2, winW, firstH, glassZ);
-    b.box(`bay ${i} first floor surround sill`, { x0: cx - winW / 2 - 0.22, x1: cx + winW / 2 + 0.22, y0: FACADE.firstSill - 0.22, y1: FACADE.firstSill, z0: zN - 0.40, z1: zN + 0.04 }, COLORS.windowTrim);
+    revealSteps(b, `bay ${i} first floor`, cx, (FACADE.firstSill + FACADE.firstHead) / 2, winW, firstH, REVEAL_FACE, firstGlass.z0);
+    sash(b, `bay ${i} first floor sash`, cx, (FACADE.firstSill + FACADE.firstHead) / 2, winW, firstH, firstGlass);
+    b.box(`bay ${i} first floor surround sill`, { x0: cx - winW / 2 - 0.22, x1: cx + winW / 2 + 0.22, y0: FACADE.firstSill - 0.22, y1: FACADE.firstSill, z0: zN - 0.40, z1: zN + 0.04 }, COLORS.windowTrim, { occlusion: OCCLUSION.eaveUnder });
     // The two small blocks the sill sits on (HABS sheet 82's own note).
     for (const side of [-1, 1]) {
-      b.box(`bay ${i} first floor sill block ${side < 0 ? 'west' : 'east'}`, { x0: cx + side * (winW / 2 - 0.1) - 0.14, x1: cx + side * (winW / 2 - 0.1) + 0.14, y0: FACADE.firstSill - 0.44, y1: FACADE.firstSill - 0.22, z0: zN - 0.38, z1: zN + 0.04 }, COLORS.windowTrim);
+      b.box(`bay ${i} first floor sill block ${side < 0 ? 'west' : 'east'}`, { x0: cx + side * (winW / 2 - 0.1) - 0.14, x1: cx + side * (winW / 2 - 0.1) + 0.14, y0: FACADE.firstSill - 0.44, y1: FACADE.firstSill - 0.22, z0: zN - 0.38, z1: zN + 0.04 }, COLORS.windowTrim, { occlusion: OCCLUSION.eaveUnder });
     }
-    b.box(`bay ${i} first floor surround head`, { x0: cx - winW / 2 - 0.22, x1: cx + winW / 2 + 0.22, y0: FACADE.firstHead, y1: FACADE.firstHead + 0.22, z0: zN - 0.42, z1: zN + 0.04 }, COLORS.windowTrim);
+    b.box(`bay ${i} first floor surround head`, { x0: cx - winW / 2 - 0.22, x1: cx + winW / 2 + 0.22, y0: FACADE.firstHead, y1: FACADE.firstHead + 0.22, z0: zN - 0.42, z1: zN + 0.04 }, COLORS.windowTrim, { occlusion: OCCLUSION.eaveUnder });
     b.box(`bay ${i} first floor surround west`, { x0: cx - winW / 2 - 0.22, x1: cx - winW / 2, y0: FACADE.firstSill, y1: FACADE.firstHead, z0: zN - 0.40, z1: zN + 0.04 }, COLORS.windowTrim);
     b.box(`bay ${i} first floor surround east`, { x0: cx + winW / 2, x1: cx + winW / 2 + 0.22, y0: FACADE.firstSill, y1: FACADE.firstHead, z0: zN - 0.40, z1: zN + 0.04 }, COLORS.windowTrim);
     // The panel with a moulded border under the sill, which sheet 82 draws below every window.
-    b.box(`bay ${i} first floor apron`, { x0: cx - winW / 2 - 0.1, x1: cx + winW / 2 + 0.1, y0: FACADE.firstSill - 1.05, y1: FACADE.firstSill - 0.44, z0: zN - 0.12, z1: zN + 0.03 }, COLORS.windowTrim);
+    b.box(`bay ${i} first floor apron`, { x0: cx - winW / 2 - 0.1, x1: cx + winW / 2 + 0.1, y0: FACADE.firstSill - 1.05, y1: FACADE.firstSill - 0.44, z0: zN - 0.12, z1: zN + 0.03 }, COLORS.windowTrim, { occlusion: 0.82 });
 
     if (!behindPortico) {
       const kind = BAYS.firstFloorPediment(i);
@@ -379,10 +510,10 @@ export function buildBuilding(b) {
     // The second floor: a plain head, taller than it is wide, with no pediment ("the smaller, plainly
     // trimmed ones"). Six-over-six like the first floor's, but shorter.
     const secondH = FACADE.secondHead - FACADE.secondSill;
-    b.box(`bay ${i} second floor reveal`, { x0: cx - winW / 2 - 0.05, x1: cx + winW / 2 + 0.05, y0: FACADE.secondSill - 0.05, y1: FACADE.secondHead + 0.05, z0: zN - 0.30, z1: zN - 0.04 }, COLORS.underPortico);
-    sash(b, `bay ${i} second floor sash`, cx, (FACADE.secondSill + FACADE.secondHead) / 2, winW, secondH, { z0: zN - 0.28, z1: zN - 0.16 });
-    b.box(`bay ${i} second floor sill`, { x0: cx - winW / 2 - 0.20, x1: cx + winW / 2 + 0.20, y0: FACADE.secondSill - 0.20, y1: FACADE.secondSill, z0: zN - 0.34, z1: zN + 0.04 }, COLORS.windowTrim);
-    b.box(`bay ${i} second floor head`, { x0: cx - winW / 2 - 0.20, x1: cx + winW / 2 + 0.20, y0: FACADE.secondHead, y1: FACADE.secondHead + 0.22, z0: zN - 0.36, z1: zN + 0.04 }, COLORS.windowTrim);
+    revealSteps(b, `bay ${i} second floor`, cx, (FACADE.secondSill + FACADE.secondHead) / 2, winW, secondH, REVEAL_FACE, secondGlass.z0);
+    sash(b, `bay ${i} second floor sash`, cx, (FACADE.secondSill + FACADE.secondHead) / 2, winW, secondH, secondGlass);
+    b.box(`bay ${i} second floor sill`, { x0: cx - winW / 2 - 0.20, x1: cx + winW / 2 + 0.20, y0: FACADE.secondSill - 0.20, y1: FACADE.secondSill, z0: zN - 0.34, z1: zN + 0.04 }, COLORS.windowTrim, { occlusion: OCCLUSION.eaveUnder });
+    b.box(`bay ${i} second floor head`, { x0: cx - winW / 2 - 0.20, x1: cx + winW / 2 + 0.20, y0: FACADE.secondHead, y1: FACADE.secondHead + 0.22, z0: zN - 0.36, z1: zN + 0.04 }, COLORS.windowTrim, { occlusion: OCCLUSION.eaveUnder });
     b.box(`bay ${i} second floor surround west`, { x0: cx - winW / 2 - 0.20, x1: cx - winW / 2, y0: FACADE.secondSill, y1: FACADE.secondHead, z0: zN - 0.32, z1: zN + 0.04 }, COLORS.windowTrim);
     b.box(`bay ${i} second floor surround east`, { x0: cx + winW / 2, x1: cx + winW / 2 + 0.20, y0: FACADE.secondSill, y1: FACADE.secondHead, z0: zN - 0.32, z1: zN + 0.04 }, COLORS.windowTrim);
   }

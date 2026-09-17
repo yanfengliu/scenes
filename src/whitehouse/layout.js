@@ -9,13 +9,21 @@
 // Photo space: u to the RIGHT and v DOWN, both as fractions of the frame (0..1) -- the repo's convention.
 //
 // World space: y up; the building's north facade is centred on x = 0 with its NORTH WALL at z = 0. The
-// building runs to z = -26.1 (its south face) and the camera looks along -z, so THE CAMERA STANDS AT +z AND
-// EVERYTHING IT SEES IS AT NEGATIVE z. +x is the building's east end, -x its west end. y = 0 is the north
-// grade at the wall.
+// building runs to z = -26.1 (its south face) and the camera looks along -z from z = +47.863, so THE CAMERA
+// STANDS AT +z AND EVERYTHING IT SEES IS IN FRONT OF IT, i.e. at a z BELOW ITS OWN. +x is the building's
+// east end, -x its west end. y = 0 is the north grade at the wall.
 //
-// So the north lawn, the drive, the fence, the fountain, the flower bed and the north trees all have z < 0;
-// the camera stands at z = +47.86; and the SOUTH lawn, which is behind the building from this camera, is the
-// only thing at positive z.
+// SO THE NORTH GROUNDS HAVE POSITIVE z AND THE SOUTH LAWN HAS NEGATIVE z, and this is the one convention in
+// the file that has already been got wrong once. The north front's face is at z = 0; the camera is 47.863 m
+// north of it at z = +47.863; and the north lawn, the flower bed, the fountain, the drive and the fence all
+// stand BETWEEN the camera and the wall, i.e. at 0 < z < 47.863 for everything the frame shows, with the
+// fence and the drive beyond the camera (see fenceDistance). The depth of a point is
+//
+//   dn = eye.z - z
+//
+// and the previous pass authored every north-ground z from z = dn - eye.z, which put the bed, the fountain,
+// the drive and the fence one building-length on the far side of the wall, behind the camera's subject.
+// The south lawn, which is behind the building from this camera, is the only ground at negative z.
 //
 // ---- The camera, solved from the photograph ----
 //
@@ -88,50 +96,106 @@ export const DIMS = {
   hedgeDepth: 3.0, // [estimate]
   balustradeHeight: 1.15, // UNVERIFIED -- research-photo.md section 5 item 11 says no source gives it
   roofRise: 1.1, // [estimate] the low roof's ridge above the deck behind the balustrade
-  // The North Portico. Width and projection are UNVERIFIED (research-photo.md section 5 item 6) and are set from
-  // the photo: the pediment's raking cornice runs u 0.333 to 0.663, which at the portico front plane's own
-  // depth is 21.5 m. Its 4 columns then stand on the building's 4.655 m bay pitch, which makes the portico
-  // exactly the three central bays wide -- the one internal check available, and it agrees.
-  porticoWidth: 24.5,
+  // The North Portico. Width and projection are UNVERIFIED (research-photo.md section 5 item 6) and are set
+  // from the photo -- AND THE WIDTH WAS SET 43% TOO WIDE UNTIL THIS PASS, against the file's own comment.
+  // The photo's own column centres are u 0.383 and 0.617 (this line has said so all along) which at the
+  // portico's depth is +-6.98 m; portico.js places its outer columns at +-(W - 3.2)/2, so W = 17.16. The
+  // pediment's base is then 2 * (W/2 + 1.2) = 19.56 m, and the raking cornice's own measured ends are
+  // u 0.3333 and 0.6625, which at that depth is 19.6 m -- the internal check the old 24.5 m failed by 7 m
+  // (26.9 m of base against the photo's 19.6). The four columns also come out on the building's 4.655 m bay
+  // pitch spanning exactly the three central bays, 13.97 m, which is the check the comment claims.
+  porticoWidth: 17.16,
   porticoProjection: 6.5, // [estimate] from the 152 - 85.5 = 66.5 ft total for both porticoes, shared
   porticoColumnCount: 4, // weakly sourced (a stock-photo caption); the order, Ionic, is well attested
-  porticoColumnHeight: 8.8, // [estimate] the entablature's underside above the portico floor
-  porticoColumnRadius: 0.85, // [estimate] the shaft at its base: the porch's order is a tall one
+  porticoColumnHeight: 11.04, // the clear order from the porch floor (2.976 m) to the capital's top at
+  // 14.02 m, which is the architrave's own underside. IT IS NOT SIMPLY WHATEVER IS LEFT UNDER THE
+  // ENTABLATURE, which is what an earlier note here said: the entablature's underside has its own measured
+  // row (the photograph's strongest horizontal edge in the centre of the frame, v 0.4100 = y 13.11 m at the
+  // porch's depth) and the capital is set to the value that lands the render's own step nearest it --
+  // 14.02, eight pixels off, against thirty-three for the 14.72 this pass first tried. See portico.js
+  // PORTICO_HEIGHTS.
+  porticoColumnRadius: 0.62, // the shaft at its base. The photograph's own column reads about 0.016 of the
+  // frame across at the colonnade's depth, which is 1.2 m, and 9.0 m over 1.24 m is the 7.3-diameter order
+  // sheet 76 draws; the previous 0.85 m made a column 5.3 diameters tall, which is a pier.
   porticoEntablature: 1.3, // [estimate] architrave + frieze + cornice
-  porticoEntablatureTop: 12.0, // [estimate] the pediment's base, read off the photo's entablature band
-  pedimentApex: 15.3, // [estimate] the photo puts the apex at v 0.3033, which is 15.2 m on this camera
+  porticoEntablatureTop: 16.0, // the pediment's base, i.e. the top of the porch's own entablature. SOLVED,
+  // not estimated: the photograph's eave row (v 0.3455 at the portico's depth) inverts to 16.00 m. It is
+  // carried here as well as in portico.js PORTICO_HEIGHTS because MODEL_LANDMARKS below must project the
+  // scene's OWN apex, and layout.js may not import three. The two are the same number and are checked
+  // against each other by out/critic/wh3probe.mjs.
+  pedimentApex: 17.9, // SOLVED the same way, from the photograph's apex row v 0.3030: 17.90 m at 41.36 m.
+  // The previous 15.3 was an [estimate] that read the apex row at the WALL's plane instead of the porch's;
+  // this pass first shipped 18.09 from a row read at v 0.2973 and then corrected it to 17.90 when the
+  // file's own apex test was applied to both frames (out/critic/wh3defs.mjs). See portico.js
+  // PORTICO_HEIGHTS for the arithmetic and for why the rise, not the depth, was what was wrong.
   // The South Portico: a bowed centre with six Ionic columns on a rusticated podium with a double
   // staircase, flat-roofed, no pediment. Column count 6 is INFERRED (research-photo.md section 5 item 5).
   southBowProjection: 6.5,
   southBowRadius: 8.5, // [estimate] the bow's radius in plan, three bays wide
   southColumnCount: 6,
   southPodiumHeight: 5.4, // [estimate] south grade to the portico floor, over the exposed ground storey
-  // ---- The north grounds. EVERY z BELOW IS NEGATIVE (see the conventions above). ----
-  // Each distance is the photo row it was measured at, turned into metres by the fitted camera: a point on
-  // the ground plane y = 0 projects to v = 0.5 + 6.11 / (2 * 0.54092 * dn) with dn the distance NORTH of
-  // the camera, so dn = 5.647 / (v - 0.5) and the world z is dn - 47.86.
+  // ---- The north grounds. EVERY z BELOW IS POSITIVE: north of the wall, between the wall and the camera. ----
+  // Each distance is the photo row it was measured at, turned into metres by the fitted camera. A point at
+  // height y projects to v = 0.5 - (y - eye.y) / (2 tanV dn), dn = eye.z - z being the distance in front of
+  // the camera, so the inverse on the LAWN (y = 0) is
+  //
+  //   dn = 9.086 / (1.08184 (v - 0.5))        z = 47.863 - dn
+  //
+  // THE PREVIOUS PASS INVERTED THIS TWICE AND BOTH ARE CORRECTED HERE, because the two errors together put
+  // every north-ground feature 60 m behind the wall:
+  //   * it used the constant 5.647 = (eye.y - TERRACE.baseY) / 1.08184, which is the inverse on the
+  //     TERRACE's plane (y = 2.976) and not on the lawn's (y = 0). Every distance came out 1.49x too long.
+  //   * it then wrote z = dn - 47.863, which is the far side of the camera. The camera looks along -z from
+  //     z = +47.863, so a feature dn metres in front of it is at z = 47.863 - dn.
+  // The four row measurements themselves are the photograph's and are unchanged; only their inversion is.
   hedgeTopRow: 0.6180, // the hedge band's top: the same row the wall's base was measured at
-  bedFarRow: 0.6744, // -> camera-to-row distance 32.4 m -> z -15.4
-  bedNearRow: 0.7350, // -> 24.03 m -> z -23.8
-  fountainRow: 0.7000, // [estimate] the water line, read off the basin in the photo -> z -28.6
+  bedFarRow: 0.6744, // the bed's far crest. The ground row at the WALL's foot (z 0, y 0) is v 0.6755, so
+  // this row is the terrace's own foot: the bed stands immediately north of the raised ramp, not 15 m out.
+  bedNearRow: 0.7350, // the bed's near edge, where the lawn takes over
+  fountainRow: 0.6870, // where the bed's own crest cuts the foot of the plume, measured at u 0.5
   fountainPlumeRow: 0.5300, // the plume's top
-  fenceNearRow: 0.8200, // [estimate] the fence line at the frame's edge -> z -43.9
-  // Every |z| below is the CAMERA-TO-FEATURE distance minus the camera's own z (47.863), through the
-  // inverse v = 0.5 + (eye.y - yG) / (2 tanV dn) with tanV 0.54092 and eye.y 9.086.
-  bedDistance: 15.4, // the bed's far edge, from bedFarRow
-  bedDepth: 8.4, // the bed's own depth, from bedFarRow to bedNearRow
-  bedWidth: 33.0, // from u 0.288..0.752 at the bed's widest row: 0.464 of the 69 m frame there
-  fountainDistance: 28.6, // the fountain's centre, from fountainRow on the water plane y 0.9
-  fountainWaterHeight: 0.9, // [estimate]
-  fountainJetHeight: 6.4, // the plume's top, from fountainPlumeRow
-  hedgeDistance: 2.0, // |z| of the hedge band's centre line, against the wall
-  fenceDistance: 43.9, // the fence line, from fenceNearRow
+  // ---- the terrace hedge, the bed and the fountain, from those rows ----
+  // A row fixes a PRODUCT of height and depth, so each feature needs its own height stated. The heights are
+  // the photograph's own reading of the bed (a mass of red blooms about a metre tall, seen at 40 m from a
+  // camera 9 m up) and the bed's near edge is its slope down to 0.50 m.
+  hedgeDistance: 3.7, // the planting band's centres, in front of the terrace's face (outerZ below)
+  hedgeTopHeight: 3.36, // the hedge's own top, which the row 0.6180 demands at this depth: a crown's top is
+  // 1.06 of the run's height in foliage.js, so the run is 3.17 m -- see the note there.
+  bedDistance: 5.6, // the bed's FAR edge, from bedFarRow with the bed's 1.20 m crest
+  bedDepth: 8.5, // to the near edge, from bedNearRow with the bed's 0.50 m near crest
+  bedBloomTo: 10.2, // the BLOOMS' OWN near edge: the photograph's bright red runs from v 0.674 to 0.705 and
+  // its rows 0.705-0.733 are the bed's own dark soil and shadow (red covers 0.16 of the row at 0.72 against
+  // 0.73 at 0.70). So the bloom mass stops at z +10.2, where its crest of 0.76 m projects to v 0.7045, and
+  // the soil body below it carries the dark band to the near edge.
+  bedWidth: 46.0, // the red band's own width in the frame: it spans u 0.1025..0.8925 at v 0.70, which is
+  // 0.79 of the 57.2 m frame at that row. The bed is nearly as wide as the building and runs past its ends.
+  bedCrest: 1.20, // the bloom crest at the far edge, above the lawn
+  bedNearCrest: 0.50, // and at the near edge: the bed's own downward slope, as the photograph shows
+  fountainDistance: 7.7, // the fountain's axis, from fountainRow: at this z the bed's crest cuts the plume
+  fountainBasinRadius: 3.65, // 24 ft across, research-dims.md section 8.4's own [estimate]
+  fountainRimHeight: 0.62, // the basin's rounded coping, above the lawn
+  fountainWaterHeight: 0.50, // the water in it, below the coping
+  fountainJetHeight: 8.09, // the plume's top, from fountainPlumeRow: the jet alone is 7.5 m of water
+  // ---- the fence and the drive, both beyond the camera ----
+  // THE FENCE IS NOT IN THE PHOTOGRAPH AND MUST NOT BE IN THE FRAME. The photograph shows lawn from the
+  // bed's near edge (v 0.735) to the frame's bottom with no fence anywhere, so the fence line has to be
+  // BEHIND the camera. Its distance is the sourced one: the derived map measurement is 276 ft (84.3 m) from
+  // the north portico's face to the Pennsylvania Avenue fence (research-dims.md section 8.1), which with the
+  // portico's face at z +6.5 puts the fence at z +90.8 -- 43 m behind the camera.
+  fenceDistance: 90.8, // from the portico's face plus the 84.3 m fence-to-portico measurement
   fenceHeight: 4.0, // 13 ft, reported (not officially confirmed) for the post-2020 fence in this 2024 photo
   fenceWallHeight: 0.9, // [estimate] the sandstone wall the pickets stand in
   fencePicket: 0.022, // 7/8 inch -- NCPC transcript, 7 July 2016, quoted in out/wh/research-dims.md section 8.2
   fenceGap: 0.118, // 4-5/8 inch clear space -- same source
-  driveWidth: 7.0, // [estimate]
-  driveDistance: 49.0, // |z| of the drive's centre, just beyond the fence
+  // The drive: the sourced semicircular access drive that divides the north lawn into three (CLR p.384,
+  // quoted in research-dims.md section 8.3). Its chord is the fence line and it bulges towards the building.
+  // IT IS PLACED WHERE THE PHOTOGRAPH CANNOT SEE IT, and that is not a convenience: the drive's closest
+  // point to the building is the portico apron, and a carriageway crossing the centre line at z +12 would be
+  // drawn at v 0.73-0.77, straight across the lawn the photograph shows from v 0.738 to the frame's bottom.
+  // At z +40.5 the drive is on the lawn's own rise and projects BELOW the frame's bottom edge (v 1.01 at its
+  // inner kerb), which is the only place it can be without contradicting the frame.
+  driveCentreZ: 40.5, // the arc's centre line at x = 0, on the north lawn's rise
+  driveWidth: 9.0, // [estimate] carriageway, scaled from the sourced ~30 ft
 };
 
 // ---- Camera ----------------------------------------------------------------------------------------
@@ -154,22 +218,27 @@ export const CAMERA = {
 // the wall the photo shows rising out of the hedge is NOT standing at the lawn: the two measured rows
 // (v 0.6180 at the base, v 0.3800 at the parapet) demand a base 2.976 m above the north lawn. The model
 // builds that terrace and stands the wall on it, and the hedge occupies the band in front of it.
+//
+// IT PROJECTS NORTH, INTO +z, AND ONLY AS FAR AS THE HEDGE ALLOWS. Every z here is the distance north of
+// the wall, positive. The terrace's face is INVISIBLE in the frame and must stay so: the photograph's dark
+// band runs from the wall's base row (0.6180) down to the bed's far crest (0.6744) and nothing pale is in it.
+// Two things hide the terrace: the hedge in front of it, whose crowns reach 4.4 m tall over z 2.1..5.3 (see
+// foliage.js), and the bed beyond that. So outerZ is set where the hedge's own crowns stop: at 3.4 -- the
+// value the previous pass used -- the crowns' back halves would be buried inside the terrace's stone and the
+// terrace's face would stand IN FRONT of the hedge, in the frame, as a pale band 50 px tall.
 export const TERRACE = {
   baseY: 2.976, // the wall's own visible base, solved
-  // The terrace has to be SHALLOW and the hedge has to stand ON it, or the portico's columns are buried:
-  // a first pass put the terrace's outer edge 4.5 m out with a 1.8 m hedge in front of it, and the porch
-  // (whose columns are 4.8 m out) disappeared behind the greenery in the photo view. The visible band the
-  // photo shows between the wall's base and the lawn is 1 to 2 m deep, which is what these are.
-  outerZ: 3.4, // |z| of the terrace's outer edge, where its face drops to the lawn -- [estimate]
-  // 3.4 IS SET BY A ROW, NOT BY TASTE. The terrace is 2.976 m tall because the wall's base is, and the
-  // camera is 9.086 m up at 47.863 m, so the top of the terrace's outer edge projects to v 0.6180 -- the row
-  // the photograph measures the band's top at -- when the edge stands 3.4 m north of the wall. Everything
-  // the frame shows between that row and the lawn is then this terrace's own planted rim. See building.js's
-  // note on the rim; a hedge standing behind this edge is not in the frame at any height worth having.
-  rim: { depth: 1.5, drop: 0.55 }, // the planted slope along the terrace's outer edge: how far it runs back
-  // from the edge and how far it drops over that run. Both are [estimate]s, and both are seen at a glance:
-  // 1.5 m of depth at this angle is 0.026 of the frame height, which is the dark band's own width.
-  hedgeZ: 3.9, // |z| of the north lawn's own hedge line, which is the separate planting at the lawn's end
+  outerZ: 2.0, // metres NORTH of the wall: the terrace's face, clear behind the hedge's crowns
+  // The old comment here claimed the terrace's outer edge "projects to v 0.6180 -- the row the photograph
+  // measures the band's top at -- when the edge stands 3.4 m north of the wall". THE ARITHMETIC WAS WRONG:
+  // the terrace's deck is at baseY, i.e. the same height as the wall's base, so its outer edge is ALWAYS
+  // below the base's row -- at z 3.4 it projects to v 0.6270, 8 px low, and at z 0 it would be the base row
+  // itself. The row 0.6180 is the ray to the wall's own base, and what puts the dark band's top on it is a
+  // HEDGE whose top stands on that ray at its own depth: 2.976 + hedge height at the wall, 3.36 m at z 3.7.
+  rim: { depth: 0.5, drop: 0.35 }, // the planted slope along the terrace's outer edge: how far it runs back
+  // from the edge and how far it drops over that run. Both are [estimate]s, and both are seen at a glance
+  // only when the hedge in front of them is missing.
+  hedgeZ: 3.7, // the planting band's own centre line, in front of the terrace's face -- see DIMS.hedgeDistance
   hedgeDepth: 0.7, // [estimate]
 };
 
@@ -177,6 +246,11 @@ export const TERRACE = {
 // The camera stands at z = +47.86, 9.086 m above the north grade at the wall. With a photographer's eye at
 // 1.60 m, the ground under them was 7.49 m above the wall's grade. The north lawn does rise from the
 // building towards Pennsylvania Avenue; this carries that rise as terrain rather than as a floating camera.
+//
+// THE RISE STARTS AT 30 m, WHICH IS BEYOND EVERY CALIBRATED FEATURE, and that is why the row arithmetic
+// above may use the flat plane: the bed ends at z +14.1. The three things the rise therefore does NOT do are
+// lift the bed, lift the fountain or hide the frame's foreground -- it puts the camera 7.49 m above the
+// grade at the wall, which is what the two facade rows demand.
 export const NORTH_LAWN = {
   flatTo: 30.0, // |z| out to which the lawn is level at y = 0 -- past the bed and the fountain
   riseTo: 47.863, // |z| of the camera's own station
@@ -359,8 +433,18 @@ export const COLORS = {
   corniceShadow: 0x535d6b, // box u 0.24-0.30 v 0.388-0.394, mean -- the cornice in its own shadow
   roof: 0x5c6672, // box u 0.28 v 0.355 #727984 where it is stone, #3a4448 where it is the roof's shadow
   roofShadow: 0x3a4448, // pixel u 0.28 v 0.355
-  porticoReturn: 0x4a5353, // box u 0.398-0.410 v 0.50-0.53, mean
+  porchReturn: 0x4a5353, // box u 0.398-0.410 v 0.50-0.53, mean
   underPortico: 0x373932, // box u 0.470-0.530 v 0.44-0.47, mean -- the photo's darkest large area
+  porchRecessPigment: 0x313740, // THE WALL BEHIND THE COLONNADE, AND IT IS A PIGMENT AND NOT A SAMPLED HEX.
+  // The recess wall was built at `wallUpper` (0x5d6775), which is the north wall's own SHADED band as the
+  // photograph samples it where the wall is open to the sky -- and through a colonnade, under an entablature
+  // and behind a pediment, it is not: measured at 1200x900 over the photograph's own box for that wall
+  // (u 0.470-0.530, v 0.440-0.470, photograph luma 72-77), the render displayed 133.5 after the porch was
+  // put in its own shadow. out/critic/wh3pig.mjs then sweeps the pigment in one page and reads the frame at
+  // each value: 0x5d6775 -> 133.5, 0x414852 -> 98.4, 0x333940 -> 80.2, 0x292d33 -> 65.0. This hex is the
+  // interpolation that lands on 75, the middle of the photograph's own band, and it is stated as an
+  // [estimate] in the sense every other hex in this table is not: it is derived from the render, not
+  // sampled from the frame, because the frame's own value at that box is what it is being made to match.
   pedimentFace: 0x414d56, // box u 0.450-0.550 v 0.325-0.342, mean -- the tympanum
   porticoColumn: 0x60707f, // box u 0.460-0.470 v 0.36-0.468, mean -- the west column's own shaft, which
   // the photo shows as the porch's mid tone between the lit stone and the shadow behind it
@@ -371,6 +455,12 @@ export const COLORS = {
   // photo shows bands standing several levels brighter than the lawn between them.
   hedge: 0x12140c, // box u 0.24-0.30 v 0.635-0.655, mean -- nearly black, as the photo's is
   hedgeLit: 0x1d261a, // pixel u 0.600 v 0.630 -- the hedge's own top, where the sky reaches it
+  hedgeTop: 0x303928, // box u 0.300-0.700 v 0.616-0.632 -- the terrace hedge's own TOP ROW across the
+  // facade: mean #3f4b3f, median #303928 (luma 52), p25 #1a220b. A clipped hedge is lit on its top face and
+  // near-black in its body, and the two are 20 luma apart in the photograph: the same hedge's band rows
+  // (box u 0.300-0.700 v 0.636-0.652) read mean #252b26 and median #0c1006, and its lower band left and
+  // right of the fountain (boxes u 0.050-0.280 and u 0.720-0.950 v 0.648-0.680) read mean #191710 and
+  // #181812 with median #010400 and #020403. hedge is the body, this is the top.
   flowerBed: 0x8f1c23, // box u 0.30-0.36 v 0.69-0.71, mean
   flowerBedLit: 0xdf4c55, // pixel u 0.260 v 0.680 -- a single bloom catching the light
   drive: 0x3b3a33, // [estimate] the drive is in no clean box: the frame's foreground at the left edge reads
@@ -397,6 +487,20 @@ export const COLORS = {
   // scored frame that the photograph really does show as a backlit silhouette. The cost is inside the
   // 0.001 budget on SSIM but not on cell distance, so the north trees keep the photograph's own value and
   // the SOUTH trees, which are off-camera, take the sunlit one below.
+  // ---- The two trees that FRAME the frame, sampled from the trees themselves ---------------------------------
+  // The previous pass built them at treeFoliage, which is the north tree line's backlit value estimated from
+  // two pixels. The framing trees are the largest objects at the frame's edges and they have their own
+  // measurements, taken with out/wh/scratch/whbox.mjs on whitehouse.webp (1200x900), box given for each:
+  treeMassCore: 0x060806, // box u 0.940-1.000 v 0.44-0.54 -- the EAST framing tree's own core: mean #060806,
+  // median #060806, p90 #111211. The photograph's framing trees are very nearly black where the crown is
+  // thick, which is what a backlit crown is; this is the darkest large area anywhere in the frame.
+  treeMassEdge: 0x1a2017, // box u 0.000-0.100 v 0.34-0.40 -- the WEST tree's crown top band: mean #2f3f59
+  // (that mean carries the sky in the box), median #1a2017, p25 #050805. The rim of a crown, where the
+  // leaves are thin enough to pass light, is 4 to 8 times the core's own value.
+  treeMassLit: 0x2d3628, // box u 0.920-0.960 v 0.34-0.40 -- the EAST tree's upper band: mean #4c586b (sky in
+  // the box again), median #2d3628, p25 #0b0e0b. This is the brightest large area either framing tree has,
+  // and it is still only luma 50: the sun stands BEHIND these trees, so their light is transmitted, not
+  // reflected, and nothing on them is bright.
   treeFoliageSunlit: 0x4e6633, // [estimate] a crown in sun, for the south front only. The sun stands
   // north-east, so the south side is the shadow side of every north tree and the lit side of the south
   // ones; a south crown built at the north's own backlit value is a hole, which is what a reviewer saw.
@@ -423,6 +527,8 @@ export const COLORS = {
 };
 
 // ---- Where the model's own landmarks land in the frame ----------------------------------------------
+// EVERY z HERE IS POSITIVE ON THE NORTH SIDE. The terrace hedge, the bed, the fountain and the fence are the
+// new layout's own numbers, and this table is how they are checked against the photograph's rows.
 export const MODEL_LANDMARKS = (() => {
   const pts = {
     // The wall's base is at TERRACE.baseY, not at y = 0: the terrace and the hedge stand in front of
@@ -430,17 +536,19 @@ export const MODEL_LANDMARKS = (() => {
     'wall west corner': { x: -DIMS.blockLength / 2, y: TERRACE.baseY, z: 0 },
     'wall east corner': { x: DIMS.blockLength / 2, y: TERRACE.baseY, z: 0 },
     'wall base centre': { x: 0, y: TERRACE.baseY, z: 0 },
-    'terrace face at the lawn': { x: 0, y: 0, z: -TERRACE.outerZ },
+    'terrace face at the lawn': { x: 0, y: 0, z: TERRACE.outerZ },
+    'terrace hedge top': { x: 0, y: DIMS.hedgeTopHeight, z: TERRACE.hedgeZ },
     'parapet centre': { x: 0, y: DIMS.northFacade, z: 0 },
     'parapet west wing': { x: -19.2, y: DIMS.northFacade, z: 0 },
     'parapet east wing': { x: 19.2, y: DIMS.northFacade, z: 0 },
-    'portico west column': { x: -DIMS.porticoWidth / 2 + 1.55, y: TERRACE.baseY + DIMS.porticoFloor, z: -DIMS.porticoProjection },
-    'portico east column': { x: DIMS.porticoWidth / 2 - 1.55, y: TERRACE.baseY + DIMS.porticoFloor, z: -DIMS.porticoProjection },
-    'pediment apex': { x: 0, y: DIMS.pedimentApex, z: -DIMS.porticoProjection },
-    'bed far edge': { x: 0, y: 0, z: -DIMS.bedDistance },
-    'fountain water': { x: 0, y: DIMS.fountainWaterHeight, z: -DIMS.fountainDistance },
-    'fountain jet top': { x: 0, y: DIMS.fountainJetHeight, z: -DIMS.fountainDistance },
-    'fence top': { x: 0, y: DIMS.fenceHeight, z: -DIMS.fenceDistance },
+    'portico west column': { x: -DIMS.porticoWidth / 2 + 1.55, y: TERRACE.baseY + 0.32, z: DIMS.porticoProjection - 1.1 },
+    'portico east column': { x: DIMS.porticoWidth / 2 - 1.55, y: TERRACE.baseY + 0.32, z: DIMS.porticoProjection - 1.1 },
+    'pediment apex': { x: 0, y: DIMS.pedimentApex, z: DIMS.porticoProjection },
+    'bed far edge': { x: 0, y: DIMS.bedCrest, z: DIMS.bedDistance },
+    'bed near edge': { x: 0, y: DIMS.bedNearCrest, z: DIMS.bedDistance + DIMS.bedDepth },
+    'fountain water': { x: 0, y: DIMS.fountainWaterHeight, z: DIMS.fountainDistance },
+    'fountain jet top': { x: 0, y: DIMS.fountainJetHeight, z: DIMS.fountainDistance },
+    'fence top': { x: 0, y: DIMS.fenceHeight, z: DIMS.fenceDistance },
   };
   const out = {};
   for (const [name, p] of Object.entries(pts)) {

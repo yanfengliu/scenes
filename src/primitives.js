@@ -51,14 +51,15 @@ export function createBuilder(group) {
   };
 
   // Axis-aligned box from bounds. `color` may be a hex, a Material, or { sides, top, bottom } for
-  // per-face colors or materials.
-  function box(name, b, color, { metric = false } = {}) {
+  // per-face colors or materials. `occlusion` is the fraction of the ambient the box's faces see; it is
+  // passed straight to the material factory, where it darkens the ambient term alone (see materials.js).
+  function box(name, b, color, { metric = false, occlusion } = {}) {
     const sx = b.x1 - b.x0;
     const sy = b.y1 - b.y0;
     const sz = b.z1 - b.z0;
     const geo = new THREE.BoxGeometry(sx, sy, sz);
     if (metric) metricBoxUVs(geo, sx, sy, sz);
-    const asMaterial = (c) => (c && c.isMaterial ? c : material(c));
+    const asMaterial = (c) => (c && c.isMaterial ? c : material(c, occlusion === undefined ? {} : { occlusion }));
     let mat;
     if (color && !color.isMaterial && typeof color === 'object') {
       const sides = asMaterial(color.sides);
@@ -72,10 +73,10 @@ export function createBuilder(group) {
   }
 
   // A solid whose profile is a polygon in the (s, y) plane, s being metres along -z, extruded from x0 to x1.
-  function profileSolid(name, points, x0, x1, color) {
+  function profileSolid(name, points, x0, x1, color, occlusion) {
     const shape = new THREE.Shape(points.map(([s, y]) => new THREE.Vector2(s, y)));
     const geo = new THREE.ExtrudeGeometry(shape, { depth: x1 - x0, bevelEnabled: false });
-    const mesh = new THREE.Mesh(geo, color && color.isMaterial ? color : material(color));
+    const mesh = new THREE.Mesh(geo, color && color.isMaterial ? color : material(color, occlusion === undefined ? {} : { occlusion }));
     mesh.rotation.y = Math.PI / 2; // shape x -> world -z, extrusion -> world +x
     mesh.position.x = x0;
     return add(mesh, name);

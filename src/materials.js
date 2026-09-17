@@ -29,8 +29,18 @@ export const MATERIALS = {
 const tmpColor = new THREE.Color();
 
 // The albedo color for a material whose displayed mean should be `hex`.
-export function albedoOf(hex, { irradiance = MATERIALS.irradiance } = {}) {
-  const [r, g, b] = sceneRadiance(hex, { exposure: MATERIALS.exposure, irradiance });
+//
+// `occlusion` is the fraction of the AMBIENT light a surface actually sees, and it is the one term this
+// pipeline had nowhere to put. A face under a soffit, inside a window reveal or along a wall's own base
+// receives far less of the sky than a face open to it, and nothing in three.js or in this repo's rig knows
+// that without a shadow map that can resolve a 15 cm reveal. The cheap honest version is here: three's
+// indirect diffuse is `irradiance * BRDF_Lambert(diffuseColor)`, i.e. exactly linear in the albedo, so
+// scaling the albedo scales the ambient term alone and leaves every direct light untouched. Deriving the
+// albedo as if the surface were in `irradiance / occlusion` of light is the same multiplication written
+// where the curve can still be inverted: a dark target's albedo is not a fixed fraction of a light
+// target's, so scaling the albedo afterwards would be wrong by up to a third.
+export function albedoOf(hex, { irradiance = MATERIALS.irradiance, occlusion = 1 } = {}) {
+  const [r, g, b] = sceneRadiance(hex, { exposure: MATERIALS.exposure, irradiance: irradiance * occlusion });
   return tmpColor.setRGB(r, g, b, THREE.LinearSRGBColorSpace).clone();
 }
 
@@ -47,9 +57,10 @@ export function albedoScaleOf(hex, { irradiance = MATERIALS.irradiance } = {}) {
 
 // params: map, color (a photo-sampled sRGB hex), mean (the hex a textured material's map averages to),
 // alphaTest, side, transparent, vertexColors, plus normalMap, roughnessMap, roughness and metalness for
-// the lit variant, and `unlit` for the distant layers that the rig does not light.
+// the lit variant, `occlusion` (the fraction of the ambient a structurally shaded surface sees, see
+// albedoOf) and `unlit` for the distant layers that the rig does not light.
 export function makeMaterial(params = {}) {
-  const { normalMap, roughnessMap, roughness, metalness, mean, unlit, irradiance, ...rest } = params;
+  const { normalMap, roughnessMap, roughness, metalness, mean, unlit, irradiance, occlusion, ...rest } = params;
   const clean = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (!MATERIALS.lit) return new THREE.MeshBasicMaterial(clean);
   if (unlit) {
@@ -59,9 +70,12 @@ export function makeMaterial(params = {}) {
     return new THREE.MeshBasicMaterial(clean);
   }
   const lit = { ...clean };
-  if (lit.color !== undefined) lit.color = albedoOf(lit.color, { irradiance });
+  if (lit.color !== undefined) lit.color = albedoOf(lit.color, { irradiance, occlusion });
   else if (mean !== undefined) lit.color = albedoScaleOf(mean, { irradiance });
-  return new THREE.MeshStandardMaterial({
+  // An occluded surface also reflects less of the environment's own specular, because the environment is the
+  // sky it cannot see. Only set when an occlusion was asked for, so every existing material's environment
+  // response is unchanged.
+  if (occlusion !== undefined && occlusion < 1) lit.envMapIntensity = occlusion;  return new THREE.MeshStandardMaterial({
     ...lit,
     normalMap: normalMap ?? null,
     roughnessMap: roughnessMap ?? null,

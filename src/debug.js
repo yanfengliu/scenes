@@ -7,7 +7,7 @@
 // the camera itself never runs the controls or the per-frame clamp. So this runs inside the page, in the
 // window where the fault actually happens, and records the state at the moment it happens.
 //
-// Turn it on with ?debug=1, or press D. It costs a readPixels of a small sample grid a few times a
+// Turn it on with ?debug=1, or press F2. It costs a readPixels of a small sample grid a few times a
 // second, so it is opt-in and never on for an ordinary visitor.
 //
 // What it does:
@@ -198,7 +198,11 @@ export function mountDebug(api) {
   addEventListener('keydown', (e) => {
     if (e.target instanceof Element && e.target.closest('select, input, textarea')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key === 'd' || e.key === 'D') { on = !on; el.hidden = !on; }
+    // F2, NOT `d`. The scene's own controls give `D` to strafe-right (src/camera-controls.js), so the
+    // overlay was toggling on every rightward step and its own probe then reported the frame it had just
+    // painted over as unpainted canvas -- a false fault raised by the diagnostic, measured by the review
+    // that landed the WASD controls. F2 was free in both scenes and in the page's own HUD.
+    if (e.key === 'F2') { on = !on; el.hidden = !on; }
   });
 
   window.__debugDump = () => JSON.stringify({ sizes: sizes(), overlays: covers(), faults, events }, null, 2);

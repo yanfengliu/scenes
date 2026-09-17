@@ -55,7 +55,7 @@ import { skyMaterial, SKY } from './sky.js';
 // the lawn. Solving that system gives the scales this pass applied: sun x2.06, sky light x9.6, up x3.2.
 export const RIG = {
   ambient: 0.0, // nothing: it is the one term with no orientation at all, and the ramp is the point
-  sun: 0.78, // the raking north-east light: the porch's shadow, the columns' relief
+  sun: 1.80, // the raking north-east light: the porch's shadow, the columns' relief
   fill: 0.03, // a weak light from the camera's side, for the faces the sky cannot reach
   skyLight: 2.22, // the hemisphere that carries the sky and the ground's bounce
   skyToGround: 0.547, // its sky half against its ground half
@@ -65,7 +65,21 @@ export const RIG = {
   shadowBias: -0.0007,
   shadowNormalBias: 0.6,
   shadowMapSize: 2048,
-  envIntensity: 0.30,
+  // THE ENVIRONMENT WAS NOT CARRYING THE FRAME, AND SAYING SO IS PART OF THE FINDING.
+  // out/wh/scratch/card.mjs hangs a card of the scene's own wall albedo in front of this camera and reads
+  // the drawing buffer with one light hidden at a time. Shipped, it reported: all lights #9198a8 (152),
+  // without the sky light #27346a (53), without the sun #90969f (149), with EVERY light hidden but the
+  // environment left in #00134e (19). A card carrying the ENVIRONMENT ALONE displays at luma 19 where its
+  // own albedo would display at 143, so the PMREM is about 13% of the frame and the SKY HEMISPHERE is 76%
+  // -- out/wh/scratch/probe.mjs confirms it on the real frame: removing scene.environment entirely moves
+  // the wall's upper band by 1 luma level. So the flat term here is the hemisphere, not the environment,
+  // and a first attempt at this pass that cut the hemisphere to 1.00 and left the environment at 0.06 put
+  // the wall 35 levels UNDER the photograph (out/wh/scratch/probe.mjs, wall mid 95.9 against 129). The
+  // hemisphere's own level was right; what was wrong is that every surface was lit as if it were open to
+  // the whole sky, including the ones that are roofed, revealed or planted. That is the occlusion term in
+  // materials.js and the numbers in building.js's OCCLUSION, and it is where this pass's contrast comes
+  // from. The environment stays low because it is measured low, not because it was the suspect.
+  envIntensity: 0.06,
   // The shadow camera's own box. The building is 51.2 m along x and reaches z = +13 (the terrace), so the
   // ortho box is sized for the whole composition plus the near lawn, and `far` has to reach the sun's own
   // position 200 m out.

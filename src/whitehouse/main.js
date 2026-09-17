@@ -7,7 +7,7 @@
 // the shadow flags, then POSE THE CAMERA (before the composer, whose construction renders and inspects a
 // real frame), then buildComposer, then the frame loop, then window.__scene and __sceneResolve at frame 2.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createCameraControls } from '../camera-controls.js';
 import { CAMERA, DIMS, uvToWorld } from './layout.js';
 import { buildScene } from './scene.js';
 import { buildLighting, applyShadowFlags, fogFor } from './lighting.js';
@@ -36,18 +36,20 @@ fogFor(scene);
 const camera = new THREE.PerspectiveCamera(CAMERA.fovDeg, window.innerWidth / window.innerHeight, CAMERA.near, CAMERA.far);
 scene.add(camera);
 
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.minDistance = 4;
-// The scene is 200 m across, so the camera may pull a long way back without leaving it.
-controls.maxDistance = 260;
-// A little past the horizontal, so the roofs and the balustrade can be seen from below without the camera
-// rolling under the lawn. The floor clamp below does the rest.
-controls.maxPolarAngle = Math.PI * 0.6;
-controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-controls.enablePan = true;
-controls.keyPanSpeed = 24;
+// LMB orbits, the MIDDLE button zooms on a press-and-drag, RMB pans, and WASD walks the camera along its
+// own heading on the ground plane. src/camera-controls.js is the one place that mapping is written, and
+// the one place the arrow keys' own pan is switched off; `moveCamera` is this loop's WASD step.
+// `clampCamera` is the function declared below: a step applies it too, so that the target follows the
+// camera to the block's own faces rather than through them (hoisted, so naming it here is fine).
+const { controls, moveCamera } = createCameraControls(camera, canvas, {
+  minDistance: 4,
+  // The scene is 200 m across, so the camera may pull a long way back without leaving it.
+  maxDistance: 260,
+  // A little past the horizontal, so the roofs and the balustrade can be seen from below without the
+  // camera rolling under the lawn. The floor clamp below does the rest.
+  maxPolarAngle: Math.PI * 0.6,
+  clampCamera,
+});
 
 // Keep the camera above the ground and out of the building without caging it. Two rules: never below a
 // metre over whichever lawn the camera is above, and never inside the main block's own footprint.
@@ -215,6 +217,9 @@ mountDebug(api);
 let frames = 0;
 function frame(now) {
   controls.update();
+  // WASD, after the controls have had their say and before the clamp, so a walk is held to the same floor
+  // and building faces a drag is. A frame with no movement key down does not touch the camera at all.
+  moveCamera(now);
   clampCamera();
   anim.advance(now ?? performance.now());
   anim.apply();

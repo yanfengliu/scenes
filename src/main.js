@@ -1,7 +1,7 @@
 // Entry point: renderer, the photo camera, orbit controls with reset, the scene, the light rig, the post
 // chain, and the hooks the test tools use (window.__scene, window.__sceneResolve from index.html).
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createCameraControls } from './camera-controls.js';
 import * as L from './layout.js';
 import { CAMERA, COLORS, uvToWorld } from './layout.js';
 import { buildScene } from './scene.js';
@@ -36,18 +36,19 @@ scene.fog = new THREE.Fog(new THREE.Color().setRGB(...sceneRadiance(COLORS.fog, 
 const camera = new THREE.PerspectiveCamera(CAMERA.fovDeg, window.innerWidth / window.innerHeight, 0.2, 6000);
 scene.add(camera);
 
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.minDistance = 1;
-controls.maxDistance = 120;
-// A little past the horizontal, so the roofs can be seen from below without the camera rolling under the
-// street. The floor clamp below does the rest of the work, and it lets the view stay low and close.
-controls.maxPolarAngle = Math.PI * 0.58;
-// Touch: one finger orbits, two pinch and pan, which is what a phone user expects of a scene like this.
-controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-controls.enablePan = true;
-controls.keyPanSpeed = 12;
+// LMB orbits, the MIDDLE button zooms on a press-and-drag, RMB pans, and WASD walks the camera along its
+// own heading on the ground plane. src/camera-controls.js is the one place that mapping is written, and
+// the one place the arrow keys' own pan is switched off; `moveCamera` is this loop's WASD step.
+// `clampCamera` is the function declared below: a step applies it too, so that the target follows the
+// camera to the corridor wall rather than through it (hoisted, so naming it here is fine).
+const { controls, moveCamera } = createCameraControls(camera, canvas, {
+  minDistance: 1,
+  maxDistance: 120,
+  // A little past the horizontal, so the roofs can be seen from below without the camera rolling under the
+  // street. The floor clamp below does the rest of the work, and it lets the view stay low and close.
+  maxPolarAngle: Math.PI * 0.58,
+  clampCamera,
+});
 
 // Keep the camera above the ground and out of the buildings without caging it. The street's own height
 // field gives the floor; the two house rows are a corridor the eye should not pass through. Both are
@@ -222,6 +223,9 @@ mountDebug(api);
 let frames = 0;
 function frame(now) {
   controls.update();
+  // WASD, after the controls have had their say and before the clamp, so a walk is held to the same floor
+  // and corridor a drag is. A frame with no movement key down does not touch the camera at all.
+  moveCamera(now);
   clampCamera();
   anim.advance(now ?? performance.now());
   anim.apply();
