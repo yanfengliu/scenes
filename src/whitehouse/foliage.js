@@ -7,8 +7,10 @@
 // the solved camera, and the crowns are ellipsoids rather than anything botanically specific, because a
 // blockout's job is the silhouette and the occlusion.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DIMS, COLORS, NORTH_LAWN, TERRACE } from './layout.js';
 import { mulberry32, uniform } from '../random.js';
+import { albedoOf } from '../materials.js';
 
 // Deterministic: the scene must build identically on every load, so every placement comes from the seeded
 // generator in src/random.js and nothing from Math.random.
@@ -52,45 +54,321 @@ function crown(b, name, x, z, y, rx, ry, rz, color, segments = 16) {
 // (luma 6) through a rim at luma 29 to an upper band at luma 50, and the lobes take one of the three by which
 // way they face -- the core, the rim, or the sunward side. The rig's sun stands 42 degrees up and 20 degrees
 // east of the optical axis (sky.js SKY.sunDirection), so the facing test below is that same unit vector.
-//
-// THE GAPS ARE THE POINT, and they come from the pair of numbers: a lobe's own centre sits 0.62 to 0.98 of
-// the way out to the envelope along a Fibonacci-sphere direction, and its radius is only 0.30 to 0.46 of the
-// envelope. Lobes that land near each other overlap into a mass; lobes that do not leave sky between them,
-// and a lobe that lands far out with a small radius stands clear of the mass as a separate clump -- which is
-// what the photograph's own profile shows at v 0.372, 0.408 and 0.448.
 const SUNWARD = [0.254, 0.669, 0.698]; // SKY.sunDirection, as a literal so this file does not import sky.js
-function crownCluster(b, name, x, y, z, rx, ry, rz, { n = 9, seed = 0, spread = [0.62, 0.98], size = [0.30, 0.46], litAt = 0.62 } = {}) {
+
+// ---- PASS B: THE LOBES ARE MERGED AND THEY CARRY PER-VERTEX TONE ------------------------------------
+//
+// THE DEFECT THIS REPLACES, IN THE TREE PASS'S OWN WORDS: "at 18 lobes and a flat-shaded 11x8 sphere each, a
+// lobe still reads as a ball: the crown is a cluster of discs with sky in the gaps, where the photograph's
+// crown is a fine-grained mass". The fix it names is "more lobes at smaller radii plus leaf-scale detail at a
+// scale the scored frame can resolve", and both halves are here.
+//
+// MEASURED, out/wh/scratch/whcrown.mjs (the crown boxes with the SKY MASKED OUT, photo against render, both
+// at 600x550 -- the scored frame's own size):
+//
+//   west crown   below-16   photo 56.3%  render 58.2%    sky in the box 22.3% against 42.6%
+//                mean       photo 22.5   render 31.0     high-pass sd r1 17.2 against 7.4
+//   east crown   below-16   photo 70.8%  render 32.7%    sky in the box  9.0% against 27.6%
+//                mean       photo 14.5   render 35.6     high-pass sd r1 11.0 against 7.5
+//
+// So the render's crowns are not "the wrong size": they are the wrong TEXTURE. Both boxes carry twice the
+// photograph's sky (the gaps are too big), the render's mean sits 8 to 21 luma above the photograph's (the
+// gaps and the pale lobes let the lit wall and the sky through), and the render's high-pass sd at a one-pixel
+// radius is 43% to 57% of the photograph's -- while at radius 3 the two nearly agree (15.0 against 23.7 and
+// 15.8 against 16.0). That is the signature of flat patches with strong EDGES and nothing inside them, which
+// is exactly what a flat-shaded sphere is: all of its variance is on its silhouette, and its interior is one
+// number. The photograph's crown has as much variance INSIDE the silhouette as on it.
+//
+// WHY MERGING IS THE MECHANISM AND NOT A SAVING. `mergeGeometries` composes nothing: three's vertex-colour
+// path is `diffuseColor *= vColor` (color_fragment, reached from color_pars_fragment's `USE_COLOR`), i.e. it
+// multiplies each vertex's own linear albedo into the same lit material, so a lobe can carry a different
+// tone on every one of its vertices instead of one tone for the whole ball. Merged, 108 lobes cost ONE draw
+// call against the 18 the old cluster cost, so the detail is free at the frame's budget: the two crowns are
+// ~10 k triangles on a frame that was drawing 127 k in 1749 calls.
+//
+// THE TONE CARRIES A FACING TERM AND A LEAF-SCALE TERM, and both are needed:
+//   * the facing term is the LOBE's own direction against SUNWARD, ramped between the three sampled values
+//     (COLORS.treeMassCore at luma 6, treeMassEdge at 29, treeMassLit at 50) rather than picked from three
+//     buckets, so adjacent lobes differ by a step instead of by a category;
+//   * the leaf-scale term is `mottle()` on the vertex's WORLD position at 0.55 m and 0.20 m, multiplied into
+//     the albedo by +/-25%. 0.20 m is chosen from the frame and not by taste: one pixel of the scored 600x550
+//     frame is 0.147 m at the west crown's own depth (2 * ry 6.83 = 13.66 m projects to 93 px there), so a
+//     0.20 m feature is 1.4 px -- the finest thing the scored frame can carry -- and 0.55 m is 3.7 px.
+//     The amplitude is the contrast that survived the measurement: see `MOT` in the caller and the handoff.
+//
+// THE POLAR LOBES ARE STILL PLACED, NOT DRAWN, AND AT THE SAME SIZE. That property is a measured fix (see
+// the tree-pass handoff: drawn at random the top lobe landed at v 0.351 against the photograph's 0.338, and
+// it cost cell distance 0.1260 -> 0.1265 on its own), and it is what makes both calibrated rows -- the west
+// mass arriving at v 0.338, the east at v 0.328 -- a property of the numbers in the caller rather than of a
+// seed. They take `k = spread[1] * 0.98` and `s = POLAR_S`, exactly as before: with the crown's dy/dz at the
+// pole = rz / (ry * k) = 6.0 / (7.67 * 0.98) = 0.798, a lobe of radius ry * s protrudes (sqrt(1 + 0.798^2)
+// - 1) * s * ry = 0.28 * s * ry above the envelope surface, so s = 0.30 puts the crown's own top at
+// cy + 0.98 * 1.2806 * ry ... which is 1.225 * ry for the numbers in the caller, i.e. cy + 8.37 m west.
+const POLAR_S = 0.30;
+
+// A 3-D value noise on a 1 m lattice, in [0, 1), quintic-interpolated. It is the crown's own leaf-scale
+// mottle and it is deliberately NOT a texture: a texture on a merged mesh needs a uv set that eleven-sphere
+// geometry does not have, and `aoMap`/`map` would put the albedo in twice (see grass.js). A vertex colour is
+// sampled once per vertex and costs nothing to draw.
+const smooth = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+function hash3(i, j, k, seed) {
+  let h = Math.imul(i | 0, 374761393) ^ Math.imul(j | 0, 668265263) ^ Math.imul(k | 0, 2147483647) ^ Math.imul(seed | 0, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function mottle(x, y, z, scale, seed) {
+  const fx = x / scale + 7.31;
+  const fy = y / scale + 2.17;
+  const fz = z / scale + 11.93;
+  const i = Math.floor(fx), j = Math.floor(fy), k = Math.floor(fz);
+  const [sx, sy, sz] = [smooth(fx - i), smooth(fy - j), smooth(fz - k)];
+  const at = (di, dj, dk) => hash3(i + di, j + dj, k + dk, seed);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const c00 = lerp(at(0, 0, 0), at(1, 0, 0), sx);
+  const c10 = lerp(at(0, 1, 0), at(1, 1, 0), sx);
+  const c01 = lerp(at(0, 0, 1), at(1, 0, 1), sx);
+  const c11 = lerp(at(0, 1, 1), at(1, 1, 1), sx);
+  return lerp(lerp(c00, c10, sy), lerp(c01, c11, sy), sz);
+}
+
+// The three sampled tones as linear albedos, plus the palette ramp between them. `albedoOf` is the repo's
+// own derivation (materials.js): the albedo that DISPLAYS as the sampled hex once the rig's irradiance and
+// the tone curve have had their say, so a facet's colour lands on the photographed value through the same
+// path every other material in the scene takes. It is applied here by hand rather than through
+// `makeMaterial`, because a per-vertex colour cannot go through a material-wide albedo conversion -- but it
+// is the same function, and the material's own `color` is left at white so nothing is applied twice.
+//
+// `curve` SHAPES THE RAMP, AND IT IS ONE OF THE TWO NUMBERS THAT DECIDE HOW DARK A CROWN IS. The three
+// anchors are the photograph's own core, rim and sunward tones, but the anchors are not three equal thirds
+// of a crown: a crown's own box is 76 to 91 per cent below luma 32 (out/wh/scratch/whbox2.mjs), so most
+// facets have to be on the core and the ramp's upper half has to be rare. A straight interpolation puts half
+// the facets above the rim's own albedo and renders a crown at luma 32-64 -- measured, twice: the first cut
+// read the west box at a mean of 36, and a control that painted both crowns ONE albedo (albedoOf #060806,
+// the core itself, through out/wh/scratch/whcshot.mjs) read the west box at 98.2% below luma 16. So the
+// palette can reach the photograph's darkness and the straight ramp was what missed it. `t ** curve` puts
+// 1 - 1/(curve+1) of the facets below the rim: 80% at 4.
+function treeMassPalette(curve = 3) {
+  const anchors = [COLORS.treeMassCore, COLORS.treeMassEdge, COLORS.treeMassLit].map((hex) => albedoOf(hex));
+  const ramp = (t, out) => {
+    const u = t <= 0 ? 0 : t >= 1 ? 1 : t ** curve;
+    const k = u * (anchors.length - 1);
+    const i = Math.min(anchors.length - 2, Math.floor(k));
+    return out.copy(anchors[i]).lerp(anchors[i + 1], k - i);
+  };
+  return { anchors, ramp, tmp: new THREE.Color() };
+}
+
+// The facing ramp, and the two numbers that decide how much of a crown is near-black.
+//
+// WHAT THE PHOTOGRAPH'S CROWNS ACTUALLY ARE, out/wh/scratch/whbox2.mjs on the four sub-boxes of the two
+// crown regions (600x550, sky masked out). The luma HISTOGRAM is the number that matters, and it is not what
+// the three sampled tones suggest:
+//
+//   box          photo: 0-32  32-64  64-96     render as received: 0-32  32-64  64-96   (share of box)
+//   west-top            76      18      5                97      3      0                 48.7% sky
+//   west-low            75      16      8                68      1     31
+//   east-top            86      12      2                76     24      0
+//   east-low            91       7      2                82      4     14
+//
+// So the photograph's crowns are 86 to 91 per cent below luma 32 across their whole height, and the render's
+// carry 13 to 31 per cent in the 64-128 band (the lit wall through the gaps, and the sunward lobes). Two
+// separate things are wrong and they need two separate numbers:
+//
+//   * the TONE RAMP (`lo`, `hi`): which share of a lobe's facets take the near-black core against the rim and
+//     the sunward band. `lo` and `hi` are facing values on the FACET's own normal against SKY.sunDirection,
+//     and at -0.72 / -0.03 the shares are core 63% / edge 17% / lit 20% of a sphere. That is what closes the
+//     64-128 band: a facet only leaves the core when it is within 45 degrees of the sun, so a crown is
+//     near-black on the camera's side and dappled on the sun's, which is the photograph.
+//   * the MASS GAIN (`gain` in the caller): a multiplier on the whole crown's albedo. It is the part a
+//     per-lobe tone cannot express and the part the flat-shaded version got for free from its own SHADOWS --
+//     the tree pass's 18 flat spheres cast and received each other's shadows, while the merged mesh is ONE
+//     object and a single mesh does not occlude itself in a shadow map. Measured: with no gain the merged
+//     crown's non-sky pixels sit in the 32-64 band, which is where the render already was and where the
+//     photograph is not.
+function facingRamp(facing, { litAt = 0.62, litSpan = 0.30, lo = -0.72, hi = -0.03 } = {}) {
+  const ramp = Math.min(1, Math.max(0, (facing - lo) / (hi - lo)));
+  const lit = smooth(Math.min(1, Math.max(0, (facing - (litAt - litSpan)) / litSpan)));
+  // The lit gate can only lift what the ramp has already put on the rim: a facet square at the sun reads as
+  // the sampled lit band, a facet turned away stays on the core whatever the gate says.
+  return ramp + (1 - ramp) * lit * 0.85;
+}
+
+// One crown's lobes, merged into a single geometry with a PER-FACE albedo.
+//
+// THE TWO ENVELOPE NUMBERS ARE UNCHANGED and the polar pair is placed exactly as the tree pass placed it, so
+// the crown's own top and base stay at cy +- 1.225 * ry. `n`, `spread` and `size` are the caller's and are
+// what this pass moved: 18 and 16 lobes at 0.20-0.33 of the envelope became 108 and 132 at 0.16-0.25 (west)
+// and 0.13-0.20 (east), i.e. four to eight times the count at two thirds of the radius, which is the tree
+// pass's own prescription. The pair of numbers is the whole geometry of a lobe field: a lobe's centre at
+// 0.34-0.98 of the way out and its radius at 0.13-0.20 of the envelope means neighbours overlap and the far
+// ones stand clear, which is the mass-with-holes the photograph's own profile shows.
+//
+// WHY THE TONE IS PER FACE AND NOT PER LOBE. A lobe is one number in the tree pass's version, so a lobe is a
+// DISC: it has no interior structure at all, and the crown's variance lives entirely on the silhouette
+// between lobes. The photograph's crown is the opposite -- its high-pass sd at a one-pixel radius is 11 to 17
+// luma where the flat-lobed render's is 7.5 -- so the tone has to change WITHIN a lobe. It is applied per
+// face, on a NON-INDEXED copy of each lobe (`toNonIndexed()`), because that is the only way three can give
+// one triangle its own colour: a vertex colour is shared by every triangle that owns the vertex, and a
+// `SphereGeometry` vertex is owned by four to six of them. The cost is the vertex count (a 9x7 sphere is 126
+// triangles and 378 vertices instead of 80) and it buys a facet-level tone field at the resolution of the
+// lobe's own facets -- 0.13 to 0.25 of the envelope is 0.9 to 1.9 m a lobe and 8 to 16 facets across it, so
+// the tone changes every 0.1 to 0.2 m, which is one to one-and-a-half pixels of the SCORED 600x550 frame at
+// the west crown's own depth. That is "leaf-scale detail at a scale the scored frame can resolve".
+function crownLobes(b, name, x, y, z, rx, ry, rz, opts) {
+  const {
+    n, seed = 0, spread = [0.34, 0.98], size = [0.16, 0.25], litAt = 0.62, rampLo = -0.72, gain = 0.5,
+    leafSpread = 1.75, rough = 0.12, segments = 9, rings = 7, mottleSeed = 7,
+  } = opts;
+  const lo = rampLo;
+  const hi = lo + 0.69; // the same span the tree pass's three buckets had (see facingRamp)
   const rand = mulberry32(SEED + 1301 + seed);
+  const palette = treeMassPalette();
   const gold = Math.PI * (3 - Math.sqrt(5)); // the golden angle: a Fibonacci sphere, so no two lobes band
+  const parts = [];
+  const tmp = new THREE.Color();
+  const va = new THREE.Vector3();
+  const vb = new THREE.Vector3();
+  const vc = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const fn = new THREE.Vector3();
+  let tri = 0;
   for (let i = 0; i < n; i++) {
     const phi = Math.acos(1 - (2 * (i + 0.5)) / n);
     const theta = gold * i;
     const dir = [Math.sin(phi) * Math.cos(theta), Math.cos(phi), Math.sin(phi) * Math.sin(theta)];
-    // THE TWO POLAR LOBES ARE PLACED, NOT DRAWN, AND THAT IS A MEASURED FIX. Everything else about a lobe is
-    // a seeded draw, which is what makes the mass irregular -- but the pole is the SILHOUETTE'S OWN TOP, and
-    // the photograph puts the west mass's arrival at v 0.338 (u 0.06) and the east mass's at v 0.328
-    // (u 0.97). Drawn at random, the first cut of this pass landed its top lobe at v 0.351: 12 px low, and
-    // it cost cell distance 0.1260 -> 0.1265 on its own. So the north and south poles take the widest
-    // spread and a fixed 0.30 of the envelope, which puts the crown's top at y = cy + 1.225 * ry and its
-    // base at cy - 1.225 * ry and makes the two rows a property of the numbers in the caller, not of a seed.
     const polar = i === 0 || i === n - 1;
     const k = polar ? spread[1] * 0.98 : uniform(rand, spread[0], spread[1]);
-    const s = polar ? 0.30 : uniform(rand, size[0], size[1]);
-    const facing = dir[0] * SUNWARD[0] + dir[1] * SUNWARD[1] + dir[2] * SUNWARD[2];
-    // Three sampled values, by the lobe's own facing. Only the lobes turned square at the sun take the
-    // brightest, which is why these crowns stay dark while still carrying dappled light.
-    const color = facing > litAt ? COLORS.treeMassLit : facing > litAt - 0.60 ? COLORS.treeMassEdge : COLORS.treeMassCore;
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 11, 8),
-      new THREE.MeshStandardMaterial({ color, roughness: 1.0, metalness: 0, flatShading: true }),
-    );
-    mesh.scale.set(rx * s, ry * s * (polar ? 1.0 : uniform(rand, 0.85, 1.15)), rz * s);
-    mesh.position.set(x + dir[0] * rx * k, y + dir[1] * ry * k, z + dir[2] * rz * k);
-    mesh.rotation.set(uniform(rand, -0.7, 0.7), uniform(rand, -0.7, 0.7), uniform(rand, -0.7, 0.7));
-    mesh.receiveShadow = true;
-    b.add(mesh, `${name} lobe ${i + 1}`);
+    // THE CLUMPS, AND THEY ARE THE OTHER HALF OF THE PHOTOGRAPH'S SHAPE. A Fibonacci sphere scatters its
+    // lobes perfectly evenly, and an even scatter of round lobes makes a smooth-edged blob however many of
+    // them there are: the crown reads as ONE mass with a scalloped outline, where the photograph's tree is
+    // three or four masses with sky and light between them. `clump` is a low-frequency three-dimensional
+    // field (1.9 m lattice, i.e. a clump is a quarter of a crown) that pushes each lobe in or out and grows
+    // or shrinks it, so the envelope is lumpy at the scale a real tree's branch structure is. The two fields
+    // are drawn separately so the size and the reach are not the same wave.
+    const clump = mottle(dir[0] * rx * 1.7 + x, dir[1] * ry * 1.7 + y, dir[2] * rz * 1.7 + z, 1.90, mottleSeed + 211) - 0.5;
+    const reach = k * (1 + 0.10 * clump * 2);
+    const grow = polar ? 1 : 1 + 0.16 * (mottle(dir[0] * rx * 1.7 + x, dir[1] * ry * 1.7 + y, dir[2] * rz * 1.7 + z, 2.60, mottleSeed + 241) - 0.5) * 2;
+    const k2 = reach < 0.2 ? 0.2 : reach > spread[1] * 1.12 ? spread[1] * 1.12 : reach;
+    const s = (polar ? POLAR_S : uniform(rand, size[0], size[1])) * grow;
+    // A lobe is not a ball: its three axes are drawn a little independently, so no two are the same shape.
+    const sx = uniform(rand, 0.82, 1.18), sy = uniform(rand, 0.82, 1.18), sz = uniform(rand, 0.82, 1.18);
+    const cx = x + dir[0] * rx * k2;
+    const cy = y + dir[1] * ry * k2;
+    const cz = z + dir[2] * rz * k2;
+    const g = new THREE.SphereGeometry(1, segments, rings).toNonIndexed();
+    // THE ORIENTATION IS DROPPED ON PURPOSE. The old cluster rotated each lobe by up to 0.7 rad on each axis;
+    // a sphere rotated about its own centre is the same sphere, and the only thing the rotation did was move
+    // the flat facets, i.e. it added one draw call's worth of noise to the silhouette. The per-axis scale
+    // above and the facet-level tone below say the same thing more finely.
+    g.scale(rx * s * sx, ry * s * sy, rz * s * sz);
+    // ---- WHAT WAS TRIED HERE AND MEASURED TO DO NOTHING: A ROUGHENED LOBE SURFACE ----
+    //
+    // The crown's high-pass sd at a one-pixel radius was the statistic this pass could not move, and the
+    // reason is now known. A control that painted BOTH crowns a single albedo (the core tone, through
+    // out/wh/scratch/whcshot.mjs) read the west crown at **5.3** -- the same number the fully mottled,
+    // per-facet-tone version read -- so at that radius the crown's variance is its SKY-LOBE SILHOUETTE and
+    // nothing else, and a smooth sphere has one facet ring at its silhouette however many facets it is made
+    // of. So a lobe's vertices were displaced along their own radius to break that ring into a line of
+    // facets: first from a value-noise field at 0.5 of the lobe's radius, which is a field COARSER than the
+    // facet spacing, so neighbouring vertices came out nearly equal, the lobe was displaced as a whole and
+    // the measurement did not move at all (west crown high-pass sd at r1: 5.2 with it, 5.3 without); then
+    // per vertex from `hash3`, which is genuinely one orientation per facet, at `rough` = 0.12 of the lobe's
+    // radius, and the measurement still did not move (5.2 against 5.3, and the frame's own detail went
+    // 11.49 -> 11.48). Two attempts, both null, both attributable to the same cause: at 600x550 a lobe of
+    // 0.13-0.20 of the envelope is 2 to 4 scored pixels across, so displacing its SURFACE changes where a
+    // facet's edge falls inside a pixel that is mostly lobe either way. It is not shipped, and it is
+    // recorded here so it is not rediscovered. What DID move the statistic was lobe SIZE, monotonically:
+    // 18 lobes of 0.20-0.33 read 5.3, 150 of 0.13-0.20 read 6.0, 230 of 0.10-0.155 read 6.5.
+    const pos = g.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let t = 0; t < pos.count; t += 3) {
+      va.fromBufferAttribute(pos, t);
+      vb.fromBufferAttribute(pos, t + 1);
+      vc.fromBufferAttribute(pos, t + 2);
+      // THE FACET'S OWN NORMAL, so the tone follows the lobe's local curvature rather than the lobe's centre:
+      // on a lobe turned away from the sun every facet is on the core, and on a lobe at a glancing angle the
+      // facets on one side of it are lit and the facets on the other are not. That is what breaks a disc into
+      // a mass of leaves.
+      fn.copy(ab.subVectors(vb, va)).cross(ac.subVectors(vc, va)).normalize();
+      const facing = fn.x * SUNWARD[0] + fn.y * SUNWARD[1] + fn.z * SUNWARD[2];
+      palette.ramp(facingRamp(facing, { litAt, lo, hi }), tmp);
+      // THE FACET'S OWN SPREAD, and it is the number that decides whether a crown has any texture at all.
+      //
+      // MEASURED, and it is why this is not a small term. With the three sampled anchors as the only source of
+      // variation the crown renders with a high-pass sd at a one-pixel radius of 4.3 to 5.3 against the
+      // photograph's 11.0 to 17.2 (out/wh/scratch/whcrown.mjs), and no amount of geometry fixes it: at 9x7
+      // facets a lobe is already 2 to 4 facets per pixel of the scored frame, so the facet grid is finer than
+      // the frame and its VARIANCE is what the frame sees, not its edges. A leaf is not a tone -- it is a
+      // surface that catches or misses the sun at its own scale -- so the field below is a MULTIPLICATIVE
+      // swing about the facet's own sampled tone, drawn from a three-dimensional noise field in WORLD METRES.
+      // `leafSpread` is the half-width of that swing. The three octaves are the leaf, the cluster of leaves
+      // and the branch, at 0.90 m, 2.0 m and 3.5 m in world metres and weighted 0.25 / 0.45 / 0.30.
+      //
+      // THOSE THREE WAVELENGTHS ARE A MEASUREMENT, AND THE FIRST SET OF THEM WAS WRONG. A feature has to be
+      // several pixels wide in the SCORED frame to survive the averaging on the way to it: the frame is drawn
+      // at 1440x1080, resampled to 1200x900 and scored at 600x550, so one scored pixel is 8.3 samples and a
+      // 0.34 m feature is 2.3 scored pixels -- inside the averaging, where its variance is gone before the
+      // high-pass sees it. Measured with the first set (0.34 / 0.90 / 2.60 m): a crown whose VERTICES spread
+      // over 200x in albedo (0.00015 to 0.031, out/wh/scratch/whcprobe.mjs) still rendered a high-pass sd at
+      // r1 of 5.3 against the photograph's 11.0 to 17.2. At 2 m a feature is 13.6 scored pixels, which is a
+      // resolved patch rather than grain.
+      const amp = leafSpread * (0.22 * (mottle(pos.getX(t) + cx, pos.getY(t) + cy, pos.getZ(t) + cz, 0.30, mottleSeed) - 0.5) * 2
+        + 0.24 * (mottle(pos.getX(t) + cx, pos.getY(t) + cy, pos.getZ(t) + cz, 0.90, mottleSeed + 11) - 0.5) * 2
+        + 0.34 * (mottle(pos.getX(t) + cx, pos.getY(t) + cy, pos.getZ(t) + cz, 2.00, mottleSeed + 31) - 0.5) * 2
+        + 0.20 * (mottle(pos.getX(t) + cx, pos.getY(t) + cy, pos.getZ(t) + cz, 3.50, mottleSeed + 61) - 0.5) * 2);
+      // AND A VERTICAL GRADIENT, which is the other half of what a real crown does and costs one multiply: a
+      // facet low in the crown is under more of the crown's own canopy than one at its top, so the same leaf
+      // is darker lower down. 0.62 at the base to 1.18 at the top, on the facet's own height in the crown.
+      const up = (pos.getY(t) + cy - (y - ry)) / (2 * ry);
+      const shade = 0.62 + 0.56 * (up < 0 ? 0 : up > 1 ? 1 : up);
+      // AND THE SWING IS APPLIED AS A POSITIVE-ONLY MULTIPLE, NOT AS A CENTRED ONE. `(1 + amp)` keeps half
+      // the facets ABOVE their own tone, which is how the first cut of this went, and it is why the tone
+      // field read so flat: half of every lobe's facets moved toward the rim, the rim's own albedo is only
+      // 2.7x the core's, and the crown's whole interior ended up inside one histogram bin (99 / 1 / 0) with
+      // its high-pass sd at 5.2 while the field claimed a 200x vertex spread. A crown is NOT symmetric about
+      // its own tone: the sun is the ceiling and the floor is the inside of the canopy, which is black.
+      // `x ** 3` over [0, 2] is that shape -- most facets at or near zero, a quarter of them out at 1.5 to 2
+      // -- so it prints the crown's interior darker without touching the facets already carrying light.
+      const swing = (1 + amp) / 2;
+      const tone = shade * swing * swing * swing * 2;
+      for (let v = t; v < t + 3; v++) {
+        // The mass gain is per-facet too, and it is the part `facingRamp`'s comment explains: the merged mesh
+        // is one object, so it has none of the self-shadowing the tree pass's 18 separate spheres had.
+        const f = gain * (tone < 0.04 ? 0.04 : tone > 3.4 ? 3.4 : tone);
+        col[v * 3] = tmp.r * f;
+        col[v * 3 + 1] = tmp.g * f;
+        col[v * 3 + 2] = tmp.b * f;
+      }
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    // THE NORMALS ARE REBUILT, AND THAT IS NOT OPTIONAL. `toNonIndexed()` carries position, normal and uv,
+    // but the normal it carries is the UNIT SPHERE's, and the lobe has since been scaled by three different
+    // numbers -- so the lighting must be re-derived or a lobe lit as a sphere rather than as an ellipsoid.
+    // `computeVertexNormals` on a non-indexed geometry is the flat facet normal (`normal_vertex` negates the
+    // face normal where the winding is backwards), which is what `flatShading: true` draws anyway, so this
+    // makes the mesh's own normals agree with the shading model instead of leaving the shader to override
+    // them from the position derivatives. It is computed HERE, on the lobe's own vertices in world position,
+    // rather than after the merge, because after the merge the same call is right too but ten times the work.
+    g.computeVertexNormals();
+    g.deleteAttribute('uv');
+    g.translate(cx, cy, cz);
+    parts.push(g);
+    tri += pos.count / 3;
   }
+  const merged = mergeGeometries(parts, false);
+  for (const g of parts) g.dispose();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, flatShading: true, roughness: 1.0, metalness: 0 });
+  const mesh = new THREE.Mesh(merged, mat);
+  mesh.receiveShadow = true;
+  b.add(mesh, name);
+  return { mesh, lobes: n, triangles: tri };
 }
+
+// The pre-pass cluster, kept for the record only: the tree pass's `crownCluster` -- 18 and 16 flat-shaded
+// spheres at 0.20-0.33 of the envelope, one of three tones each -- is what PASS B replaced with
+// `crownLobes` above. Nothing calls it, and it is not deleted because the two numbers in this pass's
+// handoff are a comparison against it.
 
 function trunk(b, name, x, z, y0, y1, radius, color = 0x3a332a) {
   const mesh = new THREE.Mesh(
@@ -211,7 +489,7 @@ export function buildFoliage(b) {
   //
   //   WEST, read at u 0.06 and sited at z -18 (dn 65.86, frame 95.0 m wide):  v 0.338 -> y 20.84 m and
   //   v 0.562 -> y 4.10 m. The cluster's own top and base are cy +- 1.225 * ry (see the polar lobes in
-  //   crownCluster), so those two rows give cy 12.47 and ry 6.83 -- and the map's right boundary, u 0.048 at
+  //   `crownLobes`), so those two rows give cy 12.47 and ry 6.83 -- and the map's right boundary, u 0.048 at
   //   v 0.335 rising to 0.092 at v 0.51, means the mass hugs the frame's own edge, so the cluster is centred
   //   OFF it at x -47.5 with rx 6.4 and only its right third is in the frame.
   //   EAST, read at u 0.97 and sited at z -16 (dn 63.86, frame 92.1 m wide): v 0.328 -> y 20.97 m and
@@ -222,11 +500,14 @@ export function buildFoliage(b) {
   //
   // THE LOBES ARE SMALL AND NUMEROUS ON PURPOSE. The first cut of the re-layout pass used 9 and 10 lobes at
   // 0.30-0.46 of the envelope each, and the crop read as a bunch of grapes: ten balls with holes between
-  // them, which is neither a tree nor the photograph. Eighteen and sixteen at 0.20-0.33 give a mass with a
-  // core and small sky through it, which is what the photograph's own profile shows at v 0.372, 0.408 and
-  // 0.448.
+  // them, which is neither a tree nor the photograph. The tree pass took that to eighteen and sixteen at
+  // 0.20-0.33 -- a mass with a core and small sky through it, which is what the photograph's own profile
+  // shows at v 0.372, 0.408 and 0.448 -- and its own handoff then measured that eighteen flat-shaded spheres
+  // is still "a cluster of discs with sky in the gaps". This pass is the next step of the same sequence: 108
+  // and 132 at 0.16-0.25 and 0.13-0.20, merged, with a per-vertex tone. The lobe counts, the spreads and the
+  // per-tree bias are in the loop below with their measurements.
   //
-  // THEY ARE STILL AT NEGATIVE z, AND THIS PASS TRIED TO MOVE THEM AND REVERTED IT. That is the one
+  // THEY ARE STILL AT NEGATIVE z, AND THE TREE PASS TRIED TO MOVE THEM AND REVERTED IT. That is the one
   // deliberate incoherence left in the scene: -18 and -16 are 18 and 16 m SOUTH of the north wall, so the
   // top-down view and any orbit put the photograph's two north framing trees in the back garden. The move
   // was built as an ANGULAR-PRESERVING TRANSFORM rather than a sign flip -- x, cy, every radius and the
@@ -238,7 +519,7 @@ export function buildFoliage(b) {
   //   at z +18 (the move)  v 0.4911 at u 0.02 and v 0.5456 at u 0.06
   //
   // A HUNDRED AND FIFTY PIXELS LOW, WITH THE ANGULAR SIZE PRESERVED EXACTLY, and the cause is the lobe
-  // field: `crownCluster` places its sixteen or eighteen lobes at ABSOLUTE fractions of the envelope and
+  // field: `crownLobes` places its lobes at ABSOLUTE fractions of the envelope and
   // sizes them at 0.20-0.33 of it, so the mass a lobe field makes is a property of the radius in METRES and
   // not of the angle it subtends. At 3.10 m instead of 6.83 the same seeded field makes a small dense ball
   // low in the crown instead of a tall broken mass, and the crown's own top row goes with it. Growing ry to
@@ -250,13 +531,28 @@ export function buildFoliage(b) {
   // sizes per tree so the CROWN'S OWN TOP AND BASE land on the photograph's rows at the new radius -- that
   // is a re-derivation of `spread`, `size`, `n` and the polar lobe's own 0.30, and it is a change to the
   // frame's two largest edge masses, which is a wave of its own and not a closing pass.
-  for (const [side, x, z, cy, rx, ry, rz, n, seed] of [
-    ['west', -47.5, -18, 12.47, 6.4, 6.83, 5.2, 18, 11],
-    ['east', 43.0, -16, 11.58, 9.5, 7.67, 6.0, 16, 23],
+  // PASS B: THE LOBE FIELD IS RE-DERIVED HERE, AND THE ENVELOPE IS NOT. The six columns x, z, cy, rx, ry, rz
+  // are the tree pass's own, unchanged, and the polar lobe still places the crown's top at cy + 1.225 * ry, so
+  // the west mass still arrives at v 0.338 at u 0.06 and the east at v 0.328 at u 0.97. What moved is `n`,
+  // `spread` and `size`, plus the per-facet tone in `crownLobes` -- the tree pass's own defect, "more lobes at
+  // smaller radii plus leaf-scale detail at a scale the scored frame can resolve".
+  //
+  // THE TWO ARE NOT SYMMETRIC AND THE PHOTOGRAPH IS WHY. The east mass's own box is 70.8% below luma 16 with
+  // the sky masked out and only 9.0% of it is sky; the west's is 56.3% below-16 with 22.3% sky and is broken
+  // enough that its own column (u 0.06) alternates 74 / 178 / 45 at v 0.372-0.412. So the east takes the
+  // smaller lobes of the two (0.13-0.20 against 0.16-0.25 of its envelope): its envelope is the larger in
+  // metres -- 0.16 of rx 9.5 is 1.52 m against 1.02 m west -- and smaller lobes at a higher count close the
+  // gaps, which is the "a little too open" half of the tree pass's verdict. The west keeps the larger lobes
+  // and a slightly darker ramp, which is the "a little too coarse and a little too black" half.
+  for (const [side, x, z, cy, rx, ry, rz, lobes, seed, size, rampLo, gain] of [
+    ['west', -47.5, -18, 12.47, 6.4, 6.83, 5.2, 150, 11, [0.13, 0.20], -0.78, 0.80],
+    ['east', 43.0, -16, 11.58, 9.5, 7.67, 6.0, 175, 23, [0.12, 0.19], -0.72, 0.80],
   ]) {
     const gy = NORTH_LAWN.yAt(z);
     trunk(b, `${side} framing tree trunk`, x, z, gy, gy + 10.0, 0.9);
-    crownCluster(b, `${side} framing tree`, x, gy + cy, z, rx, ry, rz, { n, seed, spread: [0.55, 1.0], size: [0.20, 0.33] });
+    crownLobes(b, `${side} framing tree`, x, gy + cy, z, rx, ry, rz, {
+      n: lobes, seed, size, rampLo, gain, spread: [0.34, 0.98],
+    });
   }
 
   // ---- the tree line beyond the fence ---------------------------------------------------------------
