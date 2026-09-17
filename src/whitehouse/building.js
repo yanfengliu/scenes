@@ -53,9 +53,9 @@ export const FACADE = {
   parapet: 15.3, // the top of the balustrade: the photo's own v 0.3800, and the published 50 ft 4 in
   balustradeTop: 15.3,
   balustradeBottom: 14.35,
-  deckTop: 14.2, // the flat deck behind the balustrade -- this wave does NOT build a hip roof
-  roofRise: 1.1, // [estimate] the ridge of the low roof that shows above the deck, behind the balustrade
-  chimneyTop: 17.0, // [estimate] the photo shows chimney stacks above the parapet line
+  deckTop: 14.2, // the flat deck behind the balustrade; the hip, the blocks and the stacks above it are
+  // measured per piece in the roofscape block below -- a single chimneyTop/roofRise constant was the old
+  // blockout, and its 17.0 m hid every stack behind the parapet's 17.4 m sightline
   height: 15.3,
 };
 
@@ -452,18 +452,102 @@ export function buildBuilding(b) {
   }
 
   // ---- the roof deck and the roofscape ----------------------------------------------------------------
-  // A FLAT DECK behind the balustrade, not a hip roof: the balustrade hides the roof from the photo view
-  // entirely, and a deck is honest about what is not modelled yet. A low ridge and the chimneys stand above
-  // it because the photo's own silhouette has them.
+  // THE ROOFLINE THE PHOTOGRAPH ACTUALLY SHOWS, MEASURED PER-PIXEL. The blockout this replaces put five
+  // stacks at x [-18.6..23.25] rising to 17.0 m at z -0.62*D (-16.18) and a flagpole to 21.4 m at z -D/2
+  // (-13.05), and NONE of it was in the frame: over the parapet (15.3 m at z 0) the sightline to z -16.18
+  // needs a top above 17.40 m, and over the pediment's apex (17.9 m at z +6.5) the sightline to z -13.05
+  // needs 22.07 m. Every copy the blockout built hid behind the building.
+  //
+  // The measurements are out/wh/scratch/roofline-probe.mjs (per-pixel silhouette tops and class map) and
+  // roofline-probe2.mjs (far stacks, box-mean colours) on whitehouse.webp at 1200x900. Each world figure
+  // below is the photograph's own row inverted through the calibrated camera at the piece's ASSUMED z --
+  // the photograph fixes u and v and cannot fix z; every z here is an assumption stated with its reason.
+  // Inversion: y = 9.086 + (0.5 - v) * 1.08184 * dn, x = (u - 0.5) * 1.44246 * dn, dn = 47.863 - z.
+  //
+  //   SIX stacks above the parapet, not the blockout's five invented ones:
+  //   * two big white BLOCKS flanking the pediment, flat tops at v 0.3267-0.3278. The west one spans
+  //     u 0.3775-0.4092 with a lower annex at u 0.3708-0.3775 (top v 0.3378) carrying a dark recessed
+  //     panel (u 0.3721-0.3775, v 0.3422-0.3622) and an antenna mast at u 0.3892 to v 0.3189; the east
+  //     one spans u 0.5667-0.6275. ASSUMED z: their north faces at -13.5, straddling the ridge, big
+  //     bulkhead masses rising through the roof -- at any z behind the parapet their u and v land the
+  //     same within the frame's tolerance, and -13.5 keeps them on the roof's own structure.
+  //   * two white chimney STACKS outside those: u 0.3250-0.3450 top v 0.333 (west), u 0.6583-0.6817 top
+  //     v 0.336 (east), each with dark equipment on top to v 0.324/0.332. ASSUMED z -15.62 face, on the
+  //     ridge line (-16.18), where the old blockout already put its stacks: tops 20.55/20.34 m.
+  //   * two END chimneys the blockout never had: u 0.1525-0.1692 top v 0.366 (west), u 0.8400-0.8525 top
+  //     v 0.3685 (east), each with a dark cap and a thin mast to v 0.3478/0.3489. These CANNOT stand on
+  //     the roof at z -16.18: their u would put them at x +-31..32, 6 m PAST the end walls (+-25.6).
+  //     ASSUMED z -3: they land at x ~+-25, chimneys rising from the end walls at their north corners,
+  //     tops 16.5/16.3 m -- the end chimneys the HABS elevations draw at both ends of the block.
+  //   * a DARK ROOF BAND between and behind the stacks, top edge v 0.3678-0.3711 in the open stretches
+  //     (u 0.346-0.364, 0.642-0.657, 0.682-0.697), sampled #0b0f16: the hip's north slope standing in the
+  //     parapet's own shade. Built as a hip: ridge 18.12 m at z -16.18 (the row's inversion; the published
+  //     60 ft 4 in = 18.39 m to the roof's top is 2 px away at this depth), north slope from the deck's
+  //     edge at z -1, south slope to z -24, end hips from x +-25 down to the deck corners.
+  //   * the FLAG POLE on the centre line, u 0.4992-0.5017, top v 0.1778, emerging from behind the
+  //     pediment's apex exactly at the apex row: at z -13.05 (ASSUMED: the roof's centre, where the
+  //     building's own pole stands) the sightline over the apex is 22.07 m, v 0.3031 = the measured
+  //     0.3033. Pole to 30.32 m, 0.15 m square -- 2 px of the frame, as the photograph's own pole is.
+  //   * the FLAG, flying WEST at what the photograph shows as half-staff: u 0.4892-0.5017, v
+  //     0.2278-0.244, sampled #1d2844 (77% dark, core #000207): a backlit near-black navy. At z -13.05
+  //     that box is x -0.95..0, y 25.95..27.02 -- 3.3 m below the pole's top.
   b.box('roof deck', { x0: -halfW, x1: halfW, y0: FACADE.balustradeBottom - 0.5, y1: FACADE.deckTop, z0: zS, z1: zN }, COLORS.roof, { metric: true });
-  b.box('roof ridge', { x0: -halfW + 2, x1: halfW - 2, y0: FACADE.deckTop, y1: FACADE.deckTop + FACADE.roofRise, z0: -D / 2 - 4, z1: -D / 2 + 4 }, COLORS.roofShadow, { metric: true });
-  const chimneyX = [-18.6, -9.3, 4.65, 13.95, 23.25];
-  chimneyX.forEach((x, i) => {
-    b.box(`chimney ${i + 1} stack`, { x0: x - 0.55, x1: x + 0.55, y0: FACADE.deckTop, y1: FACADE.chimneyTop, z0: -D * 0.62, z1: -D * 0.62 + 1.1 }, COLORS.stoneTrim, { metric: true });
-    b.box(`chimney ${i + 1} cap`, { x0: x - 0.72, x1: x + 0.72, y0: FACADE.chimneyTop, y1: FACADE.chimneyTop + 0.22, z0: -D * 0.62 - 0.17, z1: -D * 0.62 + 1.27 }, COLORS.stoneTrim);
-  });
-  b.box('flagpole', { x0: -0.06, x1: 0.06, y0: FACADE.deckTop, y1: 21.4, z0: -D / 2 - 0.06, z1: -D / 2 + 0.06 }, COLORS.stoneTrim);
-  b.box('flag', { x0: 0.06, x1: 1.5, y0: 19.4, y1: 20.6, z0: -D / 2 - 0.03, z1: -D / 2 + 0.03 }, COLORS.corniceShadow);
+
+  // The hip. profileSolid reads its profile along -z with the coordinates NEGATED (see the terrace's own
+  // note): s 1 is world z -1. The ridge is the measured band's own row; the north slope alone carries the
+  // band's sampled near-black, the rest of the roof keeps the deck's own tone for the orbit views.
+  const ridgeY = 18.12; // v 0.3696 at z -16.18; the band's open stretches measure v 0.3678-0.3711
+  const ridgeS = 16.18; // -z of the ridge line, the old blockout's own chimney line -0.62*D
+  b.profileSolid('roof north slope', [[1, FACADE.deckTop - 0.2], [1, FACADE.deckTop], [ridgeS, ridgeY], [ridgeS, FACADE.deckTop - 0.2]], -25, 25, COLORS.roofSlope);
+  b.profileSolid('roof south slope', [[ridgeS, FACADE.deckTop - 0.2], [ridgeS, ridgeY], [24, FACADE.deckTop], [24, FACADE.deckTop - 0.2]], -25, 25, COLORS.roof);
+  for (const side of [-1, 1]) {
+    b.quadSlab(
+      `roof ${side < 0 ? 'west' : 'east'} hip`,
+      side < 0
+        ? [{ x: -25, y: ridgeY, z: -ridgeS }, { x: -halfW, y: FACADE.deckTop, z: -24 }, { x: -halfW, y: FACADE.deckTop, z: -1 }]
+        : [{ x: 25, y: ridgeY, z: -ridgeS }, { x: halfW, y: FACADE.deckTop, z: -1 }, { x: halfW, y: FACADE.deckTop, z: -24 }],
+      0.3,
+      COLORS.roof,
+    );
+  }
+
+  // The two big white blocks flanking the pediment, and the west one's annex, recess and mast.
+  for (const [name, x0, x1, top] of [
+    ['west rooftop block', -10.84, -8.04, 20.57], // u 0.3775-0.4092, top v 0.327
+    ['east rooftop block', 5.90, 11.29, 20.59], // u 0.5667-0.6275, top v 0.3267
+  ]) {
+    b.box(`${name} body`, { x0, x1, y0: FACADE.deckTop, y1: top - 0.18, z0: -18.5, z1: -13.5 }, COLORS.roofBlock, { metric: true });
+    b.box(`${name} coping`, { x0: x0 - 0.14, x1: x1 + 0.14, y0: top - 0.18, y1: top, z0: -18.64, z1: -13.36 }, COLORS.roofBlock, { metric: true });
+  }
+  b.box('west rooftop block annex', { x0: -11.44, x1: -10.84, y0: FACADE.deckTop, y1: 19.85, z0: -18.5, z1: -13.5 }, COLORS.roofBlock, { metric: true });
+  b.box('west rooftop block recess', { x0: -11.32, x1: -10.84, y0: 18.21, y1: 19.54, z0: -13.47, z1: -13.42 }, COLORS.blockRecess);
+  b.box('west rooftop block mast', { x0: -9.84, x1: -9.78, y0: 20.52, y1: 21.10, z0: -16.1, z1: -15.95 }, COLORS.poleDark);
+  b.box('west rooftop block roof box', { x0: -8.26, x1: -7.70, y0: 20.52, y1: 20.95, z0: -16.5, z1: -15.5 }, COLORS.roofBlock);
+  b.box('east rooftop block roof box', { x0: 6.64, x1: 7.52, y0: 20.54, y1: 20.95, z0: -16.5, z1: -15.5 }, COLORS.roofBlock);
+
+  // The four measured chimney stacks: white bodies with a brighter cap ledge and the photograph's own dark
+  // equipment on top. The end chimneys stand at z -3 against the end walls' north corners (the assumption
+  // above), the inner two on the ridge line.
+  for (const [name, x0, x1, z0, z1, top, cap] of [
+    ['west chimney', -16.02, -14.19, -16.72, -15.62, 20.55, [-15.62, -15.16, 21.17]], // u 0.3250-0.3450
+    ['east chimney', 14.50, 16.63, -16.72, -15.62, 20.34, [15.27, 16.06, 20.62]], // u 0.6583-0.6817
+    ['far west chimney', -25.50, -24.27, -3.55, -2.45, 16.46, [-25.14, -24.65, 16.72]], // u 0.1525-0.1692
+    ['far east chimney', 24.95, 25.86, -3.55, -2.45, 16.32, [25.00, 25.37, 16.69]], // u 0.8400-0.8525
+  ]) {
+    b.box(`${name} stack`, { x0, x1, y0: FACADE.deckTop, y1: top - 0.18, z0, z1 }, COLORS.chimneyStack, { metric: true });
+    b.box(`${name} cap ledge`, { x0: x0 - 0.12, x1: x1 + 0.12, y0: top - 0.18, y1: top, z0: z0 - 0.12, z1: z1 + 0.12 }, COLORS.chimneyStack, { metric: true });
+    b.box(`${name} dark cap`, { x0: cap[0], x1: cap[1], y0: top - 0.05, y1: cap[2], z0: (z0 + z1) / 2 - 0.4, z1: (z0 + z1) / 2 + 0.4 }, COLORS.chimneyCap);
+  }
+  // The end chimneys' own thin masts (the photograph's u 0.1533-0.1558 to v 0.3478 and u 0.8467-0.8483 to
+  // v 0.3489), beside the caps.
+  b.box('far west chimney mast', { x0: -25.42, x1: -25.23, y0: 16.41, y1: 17.46, z0: -3.1, z1: -2.9 }, COLORS.chimneyCap);
+  b.box('far east chimney mast', { x0: 25.42, x1: 25.53, y0: 16.27, y1: 17.38, z0: -3.1, z1: -2.9 }, COLORS.chimneyCap);
+
+  // The flag pole and the flag. The pole's z is the roof's centre line (the assumption above); its top is
+  // the photograph's own v 0.1778. The flag flies WEST at the measured rows, in its sampled backlit navy.
+  b.box('flagpole', { x0: -0.075, x1: 0.075, y0: 18.0, y1: 30.10, z0: -D / 2 - 0.075, z1: -D / 2 + 0.075 }, COLORS.poleDark);
+  b.box('flagpole finial', { x0: -0.11, x1: 0.11, y0: 30.10, y1: 30.32, z0: -D / 2 - 0.11, z1: -D / 2 + 0.11 }, COLORS.poleDark);
+  b.box('flag', { x0: -0.95, x1: -0.06, y0: 25.95, y1: 27.02, z0: -D / 2 - 0.03, z1: -D / 2 + 0.03 }, COLORS.flagDark);
 
   // ---- the north front's eleven bays ------------------------------------------------------------------
   const winW = DIMS.windowWidth;

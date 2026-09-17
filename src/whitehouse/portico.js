@@ -119,6 +119,13 @@ export const PORTICO_HEIGHTS = {
 // which its code did not implement (it read COLUMN_Z = Z_FRONT + 5.4, i.e. 1.1 m from the wall).
 const COLUMN_Z = Z_FRONT - 1.1;
 const BACK_Z = 0.1; // the porch's roof and the pediment run back to the wall
+// THE RAKING CORNICE'S OWN OUTER END, measured off the photograph rather than derived from the pediment's
+// width. The photograph's silhouette leaves the sky at v 0.3650 (its raking cornice's outer end) and its
+// dark roof band (top v 0.3711, #000408) runs unbroken from u 0.3458 to u 0.3642, so the rake's corner lies
+// WEST of u 0.3642; on the east it must lie EAST of u 0.6325, where the photo's band starts. Inverting both
+// through this camera at the eave plane (dn = 47.863 - 6.5) gives |x| <= 9.1 m. The pediment's own half-width
+// stays W/2 + 1.2 (the eave cornice and the tympanum are drawn to it); only the raking cornice stops here.
+const RAKE_HALF_WIDTH = 9.0;
 // A plain Ionic column: a square plinth, a base moulding, the shaft and a capital block. The volutes are
 // left to a later wave -- at the photo's scale they are four pixels across.
 //
@@ -165,7 +172,7 @@ function column(b, name, x, z, y0, height, radius, color, occlusion = 1) {
 // `zFront` IS THE BACK PLANE HERE AND `depth` IS POSITIVE TOWARDS THE CAMERA, because the porch is now in
 // +z: the pediment's mass runs from the wall (BACK_Z) forward to the eave plane. The tympanum is placed by
 // its front face, 0.3 m behind the rakes, so the triangle is never an open frame with sky through it.
-function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThickness = 0.42) {
+function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThickness = 0.42, measuredRakeHalfWidth = null) {
   const rise = yApex - yEave;
   const slope = Math.atan2(rise, halfWidth);
   // THE RAKE'S OWN LENGTH, AND WHY IT IS ITS THICKNESS AND NOT A HALF METRE. Two boxes of thickness t
@@ -180,20 +187,40 @@ function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThick
   // 0.42 is right for the photograph's 2.09 m, where 0.26 is a pencil line under a 12 px-deep shadow.
   const rake = rakeThickness;
   const zc = zFront + depth / 2;
+  // THE RAKE'S OUTER END, IN METRES ALONG X, AND THE EAVE CORNICE IS NOT ITS LIMIT. The half-width above is
+  // the PEDIMENT's own -- the line its raking cornices reach at the eave, and the line the eave cornice is
+  // drawn to -- and the raking cornice stops where the photograph's does. The photograph's own reading
+  // (out/wh/scratch/roofline-tops.mjs, 1-px columns, 2026-09-17): its silhouette leaves the sky at v 0.3650
+  // and the dark roof band's top (v 0.3711, #000408) runs unbroken from u 0.3458 to u 0.3642, so the raking
+  // cornice's outer end lies WEST of u 0.3642 -- x -8.63 m at the eave plane -- and NOT out at the eave
+  // cornice's u 0.3333. With the rakes run to the full half-width their corners projected to u 0.3320-0.5041
+  // and covered the band and both blocks' outer thirds (out/wh/scratch/roofline-scan-before.txt).
+  // The apex and the eave rows do not move: the upper-inner corner is seated on (0, rise) and only the
+  // outer end is shortened, so the gable's top and base are exactly where they were.
+  const rakeOuter = Math.max(0.4, measuredRakeHalfWidth ?? halfWidth);
+  const near = new THREE.Vector2(-rakeOuter, rise * (1 - rakeOuter / halfWidth));
+  const far = new THREE.Vector2(rakeOuter, rise * (1 - rakeOuter / halfWidth));
+  const rlen = far.clone().sub(near).length() + rake * 0.40; // the mitre's own closing overrun
+  const rslope = Math.atan2(far.y - near.y, far.x - near.x);
+  const rmid = near.clone().add(far).multiplyScalar(0.5);
   for (const side of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(len, rake, depth);
+    const geo = new THREE.BoxGeometry(rlen, rake, depth);
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: COLORS.stoneTrim, roughness: 0.9, metalness: 0 }));
-    mesh.position.set(cx + side * halfWidth * 0.5, yEave + rise * 0.5 + rake * 0.25, zc);
-    mesh.rotation.z = -side * slope;
-    // THE RAKE CASTS, AND THAT IS THE WHOLE OF WHY THE PORCH' INTERIOR WAS LIT. Nothing in this file set
-    // `castShadow`, so the sun -- which stands north-east, 42 degrees up, i.e. IN FRONT of the north front --
-    // reached straight into the recess and under the entablature. Measured: the recess wall displayed luma
-    // 185 where the photograph has 63, and NO value of OCCLUSION can fix that on its own, because the
-    // occlusion term scales the AMBIENT and the sun is direct. The pediment is 8.5 m above the recess wall's
-    // head and 6.5 m north of it, so its shadow covers the wall -- which is exactly what the photograph
-    // shows and what the sun's own comment in sky.js claims ("the porch casts the shadow the photograph
-    // shows under it"). The rakes are the casters and not the eave cornice: the eave stands at z +6.95,
-    // where its own shadow lands 8 m north of the wall on the terrace and never reaches it.
+    // THE RAKE'S UPPER-INNER CORNER IS SEATED ON THE APEX, AND THAT IS A MEASURED FIX. `+ rake * 0.25` used
+    // to stand here and it lifted the mitre 0.35 m above the gable: rotated by `slope`, the box's inner
+    // corner sits `rake / 2` above the centre, so the two rakes met at yApex + rake/2 = 18.11 m over a 1.90 m
+    // rise and drew a FLAT PLATEAU across the top of the pediment instead of a point. Measured on the
+    // 2026-09-17 roofline pass (out/wh/scratch/roofline-scan.mjs, rays at 0.02 u): the render's silhouette
+    // then read v 0.3000-0.3022 flat from u 0.3367 to 0.4883 and u 0.5092 to 0.6650 -- the crossed tips --
+    // where the photograph's raking cornice descends in a clean triangle (photo tops v 0.3022 at u 0.4100
+    // falling to 0.3511 at u 0.3650). That plateau is 32-34 px above the photograph's dark roof band at
+    // u 0.3475-0.3625 (photo top v 0.3711 #000408) and it buried the outer thirds of both rooftop blocks.
+    // The centre is placed so the box's own upper-inner corner lands exactly on the apex end of the measured
+    // segment; `xMid` is that corner pulled back by the corner's own slope offset.
+    const xMid = side * (rmid.x + (rake / 2) * Math.sin(rslope));
+    const yMid = rmid.y - (rake / 2) * Math.cos(rslope);
+    mesh.position.set(cx + xMid, yEave + yMid, zc);
+    mesh.rotation.z = -side * rslope;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     b.add(mesh, `${name} rake ${side < 0 ? 'west' : 'east'}`);
@@ -203,10 +230,10 @@ function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThick
     // grey triangle with two grey bands on its edges, which is exactly how a reviewer described this one
     // ("a plain grey triangle with a flat top"). This is a second, thinner box lying ON the rake's inner
     // edge and standing 0.14 m proud of it, so the run catches the sky above the tympanum's own shade.
-    const mgeo = new THREE.BoxGeometry(len * 0.995, 0.16, depth + 0.14);
+    const mgeo = new THREE.BoxGeometry(rlen * 0.995, 0.16, depth + 0.14);
     const mmesh = new THREE.Mesh(mgeo, new THREE.MeshStandardMaterial({ color: COLORS.stoneTrim, roughness: 0.85, metalness: 0 }));
-    mmesh.position.set(cx + side * (halfWidth * 0.5 - 0.20), yEave + rise * 0.5 - 0.16 + 0.08, zc + 0.04);
-    mmesh.rotation.z = -side * slope;
+    mmesh.position.set(cx + side * (xMid - (rake / 2 - 0.08) * Math.sin(rslope)), yEave + yMid - (rake / 2 - 0.08) * Math.cos(rslope), zc + 0.04);
+    mmesh.rotation.z = -side * rslope;
     mmesh.receiveShadow = true;
     b.add(mmesh, `${name} rake moulding ${side < 0 ? 'west' : 'east'}`);
   }
@@ -403,7 +430,7 @@ export function buildPortico(b) {
     b.box(`north entrance surround ${side < 0 ? 'west' : 'east'}`, { x0: side < 0 ? -2.15 : 1.9, x1: side < 0 ? -1.9 : 2.15, y0: floorY - 0.3, y1: floorY + 4.9, z0: 0.04, z1: 0.11 }, COLORS.porchRecessPigment, { occlusion: 0.28 });
   }
   b.box('north entrance surround head', { x0: -2.15, x1: 2.15, y0: floorY + 4.6, y1: floorY + 4.95, z0: 0.04, z1: 0.11 }, COLORS.porchRecessPigment, { occlusion: 0.28 });
-  pediment(b, 'north portico pediment', 0, BACK_Z, Z_FRONT - BACK_Z, W / 2 + 1.2, yEave, yApex, 0.42);
+  pediment(b, 'north portico pediment', 0, BACK_Z, Z_FRONT - BACK_Z, W / 2 + 1.2, yEave, yApex, 0.42, RAKE_HALF_WIDTH);
 
   // ---- the South Portico --------------------------------------------------------------------------
   // A bowed centre with a flat-roofed semicircular colonnade on a rusticated podium. NO pediment: the

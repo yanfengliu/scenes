@@ -433,6 +433,22 @@ export const COLORS = {
   corniceShadow: 0x535d6b, // box u 0.24-0.30 v 0.388-0.394, mean -- the cornice in its own shadow
   roof: 0x5c6672, // box u 0.28 v 0.355 #727984 where it is stone, #3a4448 where it is the roof's shadow
   roofShadow: 0x3a4448, // pixel u 0.28 v 0.355
+  // ---- the roofscape the photograph shows ABOVE the parapet, sampled for the roofline pass --------------
+  // (out/wh/scratch/roofline-probe2.mjs box means; the silhouettes these colours belong to are measured in
+  // roofline-probe.mjs and inverted through this file's camera in building.js's roofscape block).
+  roofSlope: 0x0b0f16, // the dark roof band over the parapet: box u 0.346-0.364 v 0.372-0.377 mean #0b0f16
+  // (98% dark), east box u 0.642-0.657 v 0.372-0.377 mean #080c11 (100% dark) -- the hip's north slope
+  // standing in the parapet's own shade, not the roof's material in light
+  roofBlock: 0x818d9a, // box u 0.380-0.400 v 0.332-0.350 mean -- the west rooftop block's white face
+  blockRecess: 0x586373, // box u 0.3721-0.3775 v 0.343-0.360 mean (54% dark) -- the dark panel in the west
+  // block's annex, a recessed door or vent on its north face
+  chimneyStack: 0x727b89, // box u 0.330-0.340 v 0.340-0.370 mean -- the west chimney's white stack
+  chimneyCap: 0x2f3a4a, // [estimate] the dark equipment on the stacks' tops: the cores read #384268
+  // (pixel u 0.3350 v 0.332) and #414b53 (u 0.6700 v 0.334), sky-blended to #445b86/#6a737d at 2-4 px
+  flagDark: 0x1d2844, // box u 0.490-0.498 v 0.229-0.242 mean, 77% dark -- the flag is BACKLIT: its own
+  // pixels run to #000207 at the core (column u 0.4995, v 0.229-0.241), a near-black navy
+  poleDark: 0x25427d, // pixel u 0.4995 v 0.180, the pole's own core -- sky-blended at 2 px; its column
+  // runs #25427d..#1c3a80 from v 0.180 to the flag's top at v 0.228
   porchReturn: 0x4a5353, // box u 0.398-0.410 v 0.50-0.53, mean
   underPortico: 0x373932, // box u 0.470-0.530 v 0.44-0.47, mean -- the photo's darkest large area
   porchRecessPigment: 0x313740, // THE WALL BEHIND THE COLONNADE, AND IT IS A PIGMENT AND NOT A SAMPLED HEX.
