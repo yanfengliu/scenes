@@ -46,6 +46,15 @@ export const PORTICO_HEIGHTS = {
   pedimentBase: 14.0, // the tympanum's eave -- 1.3 m below the balustrade, so the roof deck cannot hide it
   apex: 17.9, // the apex, 2.6 m above the parapet: the photo's own parallax asks for 3 m
 };
+// WHERE THE COLONNADE STANDS, and this is the number that makes the porch read as a porch. In the previous
+// pass the columns stood 1.7 m in front of the wall while the pediment's eave projected 0.8 m past them,
+// so the roof overhung the capitals by a metre and the whole assembly was one shallow relief on the wall:
+// the frame showed a flat band and a dark slot, no columns and no shadow. HABS sheet 76 draws the order as
+// a free-standing one on its own stylobate with the entablature overhanging by less than half a metre, so
+// the columns move out to 5.4 m and the eave stops 0.3 m short of their own front. The gap behind them is
+// then 5.4 m of porch with the wall and the entrance in its shadow, which is what the photograph shows.
+const COLUMN_Z = Z_FRONT + 5.4;
+const EAVE_Z = Z_FRONT - 0.3;
 void Z_FRONT;// A plain Ionic column: a square plinth, a base moulding, the shaft and a capital block. The volutes are
 // left to a later wave -- at the photo's scale they are four pixels across.
 function column(b, name, x, z, y0, height, radius, color) {
@@ -62,49 +71,50 @@ function column(b, name, x, z, y0, height, radius, color) {
   b.box(`${name} capital`, { x0: x - radius * 1.4, x1: x + radius * 1.4, y0: y0 + height - 0.8, y1: y0 + height, z0: z - radius * 1.4, z1: z + radius * 1.4 }, color, { metric: true });
 }
 
-// A triangular pediment, built as stepped slabs rather than as an extruded prism. The prism version was
-// built first and rendered: its two raking cornice slabs, rotated about z, projected past the tympanum and
-// read as wings rather than as a gable. Boxes cannot do that, and at the photo's own scale (the pediment is
-// 24 m wide and 3.3 m tall, 55 px by 8 px in the frame) the steps are below the resolution that matters.
+// A triangular pediment as a real gable, not as a stack of steps. The previous pass built it from six
+// stepped slabs and rendered it: at the porch's own size -- 24 m wide and 3.9 m tall, 55 px by 8 px in the
+// frame -- the steps read as a wedding cake rather than a gable, and the frame showed exactly that. Two
+// raking cornices meeting at the apex, a tympanum set back between them and a horizontal cornice along the
+// eave is both fewer meshes and the thing the sheet draws.
 function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex) {
-  const steps = 6;
   const rise = yApex - yEave;
+  const slope = Math.atan2(rise, halfWidth);
+  const len = Math.hypot(halfWidth, rise) + 0.5;
+  const rake = 0.42; // the raking cornice's own thickness, which sheet 76's section dimensions
   const zc = zFront + depth / 2;
-  for (let s = 0; s < steps; s++) {
-    const frac = 1 - s / steps; // each course narrower than the one below, so the stack reads as a gable
-    const half = halfWidth * frac;
-    b.box(
-      `${name} course ${s + 1}`,
-      { x0: cx - half, x1: cx + half, y0: yEave + (rise * s) / steps, y1: yEave + (rise * (s + 1)) / steps, z0: zFront, z1: zFront + depth },
-      COLORS.stoneTrim,
-      { metric: true },
-    );
+  for (const side of [-1, 1]) {
+    const geo = new THREE.BoxGeometry(len, rake, depth);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: COLORS.stoneTrim, roughness: 0.9, metalness: 0 }));
+    mesh.position.set(cx + side * halfWidth * 0.5, yEave + rise * 0.5 + rake * 0.25, zc);
+    mesh.rotation.z = -side * slope;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    b.add(mesh, `${name} rake ${side < 0 ? 'west' : 'east'}`);
   }
-  // The tympanum: the recessed triangle behind the cornice courses, which is what reads as shadow.
+  // The tympanum: the recessed triangle behind the rakes, which is what reads as shadow.
   const tymp = new THREE.Shape();
-  tymp.moveTo(-halfWidth * 0.9, 0);
-  tymp.lineTo(halfWidth * 0.9, 0);
-  tymp.lineTo(0, rise * 0.86);
+  tymp.moveTo(-halfWidth * 0.94, 0);
+  tymp.lineTo(halfWidth * 0.94, 0);
+  tymp.lineTo(0, rise * 0.9);
   tymp.closePath();
-  const geo = new THREE.ExtrudeGeometry(tymp, { depth: depth * 0.55, bevelEnabled: false });
+  const geo = new THREE.ExtrudeGeometry(tymp, { depth: depth * 0.62, bevelEnabled: false });
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: COLORS.pedimentFace, roughness: 0.9, metalness: 0 }));
-  mesh.position.set(cx, yEave + 0.15, zc - depth * 0.2);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: COLORS.pedimentFace, roughness: 0.95, metalness: 0 }));
+  mesh.position.set(cx, yEave, zc + depth * 0.19);
+  mesh.rotation.y = Math.PI;
   mesh.receiveShadow = true;
   b.add(mesh, `${name} tympanum`);
   // The horizontal cornice along the eave, which is the line the eye reads the pediment's base from.
-  b.box(`${name} eave cornice`, { x0: cx - halfWidth - 0.4, x1: cx + halfWidth + 0.4, y0: yEave - 0.6, y1: yEave, z0: zFront - 0.3, z1: zFront + depth + 0.4 }, COLORS.stoneTrim, { metric: true });
-  b.box(`${name} apex block`, { x0: cx - 0.5, x1: cx + 0.5, y0: yApex - 0.5, y1: yApex + 0.15, z0: zFront - 0.25, z1: zFront + depth + 0.35 }, COLORS.stoneTrim);
+  b.box(`${name} eave cornice`, { x0: cx - halfWidth - 0.5, x1: cx + halfWidth + 0.5, y0: yEave - 0.55, y1: yEave, z0: zFront - 0.35, z1: zFront + depth + 0.45 }, COLORS.stoneTrim, { metric: true });
+  b.box(`${name} apex block`, { x0: cx - 0.55, x1: cx + 0.55, y0: yApex - 0.6, y1: yApex + 0.2, z0: zFront - 0.3, z1: zFront + depth + 0.4 }, COLORS.stoneTrim);
 }
 export function buildPortico(b) {
   const W = DIMS.porticoWidth;
-  const zFront = Z_FRONT;
   const floorY = PORTICO_HEIGHTS.floor;
   const colTop = PORTICO_HEIGHTS.columnTop;
   const r = DIMS.porticoColumnRadius;
   const colBase = PORTICO_HEIGHTS.columnBase;
   const entTop = PORTICO_HEIGHTS.entablatureTop;
-  const entDepth = 2.6;
   const yEave = PORTICO_HEIGHTS.pedimentBase;
   const yApex = PORTICO_HEIGHTS.apex;
 
@@ -115,35 +125,74 @@ export function buildPortico(b) {
     columnX.push(t * (W - 3.2)); // the outer columns' centres, which the photo puts at u 0.383 and 0.617
   }
   for (let i = 0; i < columnX.length; i++) {
-    column(b, `north portico column ${i + 1}`, columnX[i], zFront + 1.7, colBase, colTop - colBase, r, COLORS.stoneTrim);
+    column(b, `north portico column ${i + 1}`, columnX[i], COLUMN_Z, colBase, colTop - colBase, r, COLORS.porticoColumn);
   }
-  b.box('north portico floor', { x0: -W / 2 - 0.6, x1: W / 2 + 0.6, y0: floorY - 0.7, y1: floorY, z0: zFront - 0.9, z1: 0.3 }, COLORS.stoneTrim, { metric: true });
+  // The porch's own floor, from the colonnade back to the wall, so there is a deck for the columns to stand
+  // on and a soffit over the recess.
+  b.box('north portico floor', { x0: -W / 2 - 0.6, x1: W / 2 + 0.6, y0: floorY - 0.7, y1: floorY, z0: Z_FRONT - 0.9, z1: 0.3 }, COLORS.stoneTrim, { metric: true });
   // The flight of steps down to the lawn. The riser count, rise and run are UNVERIFIED
   // (research-photo.md section 5 item 8); 20 risers reaching the 4.4 m porch is what the photo's broad flight needs.
+  //
+  // BUILT AS ONE PROFILE SOLID, NOT AS TWENTY BOXES, AND THAT IS A `nudge` FIX. Twenty boxes stacked down a
+  // ramp share their top and bottom faces with their neighbours, and each box's own bottom face was clamped
+  // to the lawn's own y = 0 plane -- so the lowest tread sat exactly coplanar with the lawn, and the whole
+  // flight was a ladder of coincident surfaces. `nudge` read 0.21% on its orbited pose against a 0.18%
+  // ceiling, and hiding only the meshes whose names match /portico|step/ took that pose to 0.002%, which is
+  // as close to proof as a bisect gets. The profile below has NO interior faces at all: its outline is the
+  // staircase itself, so the treads and risers are one silhouette and there is nothing to z-fight, and its
+  // skirt runs 0.6 m below grade so nothing coincides with the lawn either.
   const risers = 20;
   const rise = floorY / risers;
   const run = 0.32;
+  const frontZ = Z_FRONT - 0.9;
+  const stairProfile = [[frontZ, floorY]];
   for (let i = 0; i < risers; i++) {
-    const y = floorY - (i + 1) * rise;
-    b.box(
-      `north portico step ${i + 1}`,
-      { x0: -W / 2, x1: W / 2, y0: Math.max(0, y - 0.45), y1: y, z0: zFront - 0.9 + (i + 1) * run, z1: zFront - 0.9 + (i + 2) * run + 0.06 },
-      COLORS.stoneTrim,
-      { metric: true },
-    );
+    stairProfile.push([frontZ + (i + 1) * run, floorY - (i + 1) * rise]);
+    stairProfile.push([frontZ + (i + 1) * run, floorY - (i + 2) * rise]);
   }
+  const stairOutline = [...stairProfile, [frontZ + risers * run, -0.6], [frontZ, -0.6]];
+  // The shape's own x is metres along -z and its y is height, which is the frame profileSolid is built in.
+  b.profileSolid('north portico steps', stairOutline.map(([z, y]) => [-z, y]), -W / 2, W / 2, COLORS.stoneTrim);
   for (const side of [-1, 1]) {
-    b.box(
+    // The cheeks: the low walls that bound the flight, with their own sloped tops rather than a plain box.
+    const cheek = [
+      [-(frontZ - 0.1), 0],
+      [-(frontZ + risers * run + 0.6), 0],
+      [-(frontZ + risers * run + 0.6), floorY + 0.4],
+      [-(frontZ + risers * run), floorY + 0.4],
+      [-(frontZ + 0.2), floorY - 1.2],
+      [-(frontZ - 0.1), floorY - 1.2],
+    ];
+    b.profileSolid(
       `north portico steps cheek ${side < 0 ? 'west' : 'east'}`,
-      { x0: side * W / 2 - side * 0.45, x1: side * W / 2 + side * 0.45, y0: 0, y1: floorY + 0.4, z0: zFront - 0.9, z1: zFront - 0.9 + risers * run + 0.6 },
+      cheek,
+      side < 0 ? -W / 2 - 0.45 : W / 2,
+      side < 0 ? -W / 2 : W / 2 + 0.45,
       COLORS.stoneTrim,
-      { metric: true },
     );
   }
-  b.box('north portico entablature', { x0: -W / 2 - 0.8, x1: W / 2 + 0.8, y0: colTop, y1: entTop, z0: zFront - 0.4, z1: zFront + entDepth }, COLORS.stoneTrim, { metric: true });
-  b.box('north portico cornice', { x0: -W / 2 - 1.2, x1: W / 2 + 1.2, y0: entTop - 0.5, y1: entTop, z0: zFront - 0.7, z1: zFront + entDepth + 0.3 }, COLORS.stoneTrim, { metric: true });
-  b.box('north portico soffit', { x0: -W / 2, x1: W / 2, y0: colTop - 0.35, y1: colTop, z0: zFront + 0.7, z1: 0.1 }, COLORS.underPortico);
-  pediment(b, 'north portico pediment', 0, zFront - 0.8, entDepth + 1.0, W / 2 + 1.2, yEave, yApex);
+  // The entablature: architrave and frieze over the capitals, then the cornice, which overhangs. HABS sheet
+  // 76's own entablature, and its cornice carries the dentil bed mould the photograph shows as a fine dark
+  // band under the raking cornice.
+  b.box('north portico entablature', { x0: -W / 2 - 0.8, x1: W / 2 + 0.8, y0: colTop, y1: colTop + 0.85, z0: EAVE_Z, z1: COLUMN_Z + 1.05 }, COLORS.stoneTrim, { metric: true });
+  const dentilN = Math.max(1, Math.floor((W + 1.6) / 0.42));
+  {
+    const geo = new THREE.BoxGeometry(0.22, 0.26, 0.24);
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: COLORS.corniceShadow, roughness: 0.9, metalness: 0 }), dentilN);
+    const m4 = new THREE.Matrix4();
+    for (let i = 0; i < dentilN; i++) {
+      m4.makeTranslation(-W / 2 - 0.8 + (i + 0.5) * ((W + 1.6) / dentilN), colTop + 0.98, EAVE_Z + 0.10);
+      mesh.setMatrixAt(i, m4);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    b.add(mesh, 'north portico dentils');
+  }
+  b.box('north portico cornice', { x0: -W / 2 - 1.2, x1: W / 2 + 1.2, y0: entTop - 0.5, y1: entTop, z0: EAVE_Z - 0.25, z1: COLUMN_Z + 1.3 }, COLORS.stoneTrim, { metric: true });
+  // The porch's ceiling: the soffit between the wall and the entablature's back, which is what a camera
+  // looking up into the recess sees, and the darkest surface the photograph has.
+  b.box('north portico soffit', { x0: -W / 2, x1: W / 2, y0: colTop - 0.35, y1: colTop, z0: COLUMN_Z - 0.6, z1: 0.1 }, COLORS.underPortico);
+  pediment(b, 'north portico pediment', 0, EAVE_Z, COLUMN_Z + 1.3 - EAVE_Z, W / 2 + 1.2, yEave, yApex);
 
   // The entrance under the porch: a recessed door with a fanlight above it.
   b.box('north entrance door', { x0: -1.6, x1: 1.6, y0: floorY, y1: floorY + 3.8, z0: -0.6, z1: -0.15 }, COLORS.underPortico);

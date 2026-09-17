@@ -7,8 +7,10 @@
 // src/animation.js so one setTime reaches it, and the same no-backtick rule inside the GLSL (both shaders
 // are JS template literals).
 //
-// The reference photograph's own sky, sampled: #456ac9 at the zenith (u 0.02 v 0.03), #5577d1 at the top of
-// the frame's middle, #8aa0d8 low towards the horizon, and blown white cumulus with shaded undersides.
+// The reference photograph's own sky, sampled left of the building where no cloud and no tree is in the
+// way, at the boxes in layout.js's COLORS: #4970cf (luma 111) at the frame's top rows, #5779d3 (119) at
+// v 0.06-0.10, #7592e3 (146) at v 0.18-0.26 and #6a8fe9 (139) at v 0.30-0.34, with blown cumulus above
+// luma 190 on the right from v 0.16 to v 0.33.
 import * as THREE from 'three';
 import { COLORS } from './layout.js';
 import { sceneRadiance } from '../tonemap.js';
@@ -21,22 +23,31 @@ export const SKY = {
   // still midday and the photo is a single frame, so the motion exists to prove the clock reaches the sky
   // and not to be watched.
   drift: 0.0016,
-  // The sun's direction, in world xyz. THE REFERENCE IS A NORTH FACADE AT MIDDAY, so the sun stood behind
-  // the building and the wall the camera reads had no direct sun on it -- which is why every sampled wall
-  // colour is a cool blue-grey rather than white. This direction is therefore NOT the sun that lit the
-  // subject: it is the light that makes the subject's own relief visible, placed behind and to the camera's
-  // side so the portico casts the shadow the photograph shows under it and the wall keeps a soft gradient.
-  // The rig's own comment in lighting.js carries the same note; a later lighting wave that wants physical
-  // midday should set this to the real direction, which is (0.24, 0.94, -0.24)-ish, and expect a flat wall.
+  // THE SUN'S DIRECTION IS THE ONE THING THIS PASS MOVED IN THE RIG, and the move is the reason the facade
+  // can hold the photograph's tone at all.
+  //
+  // The reference is a north facade at midday, so the sun stood BEHIND the building and the face the camera
+  // reads had no direct sun on it -- which is why the previous pass put the sun to the south and made the
+  // rig almost entirely ambient. That is faithful and it does not render: measured with
+  // out/wh/scratch/rig.mjs, the wall then needed 2.2 of its 2.4 irradiance from lights that do not depend
+  // on orientation, and a wall lit that way is a flat plate. It measured a 1.03 ratio from the cornice to
+  // the base where the photograph has 3.7.
+  //
+  // So the sun is NORTH-EAST: 20 degrees east of the optical axis and 42 degrees up, so it stands over the
+  // camera's own right shoulder and rakes across the facade from the building's east end. The wall takes
+  // most of its light from a direction that changes along the facade, the porch casts the shadow the
+  // photograph shows under it, and the ramp comes out of the geometry rather than out of a gradient map.
+  // This is the largest deliberate departure from physical accuracy in the scene, and lighting.js's RIG
+  // carries the same note.
   sunDirection: (() => {
-    const elevation = (34 * Math.PI) / 180;
-    // From the north-west, i.e. over the camera's own right shoulder, so the facade is raked and the
-    // porch's east side is the lit one.
-    const bearing = (215 * Math.PI) / 180;
+    const elevation = (42 * Math.PI) / 180;
+    // Bearing 20 degrees EAST of the optical axis: x = +sin(20) is the building's own east, +z is towards
+    // the camera. The light therefore comes from the camera's right and above, at 42 degrees.
+    const bearing = (20 * Math.PI) / 180;
     return {
       x: Math.sin(bearing) * Math.cos(elevation),
       y: Math.sin(elevation),
-      z: -Math.cos(bearing) * Math.cos(elevation),
+      z: Math.cos(bearing) * Math.cos(elevation),
     };
   })(),
 };
@@ -104,19 +115,26 @@ export function skyMaterial() {
       '}',
       'void main() {',
       '  vec3 d = normalize(vDir);',
-      // The vertical ramp: zenith at the top, the horizon's pale band at the bottom.
+      // The vertical ramp: the zenith at the top, the pale hazy band at the horizon. The stops are wide
+      // because the photograph's own sky is far flatter than a clear-day gradient: it reads #4970cf at the
+      // frame's top row, #7592e3 at v 0.22 and #6a8fe9 at v 0.32 -- luma 111, 146, 139 over the whole
+      // visible sky, which is a 15% swing in the blue against a shading term that more than doubles it.
       '  float h = clamp(d.y, 0.0, 1.0);',
-      '  vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.28, h));',
-      '  col = mix(col, uZenith, smoothstep(0.22, 0.85, h));',
+      '  vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.34, h));',
+      '  col = mix(col, uZenith, smoothstep(0.30, 0.90, h));',
       // Below the horizon the dome fades to the horizon colour so an orbit under the ground is not black.
       '  col = mix(uHorizon, col, smoothstep(-0.08, 0.02, d.y));',
-      // The cumulus: projected onto a plane above the eye, drifting with the clock.
+      // The cumulus: projected onto a plane above the eye, drifting with the clock. The scale is set so the
+      // frame's own 28-degree half angle holds the two or three masses the photograph has rather than a
+      // field of them, and the coverage threshold is high so most of the sky stays clear blue.
       '  float up = max(d.y, 0.055);',
       '  vec2 uv = d.xz / up * 0.55 + vec2(uTime * uDrift, uTime * uDrift * 0.35);',
       '  float base = fbm(uv * 1.15);',
       '  float detail = fbm(uv * 3.1 + 4.0);',
-      '  float cover = smoothstep(0.52, 0.78, base * 0.72 + detail * 0.34);',
-      '  cover *= smoothstep(0.02, 0.22, d.y);',
+      '  float cover = smoothstep(0.56, 0.84, base * 0.72 + detail * 0.34);',
+      // Clouds thin out towards the horizon as they do in the photograph, but they do not vanish: the
+      // frame's brightest cloud is at v 0.25, close to the building's own roofline.
+      '  cover *= smoothstep(0.03, 0.16, d.y);',
       // The lit top and the shaded underside, which is what makes a cumulus read as a solid.
       '  float lit = smoothstep(0.45, 0.95, detail + 0.35 * base);',
       '  vec3 cloudCol = mix(uCloudShade, uCloud, lit);',

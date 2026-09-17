@@ -83,7 +83,8 @@ export const DIMS = {
   porticoFloor: 1.9, // [estimate] the north portico's floor above the lawn it stands on
   rampHeight: 1.5, // [estimate] the terrace the north front stands on: "the ground floor is hidden by a
   // raised carriage ramp and parapet" -- Wikipedia, citing NPS
-  hedgeHeight: 1.8, // [estimate] the band along the wall; its top is the photo's v 0.6180
+  hedgeHeight: 2.2, // the north lawn's own end hedges, which close the composition either side of the
+  // building -- NOT the band along the wall, which is TERRACE's planted rim.
   hedgeDepth: 3.0, // [estimate]
   balustradeHeight: 1.15, // UNVERIFIED -- research-photo.md section 5 item 11 says no source gives it
   roofRise: 1.1, // [estimate] the low roof's ridge above the deck behind the balustrade
@@ -159,9 +160,17 @@ export const TERRACE = {
   // a first pass put the terrace's outer edge 4.5 m out with a 1.8 m hedge in front of it, and the porch
   // (whose columns are 4.8 m out) disappeared behind the greenery in the photo view. The visible band the
   // photo shows between the wall's base and the lawn is 1 to 2 m deep, which is what these are.
-  outerZ: 2.2, // |z| of the terrace's outer edge, where its face drops to the lawn -- [estimate]
-  hedgeZ: 3.1, // |z| of the hedge band's own centre line, in FRONT of the terrace -- [estimate]
-  hedgeDepth: 1.4, // [estimate]
+  outerZ: 3.4, // |z| of the terrace's outer edge, where its face drops to the lawn -- [estimate]
+  // 3.4 IS SET BY A ROW, NOT BY TASTE. The terrace is 2.976 m tall because the wall's base is, and the
+  // camera is 9.086 m up at 47.863 m, so the top of the terrace's outer edge projects to v 0.6180 -- the row
+  // the photograph measures the band's top at -- when the edge stands 3.4 m north of the wall. Everything
+  // the frame shows between that row and the lawn is then this terrace's own planted rim. See building.js's
+  // note on the rim; a hedge standing behind this edge is not in the frame at any height worth having.
+  rim: { depth: 1.5, drop: 0.55 }, // the planted slope along the terrace's outer edge: how far it runs back
+  // from the edge and how far it drops over that run. Both are [estimate]s, and both are seen at a glance:
+  // 1.5 m of depth at this angle is 0.026 of the frame height, which is the dark band's own width.
+  hedgeZ: 3.9, // |z| of the north lawn's own hedge line, which is the separate planting at the lawn's end
+  hedgeDepth: 0.7, // [estimate]
 };
 
 // ---- The north lawn's own rise ----------------------------------------------------------------------
@@ -306,32 +315,60 @@ export const LANDMARK_MARKS = [
 ];
 
 // ---- Colours ---------------------------------------------------------------------------------------
-// sRGB hex, every one SAMPLED from whitehouse.webp at the box in its comment, by out/wh/scratch/measure.mjs
+// sRGB hex, every one SAMPLED from whitehouse.webp at the box in its comment, by out/wh/scratch/boxes.mjs
 // (a mean over the box) or out/wh/scratch/pixel.mjs (one pixel). None is set by eye without saying so.
 //
-// These are the colours the photo SHOWS, not albedos: they already contain the flat midday skylight the
-// north facade sits in. src/materials.js's albedoOf turns each into the albedo that displays as it under
-// the scene's rig, which is normalised to MATERIALS.irradiance.
+// These are the colours the photo SHOWS, not albedos: they already contain the light the north facade sits
+// in. src/materials.js's albedoOf turns each into the albedo that displays as it under the scene's rig,
+// which is normalised to MATERIALS.irradiance.
+//
+// THE REBALANCE OF THIS PASS. The rig used to over-light every surface: measured with
+// out/wh/scratch/rig.mjs, the wall displayed at 1.78x its own albedo where the photo puts it at 1.00, and
+// the lawn at 2.76x -- so the wall washed out to a flat near-white and the lawn went dark and blue at once.
+// The wall, the cornice and the terrace carry the photo's own values below, and the rig in lighting.js was
+// re-solved to land them there.
 export const COLORS = {
-  wallLit: 0x919ca9, // box u 0.24-0.28 v 0.55-0.58, mean -- the brightest large wall area
-  wallUpper: 0x707c8a, // box u 0.24-0.28 v 0.44-0.46, mean -- the same wall under the cornice
-  wallWestEnd: 0x818c9d, // box u 0.135-0.145 v 0.50-0.55, mean
-  wallEastEnd: 0x98a5b7, // box u 0.855-0.865 v 0.50-0.55, mean -- the east end is the brighter one
-  windowGlass: 0x808b9d, // box u 0.205 v 0.53 #8994a7 against u 0.245 #747f8f: the mean of the two
-  windowTrim: 0x9ca7b7, // the wall's own paint on the surround, its brightest columns #9ca7b7
+  // The wall. THE FACADE'S OWN RAMP IS THE POINT: the photo's east end climbs from #515d6f (luma 94) just
+  // under the cornice to #a5b4c6 (luma 178) at the base, in sixteen 13-px rows (profile at u 0.860-0.868,
+  // v 0.382 to 0.604, step 0.0148: #515d6f #56647c #636d77 #677078 #767f8f #808b9d #8893a7 #8c9aad #93a0b2
+  // #99a5b8 #9daabc #a1adc0 #a2afc2 #a3b1c4 #a5b4c6). The rig reproduces it with the hemisphere light's
+  // ground term; wallUpper is the top of that ramp and wallLit its bottom.
+  wallUpper: 0x5d6775, // profile row v 0.382, mean #515d6f warmed: the built wall's own blue cast comes
+  // from the light as well as the pigment, so the pigment carries less of it than the pixel does.
+  wallMid: 0x87919e, // profile row v 0.471, mean
+  wallLit: 0x9aa5b4, // profile row v 0.530, mean
+  wallWestEnd: 0x818c9d, // box u 0.135-0.148 v 0.50-0.55, mean
+  wallEastEnd: 0x98a5b7, // box u 0.855-0.868 v 0.50-0.55, mean -- the east end is the brighter one
+  windowGlass: 0x545f69, // box u 0.1605-0.1695 v 0.445-0.478, mean -- the SECOND floor's glass, whose
+  // head is plain; the first floor's is darker still because its pediment shadows it.
+  windowGlassUpper: 0x808b9d, // box u 0.1605-0.1695 v 0.545-0.600, mean -- the first floor's own glass
+  windowTrim: 0x798592, // box u 0.152-0.178 v 0.518-0.532, mean -- the first floor's head band
   stoneTrim: 0x8a94a2, // the portico's and the steps' stone, between the cornice and the wall's own white
-  // The terrace the north front stands on, and its parapet: the photo's own band just above the hedge, at
-  // v 0.612-0.618, reads #9aa2ab to #a8b1b3 -- brighter than the wall above it, because it faces up.
-  terraceStone: 0x9aa2ab,
+  // The terrace the north front stands on, and its parapet: box u 0.240-0.300 v 0.612-0.618 reads #9aa2ab to
+  // #a8b1b3 -- brighter than the wall above it, because it faces up.
+  terraceStone: 0x8f98a1, // box u 0.240-0.300 v 0.612-0.618 reads #9aa2ab to #a8b1b3 in the photograph, and
+  // that is the terrace's own deck: the sampled value, carried down a little because the frame shows the
+  // deck only at the glancing angle the wall's base is seen at, not square on.
+  terraceRim: 0x1b2416, // the planted slope along the terrace's outer edge: near the hedge's own #12140c,
+  // lifted slightly because this face turns up toward the sky rather than standing vertical in front of it
+  corniceStone: 0x6f7a86, // box u 0.220-0.300 v 0.386-0.392, mean was #4b545e; that box is the cornice's own
+  // shadow line and the band is built as a 0.9 m moulding whose lit face reads between the two.
+  frieze: 0x8f9aa6, // box u 0.220-0.300 v 0.394-0.400, mean #546073 is the recessed frieze in shadow; the
+  // built band's own outer face sits between it and the wall.
+  balustrade: 0x9fabbb, // box u 0.220-0.300 v 0.372-0.379, mean -- the parapet, sky behind the balusters
   corniceShadow: 0x535d6b, // box u 0.24-0.30 v 0.388-0.394, mean -- the cornice in its own shadow
   roof: 0x5c6672, // box u 0.28 v 0.355 #727984 where it is stone, #3a4448 where it is the roof's shadow
   roofShadow: 0x3a4448, // pixel u 0.28 v 0.355
   porticoReturn: 0x4a5353, // box u 0.398-0.410 v 0.50-0.53, mean
-  underPortico: 0x323732, // box u 0.47-0.50 v 0.46-0.49, mean -- the photo's darkest large area
-  pedimentFace: 0x4c5b6a, // box u 0.47-0.53 v 0.33-0.35, mean -- the tympanum in shadow
+  underPortico: 0x373932, // box u 0.470-0.530 v 0.44-0.47, mean -- the photo's darkest large area
+  pedimentFace: 0x414d56, // box u 0.450-0.550 v 0.325-0.342, mean -- the tympanum
+  porticoColumn: 0x60707f, // box u 0.460-0.470 v 0.36-0.468, mean -- the west column's own shaft, which
+  // the photo shows as the porch's mid tone between the lit stone and the shadow behind it
   lawnNear: 0x647b2c, // box u 0.30-0.45 v 0.90-0.97, mean
   lawnMid: 0x607726, // box u 0.30-0.42 v 0.80-0.84, mean
   lawnFar: 0x646e26, // box u 0.40-0.44 v 0.735-0.745, mean
+  lawnBand: 0x6a8130, // box u 0.76-0.88 v 0.76-0.82, mean #687d39: the east side is a mowing band, and the
+  // photo shows bands standing several levels brighter than the lawn between them.
   hedge: 0x12140c, // box u 0.24-0.30 v 0.635-0.655, mean -- nearly black, as the photo's is
   hedgeLit: 0x1d261a, // pixel u 0.600 v 0.630 -- the hedge's own top, where the sky reaches it
   flowerBed: 0x8f1c23, // box u 0.30-0.36 v 0.69-0.71, mean
@@ -339,19 +376,50 @@ export const COLORS = {
   drive: 0x3b3a33, // [estimate] the drive is in no clean box: the frame's foreground at the left edge reads
   // #0d1108, which is the drive UNDER the tree shadow, so the material takes a lighter gravel.
   fence: 0x0b0d0d, // box u 0.005-0.05 v 0.615-0.63, mean -- the iron fence, near black
-  skyZenith: 0x456ac9, // pixel u 0.02 v 0.03
-  skyMid: 0x5577d1, // box u 0.05-0.15 v 0.02-0.06, mean
-  skyHorizon: 0x8aa0d8, // box u 0.03-0.08 v 0.30-0.34, mean
-  cloud: 0xf2f5fb, // [estimate] the cloud TOPS are blown white: every box over a cloud holds cloud and blue
-  // sky mixed, so no box can be quoted. The brightest cloud pixels read #eef2f8 at u 0.72 v 0.135.
-  cloudShade: 0xa8b6d4, // [estimate] the cloud's shaded underside, where it faces the horizon
+  // The sky, against the photo's own column at u 0.06-0.30, where no cloud and no tree is in the way:
+  // v 0.00-0.04 #4970cf (luma 111), v 0.06-0.10 #5779d3 (119), v 0.18-0.26 #7592e3 (146), v 0.30-0.34
+  // #6a8fe9 (139). The frame's own top row is therefore NOT the zenith -- at a 28-degree vertical half
+  // angle the top of the frame looks only 28 degrees up -- so skyTop is the sampled row and skyZenith is
+  // the [estimate] that row implies for a point overhead.
+  skyTop: 0x4970cf, // box u 0.10-0.30 v 0.00-0.04, mean
+  skyMid: 0x5779d3, // box u 0.06-0.26 v 0.06-0.10, mean
+  skyHorizon: 0x7592e3, // box u 0.06-0.16 v 0.18-0.26, mean
+  skyZenith: 0x3f68c8, // [estimate] skyTop with the same step towards saturation that skyTop takes from
+  // skyMid; the frame never shows the zenith.
+  cloud: 0xeef2f8, // box u 0.72-0.84 v 0.22-0.28, mean #b9c6eb is a cloud's shaded edge; the cloud TOPS
+  // are blown, and the frame's brightest cloud pixels read #f1fafe. #eef2f8 is the lit-cloud value.
+  cloudShade: 0xb9c6eb, // box u 0.72-0.84 v 0.22-0.28, mean -- a cumulus underside near the horizon
   treeFoliage: 0x2b3a20, // [estimate] the frame's trees are almost black: box u 0.94-0.98 v 0.30-0.36 reads
   // #6f7ea0, which the classifier flags as 67% SKY, so no box is the tree. Its own dark pixels read
   // #1b2415 and #222c1b, and this is between them and the hedge.
-  treeFoliageLit: 0x46592c, // [estimate] the sunlit crown against the sky at u 0.03 v 0.30
+  // A BRIGHTER VALUE WAS TRIED AND REVERTED, measured rather than argued: 0x3b4d27 took cell distance from
+  // 0.1448 to 0.1452 and SSIM from 0.1262 to 0.1268, and the west framing crown is a large object in the
+  // scored frame that the photograph really does show as a backlit silhouette. The cost is inside the
+  // 0.001 budget on SSIM but not on cell distance, so the north trees keep the photograph's own value and
+  // the SOUTH trees, which are off-camera, take the sunlit one below.
+  treeFoliageSunlit: 0x4e6633, // [estimate] a crown in sun, for the south front only. The sun stands
+  // north-east, so the south side is the shadow side of every north tree and the lit side of the south
+  // ones; a south crown built at the north's own backlit value is a hole, which is what a reviewer saw.
+  treeFoliageLit: 0x6f8a3c, // [estimate] the crown's own top, which the sun reaches directly. The previous
+  // #46592c was a BACKLIT value being applied to a lit face, which is what made crowns read flat.
   fountainWater: 0xd8e6ea, // [estimate] box u 0.596-0.615 v 0.60-0.65 reads #323c3a, which is the HEDGE
   // behind the water; the plume's own bright pixels read #f1fafe and the falling water #b9cdd6.
   fog: 0xa8bcd8, // [estimate] the far haze: the frame's far trees fade towards the sky's own pale blue
+  // The colours the RIG is tinted by, which are NOT the ones the sky dome draws. Two things decide them.
+  // A light tinted with skyTop's own saturated blue makes every surface it reaches blue, and the wall it
+  // reaches is already blue-grey: measured off the first working rig, the wall displayed #7192c5 against
+  // the photograph's #9daabc, a blue-minus-red of 84 where the photo has 31. And the lawn's light has to be
+  // the colour the lawn is, because an upward face sees almost nothing else. So the sky light is the sky
+  // taken 40% of the way to a warm white, and the upward light is the lawn's own hue in light rather than
+  // in pigment. Each is marked [estimate] because no pixel of the photograph is this light.
+  skyLight: 0xf0ebdc, // [estimate] skyTop taken 40% of the way towards a warm white (0xfff6e0)
+  groundLight: 0xe8e9e4, // [estimate] the wall's own colour lifted most of the way to white: what the
+  // pale terrace and the wall's lower courses bounce back at the wall above them
+  upLight: 0xf2edc4, // [estimate] the lawn's hue carried into light: the sky half of the upward-biased
+  // hemisphere, which stands in for the ground's own bounce
+  upGround: 0x14180f, // [estimate] nearly black: that same light's ground half, which is what keeps it
+  // from lifting the wall. See the note on the two hemispheres in lighting.js.
+  fillLight: 0xd8d8d0, // [estimate] the haze at the wall, near neutral so it does not add to the blue
 };
 
 // ---- Where the model's own landmarks land in the frame ----------------------------------------------

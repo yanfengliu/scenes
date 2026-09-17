@@ -1,16 +1,18 @@
-# scenes — a Kyoto street at sunset, rebuilt from one photograph
+# scenes — photographs rebuilt as procedural 3D scenes
 
 `japan.webp` is a photograph of a stepped street in Kyoto's Higashiyama district at sunset: a weeping cherry in full bloom over stone steps, machiya townhouses with kawara roofs on both sides, a forested hill and hazy mountains behind, the sun low behind the ridge.
 
-`index.html` is that scene rebuilt in Three.js. It loads framed exactly like the photograph. Drag to orbit, scroll or pinch to zoom, and press `R` (or the button) to return to the photo view.
+`whitehouse.webp` is a photograph of the White House's north front on a June midday: the columned and pedimented North Portico behind its lawn, the white fountain on the centre line, the red flower bed, the trees closing the frame's edges.
 
-The dropdown next to that button picks the scene, and `?scene=<id>` in the URL names one directly. This repository has one scene so far, so the list has one entry; each new one is an entry in `src/scenes.js` pointing at the module that builds it.
+`index.html` rebuilds each of them in Three.js. A scene loads framed exactly like the photograph it was built from. Drag to orbit, scroll or pinch to zoom, and press `R` (or the button) to return to the photo view.
 
-Everything in it is procedural. There are no downloaded models, no image assets beyond the photograph itself, and no build step: the page is `index.html` plus the modules in `src/`, and the only runtime download is a pinned copy of Three.js from a CDN.
+The dropdown next to that button picks the scene, and `?scene=<id>` in the URL names one directly. Each scene is an entry in `src/scenes.js` pointing at the folder that builds it, and the entry is also where the tools read that scene's reference photo, frame size and output paths from. Two scenes so far: `japan` (the default, what a bare URL loads) and `whitehouse`.
+
+Everything in them is procedural. There are no downloaded models, no image assets beyond the two reference photographs, and no build step: the page is `index.html` plus the modules in `src/`, and the only runtime download is a pinned copy of Three.js from a CDN.
 
 ![The render](docs/render.webp)
 
-The render above, against [the photograph](japan.webp) it was built from.
+The render above, against [the photograph](japan.webp) it was built from. The second scene's render and its photograph are compared the same way, by `SCENE=whitehouse npm run compare`.
 
 ## Run it
 
@@ -30,13 +32,15 @@ npx playwright install chromium
 npm test
 ```
 
-`npm test` runs ten gates in this order: `import-inert`, `shot`, `compare`, `placement`, `namerules`, `clearance`, `animation`, `nudge`, `blackframe` and `record`, then asserts the scores against the thresholds in `docs/PLAN-scores.md`. Each gate has to print its own summary line, so a tool that exits 0 without doing its work fails by name rather than passing in silence. Each gate is also a command of its own:
+`SCENE=<id>` names the scene a run is for; unset is `japan`, because every number recorded before the second scene existed is scene 1's. `SCENE=whitehouse npm test` is the same suite for the other scene, with its own photo, its own frame size, its own artifacts under `out/wh/`, and its own thresholds file. A gate that reads scene 1's own landmark lists cannot report a verdict about another scene, so it is **skipped with its reason printed**, and the verdict line names what was skipped — a run never reads as though a gate it did not run had passed.
+
+`npm test` runs ten gates in this order: `import-inert`, `shot`, `compare`, `placement`, `namerules`, `clearance`, `animation`, `nudge`, `blackframe` and `record`, then asserts the scores against the scene's thresholds file. Each gate has to print its own summary line, so a tool that exits 0 without doing its work fails by name rather than passing in silence; a gate that applies to every scene must also print which scene it measured. Each gate is also a command of its own:
 
 | Command | What it does |
 | ------- | ------------ |
 | `npm run import-inert` | Imports every tool in `tools/` in its own child process and fails unless each one loads and does nothing: exits 0, prints nothing, finishes fast. It opens no browser and runs first, because a tool that runs itself on import is a tool whose every other result is suspect. |
-| `npm run shot` | Renders the photo view at 1200x1100 to `out/render.png`. Fails on any console error, page error or failed request. |
-| `npm run compare` | Scores `out/render.png` against `japan.webp` and writes `out/compare.png` (photo, render, 50% overlay, heat map), `out/overlay.png` and `out/scores.json`. |
+| `npm run shot` | Renders the photo view at the scene's own frame size (1200x1100 for `japan`, 1200x900 for `whitehouse`) to that scene's `render.png`. Fails on any console error, page error or failed request. |
+| `npm run compare` | Scores that render against the scene's reference photo and writes `compare.png` (photo, render, 50% overlay, heat map), `overlay.png` and `scores.json` beside it. |
 | `npm run placement` | Two checks the scores cannot make: a ray through 23 photo positions that must hit the object belonging there, and 10 objects whose own base must sit on the ground they claim to stand on. |
 | `npm run namerules` | Every rule in the source that selects meshes by name (placement and grounding checks, the shadow-caster exclusion, clearance's lists, whole-name lookups) is evaluated against the built scene and its population pinned to `tools/name-manifest.json`; a rename that changes any population fails unless the manifest is updated with the reason. It exists because one rename silently moved 37 instances into the shadow pass through a second rule. |
 | `npm run clearance` | What the walkable street keeps clear, measured on the built scene rather than on the constants it was built from: nothing the cherry hangs may come below 1.90 m over the street or the right terrace, and each half of the paved band must keep a 0.60 m run clear of anything built between 0.35 m and 2.0 m over the paving. It also checks its own sorting of meshes into paving, plants and buildings, because a new paving and a new plant once landed in the building set in silence. |
@@ -51,12 +55,16 @@ npm test
 
 `npm run perf` is not part of `npm test` and is not run in CI: it measures the machine it runs on, and a shared runner without a GPU would produce a number unrelated to the budget.
 
+`views`, `probe`, `inspect`, `perf` and `try` are diagnostics rather than gates, and they are **still scene 1's**: they open the bare URL and read scene 1's landmarks. Run them with `SCENE` unset.
+
 ## The scores
 
 Two metrics, both computed by `npm run compare` (see `tools/lib/metrics.js` for what each can and cannot see):
 
 - **Cell colour distance**: the mean distance between the photograph's and the render's average colour over a 24x22 grid of cells. Lower is better.
 - **Grayscale SSIM** at 64 px wide. Higher is better.
+
+The table below is scene 1's; each scene has its own thresholds file and its own numbers.
 
 | | Cell distance | SSIM |
 | --- | --- | --- |
