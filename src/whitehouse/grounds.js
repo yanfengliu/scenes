@@ -206,18 +206,44 @@ export function buildGrounds(b) {
   // hard straight edges running under both framing trees; from the west it was the pale wedge across the
   // lawn. So the grid's own z range starts at the south lawn's edge, not at the wall.
   //
-  // THE APRON'S GRADE IS WHY THIS IS ONE SURFACE AND NOT A SECOND SLAB. It falls from the north grade at the
-  // wall (y 0 at z 0) to the south lawn's own level over 40.6 m -- a 3.1 degree grade, which is what a lawn
-  // falling away to the south looks like -- so it meets the lawn at one end and the south lawn's top at the
-  // other with no step at either and no seam anywhere for the eye to find.
+  // ---- WHAT THE GROUND ACTUALLY DOES HERE, AND WHY THE RAMP IS GONE (pass E) ---------------------------
+  // This band used to be a straight 40.6 m RAMP, 3.1 degrees, from the north grade at the wall (y 0 at z 0)
+  // down to the south lawn's top. That was not measured and not sourced: it was invented to close the trench
+  // with one unbroken surface, and the plan.md residual (f) says so. The HABS DC-37 sheets have now been
+  // read for it, and they say the two levels are TWO LEVELS: the north front stands on ground that stays at
+  // the north grade right across the building, and the drop happens at a face, not down a slope.
+  //
+  //   * Sheet 8 (West elevation, index 00008) and sheet 10 (East elevation, index 00010). Both draw the
+  //     main block's rusticated ground-floor base as ONE HORIZONTAL LINE from end to end, and both draw the
+  //     grade change at the building's own SOUTH end as a STEP -- a vertical face with the south grade at
+  //     its foot -- with the north (terrace) end of the same view flat and level. The east sheet is the
+  //     mirror of the west one, which is what an elevation of the two opposite ends of one building should
+  //     look like if the drop is north-to-south and not a camera artefact.
+  //   * Sheet 12 (South elevation, index 00012) carries the level datum chain that fixes the size of the
+  //     step: GROUND FLOOR -6'-8" and FIRST FLOOR +10'-0" from the first-floor datum, i.e. an 8 ft 4 in
+  //     storey below the first floor. The 9 ft 8 in (2.95 m) between the two published grades comes from the
+  //     WHHA height pair, which is what DIMS.southLawnDrop = 3.0 m already carries.
+  //   * Sheets 2 and 3 (Site plan, index 00002; Landscape plan, index 00003) are landscape sheets at
+  //     1/50" = 1'-0", drawn "based on existing contour survey, USGS topographic map, 1932" on the site one.
+  //     They show the drive, the two lawns and the terraces but CARRY NO CONTOUR ON THE AXIS between the two
+  //     fronts and no spot elevation at the building's ends, so they do not place the face along z. That is
+  //     the one part of this arrangement the record does not settle, and the choice made here says so: the
+  //     face stands at the south lawn's own north edge, z -40.6.
+  //
+  // SO THE APRON IS NOW FLAT AT THE NORTH GRADE (y 0 from z 0 to z -40.6) and the level change is the
+  // vertical face of the south lawn's own slab, which rises to y 0 at z -40.6. Nothing was invented to fill
+  // the gap the ramp used to fill: the surface is continuous in the sense the gate needs (every point of
+  // z 0..-40.6 at |x| <= 680 has ground under it) and discontinuous in the way the drawings show.
   const SOUTH_LAWN_EDGE = -40.6; // the south portico's own bow, where the south lawn's box begins
-  const APRON_FALL = DIMS.southLawnDrop / -SOUTH_LAWN_EDGE; // 0.0739 m of fall per metre going south
-  const groundY = (z) => (z >= 0 ? NORTH_LAWN.yAt(z) : APRON_FALL * z);
+  const groundY = (z) => (z >= 0 ? NORTH_LAWN.yAt(z) : 0);
   const xs = [-TERRAIN_HALF, -400, -300, -220, -160, -120, -100, -80];
   for (let x = -78; x <= 78; x += 2) xs.push(x);
   xs.push(80, 100, 120, 160, 220, 300, 400, TERRAIN_HALF);
-  // The apron is a straight ramp with nothing on it, so it needs a fifth of the rows the mowing does.
-  const APRON_STEP = 5;
+  // The apron is FLAT, so it does not need the north lawn's 1.5 m rows -- but it does need enough of them
+  // that the walk from the wall to the terrace edge is not four long quads: the mowing field is sampled per
+  // vertex and a 5 m first cut of this grid put visible bands in the ground behind the building, which is
+  // exactly the straight-edge defect the north lawn's own rewrite removed. 2 m is 21 rows across the band.
+  const APRON_STEP = 2;
   const zs = [SOUTH_LAWN_EDGE];
   for (let i = 1; SOUTH_LAWN_EDGE + i * APRON_STEP < 0; i++) zs.push(SOUTH_LAWN_EDGE + i * APRON_STEP);
   zs.push(0);
@@ -360,6 +386,15 @@ export function buildGrounds(b) {
   // IT IS BEHIND THE BUILDING AND NOWHERE ELSE: it runs from the south portico's own bow outward, at z < -40,
   // so it can never be the camera's foreground. It used to run to z +300 and cover the whole photo view.
   //
+  // ITS NORTH FACE IS NOW THE LEVEL CHANGE, AND THAT IS THE PASS E FIX. The slab's top stays at
+  // -DIMS.southLawnDrop; what changed is that its top edge at z -40.6 now rises to the north grade (y 0)
+  // instead of stopping 3 m below it behind a ramp. That face is the terrace edge the elevations draw, and
+  // it is the reason the apron's own surface no longer has to fall: the two levels meet at a wall, not down a
+  // slope. FROM THE BUILDING'S WEST END THE FACE IS NOT VISIBLE -- it stands 20 m behind the south-west
+  // corner and the building's own west wall occludes it, which is measured and recorded in
+  // out/wh/pass-e-handoff.md section 3. The frame that does show the arrangement is the south one,
+  // out/wh/scratch/pass-e-f-south.png, where the building now stands on a raised level.
+  //
   // ITS FAR EDGE WAS THE ONE RIM THAT COULD NOT BE MENDED WITHOUT MOVING THE SCORED FRAME, AND THIS PASS
   // PAID THAT PRICE ON MEASUREMENT RATHER THAN ASSUMING IT. The slab used to stop at z -340.6, and that
   // line is where the frame's own horizon was drawn -- which is why the band of sky BELOW the frame's true
@@ -375,7 +410,7 @@ export function buildGrounds(b) {
   // p5 <= 1.01, below-16 <= 7.30%), and 900 m is the gate's own south edge plus two of its cells. The
   // extension is 100% fogged where it ends, so what the frame gains is ground-coloured haze where it used
   // to show the sky dome through the gap.
-  b.box('south lawn', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.8 - DIMS.southLawnDrop, y1: -DIMS.southLawnDrop, z0: SOUTH_LAWN_EDGE - 900, z1: SOUTH_LAWN_EDGE }, LAWN_BASE, { metric: true });
+  b.box('south lawn', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.8 - DIMS.southLawnDrop, y1: 0, z0: SOUTH_LAWN_EDGE - 900, z1: SOUTH_LAWN_EDGE }, LAWN_BASE, { metric: true });
 
   // ---- the hedge band along the wall -------------------------------------------------------------------
   // THE BAND ALONG THE WALL IS NOT BUILT HERE. The photograph's own band, whose top is the row the wall's

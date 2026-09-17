@@ -637,7 +637,17 @@ export function buildFoliage(b) {
   // shape helps, because a sphere lit from one side still has a lit side, but the colour has to say the same
   // thing. Both crowns below are lifted, and a third sits on top where the sun lands squarest.
   for (const [i, x] of [[0, -23.5], [1, 23.5]].entries()) {
-    const z = -DIMS.blockDepth - 12.0;
+    // THE PAIR MOVED 10.5 m SOUTH IN PASS E, AND THE REASON IS THE GROUND, NOT THE COMPOSITION. They stood
+    // at -DIMS.blockDepth - 12.0 = -38.1, which was ON the 40.6 m apron that used to ramp from the north
+    // grade down to the south lawn: at -38.1 that ramp was at y -2.8, so gy -3 put their trunks' feet 20 cm
+    // under it. The apron is now FLAT AT THE NORTH GRADE (see grounds.js) and the level change is the south
+    // lawn's own north face at z -40.6, so at -38.1 these two trunks would stand 3 m in the air with the
+    // terrace edge behind them. -48.6 is south of the foot of that face and off the terrace's own brow, which
+    // is where the south front's magnolias actually are. out/wh/scratch/pass-e-f-south.png (from the south
+    // lawn, looking north) and pass-e-treecheck-trunk.png (under the trunk) are the frames this was checked
+    // in, and the scored frame is byte-identical across the move -- sha256 45b71f25... before and after -- so
+    // the pair is outside the photo view. The two crowns are unmoved in every other respect.
+    const z = -DIMS.blockDepth - 22.5;
     const gy = -DIMS.southLawnDrop;
     trunk(b, `south magnolia ${i + 1} trunk`, x, z, gy, gy + 4.4, 0.5);
     crown(b, `south magnolia ${i + 1} crown`, x, z, gy + 6.6, 3.0, 2.6, 2.8, COLORS.treeFoliageSunlit, 16);
