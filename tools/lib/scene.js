@@ -45,3 +45,18 @@ export const comparePath = `${scene.out}/compare.png`;
 export const overlayPath = `${scene.out}/overlay.png`;
 export const lightAnchorPath = `${scene.out}/light-anchor.json`;
 export const viewsDir = `${scene.out}/views`;
+
+// The page URL that opens THIS scene. A browser tool must open this rather than the bare `${server.url}/`:
+// a bare URL loads whatever `DEFAULT_SCENE` is, which is the registry's first entry and not necessarily the
+// scene this run is for. Opened bare, a gate measures scene 1 and reports the verdict as this scene's --
+// which two gates did (`nudge` and `blackframe`) until a review found it, having been declared scene-neutral
+// in tools/test.js while both of them hardcoded the bare URL. The bare form is still used for the default
+// scene, because scene 1's page URL is part of the provenance of its contract frame.
+export function sceneUrl(server) {
+  return isDefaultScene ? `${server.url}/` : `${server.url}/?scene=${encodeURIComponent(scene.id)}`;
+}
+
+// What `tools/lib/treehash.js` hashes to identify this scene's source: the registry entry's `sourcePaths`,
+// or null to fall back to the module's own default, so a new entry that forgets the field still gets a hash
+// rather than an empty walk.
+export const sourcePaths = scene.sourcePaths ?? null;

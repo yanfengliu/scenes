@@ -193,6 +193,18 @@ function round(row) {
 
 export async function run({ views = VIEWS, gpu = true } = {}) {
   const startedAt = Date.now();
+  // WHICH SCENE. This gate declared itself scene-neutral in tools/test.js and then opened the BARE url,
+  // which loads DEFAULT_SCENE -- scene 1 -- so `SCENE=whitehouse npm test` reported a blackout verdict
+  // about scene 1 under the whitehouse's name. The URL comes from the registry now, and the scene is
+  // resolved here rather than at import so that importing this module still does nothing.
+  let active;
+  try {
+    active = await import('./lib/scene.js');
+  } catch (err) {
+    throw new Error(`${err.message}`);
+  }
+  const { scene, sceneUrl } = active;
+  const outDir = scene.out ?? 'out';
   const server = await startServer({ port: 0, quiet: true });
   const browser = await launch({ gpu });
   const rows = [];
@@ -202,7 +214,7 @@ export async function run({ views = VIEWS, gpu = true } = {}) {
       const page = await browser.newPage({ viewport: { width: view.width, height: view.height }, deviceScaleFactor: view.ratio });
       page.setDefaultTimeout(ACTION_TIMEOUT_MS);
       const errors = collectErrors(page);
-      const info = await openScene(page, `${server.url}/`);
+      const info = await openScene(page, sceneUrl(server));
       renderer = info.renderer;
       const label = `${view.width}x${view.height} @ ${view.ratio}`;
       rows.push({ ...round(await measure(page)), view: label, when: 'on load' });
@@ -219,7 +231,7 @@ export async function run({ views = VIEWS, gpu = true } = {}) {
     await browser.close();
     await server.close();
   }
-  return { rows, renderer, seconds: (Date.now() - startedAt) / 1000 };
+  return { rows, renderer, seconds: (Date.now() - startedAt) / 1000, scene: scene.id, outDir };
 }
 
 // Every reason a row can fail, as sentences, so a red run says which property broke and by how much.
@@ -255,7 +267,7 @@ if (isMainModule()) {
     `views: ${count} of ${VIEWS.length}${count < VIEWS.length ? ` (BLACKFRAME_VIEWS=${process.env.BLACKFRAME_VIEWS})` : ''} `
     + `-- ${views.map((v) => `${v.width}x${v.height}@${v.ratio}`).join(', ')}, each measured on load and after a resize`,
   );
-  const { rows, renderer, seconds } = await run({ views, gpu: wantsGpu('BLACKFRAME') });
+  const { rows, renderer, seconds, scene: sceneId, outDir } = await run({ views, gpu: wantsGpu('BLACKFRAME') });
   console.log(`renderer: ${renderer}`);
   console.log('\nview                    when                          buffer       samples  dark%  worstBlk  lumaStd  vsDirect');
   for (const r of rows) {
@@ -265,9 +277,9 @@ if (isMainModule()) {
     );
   }
   const bad = rows.map((r) => ({ row: r, why: faults(r) })).filter((x) => x.why.length);
-  mkdirSync('out', { recursive: true });
-  writeFileSync('out/blackframe.json', `${JSON.stringify({ renderer, limit: LIMIT, darkLuma: DARK_LUMA, grid: GRID, rows, measuredAt: new Date().toISOString() }, null, 2)}\n`);
-  console.log('\nwrote out/blackframe.json');
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(`${outDir}/blackframe.json`, `${JSON.stringify({ scene: sceneId, renderer, limit: LIMIT, darkLuma: DARK_LUMA, grid: GRID, rows, measuredAt: new Date().toISOString() }, null, 2)}\n`);
+  console.log(`\nwrote ${outDir}/blackframe.json`);
   if (bad.length) {
     console.error(`\nFAIL: the post chain produced a black or near-black frame at ${bad.length} of ${rows.length} size(s):`);
     for (const { row, why } of bad) {
@@ -276,5 +288,9 @@ if (isMainModule()) {
     }
     process.exit(1);
   }
-  console.log(`blackframe: ${rows.length} size/ratio combinations from ${count} of ${VIEWS.length} views all rendered the scene on ${renderer}, in ${seconds.toFixed(0)} s`);
+  console.log(`blackframe: ${rows.length} size/ratio combinations from ${count} of ${VIEWS.length} views all rendered scene ${sceneId} on ${renderer}, in ${seconds.toFixed(0)} s`);
+  // WHICH SCENE the verdict is about, on a line of its own, because tools/test.js requires it: a gate that
+  // opened the wrong page would otherwise report its green as this scene's, which is what this gate did
+  // until 2026-09-17 -- it declared itself scene-neutral and opened the bare URL.
+  console.log(`scene: ${sceneId}`);
 }

@@ -105,7 +105,19 @@ const LIMITS = {
     2: { perPose: 0.51, mean: 0.26 },
   },
 };
-const OUT = 'out/nudge.json';
+let active;
+try {
+  active = await import('./lib/scene.js');
+} catch (err) {
+  console.error(`FAIL: ${err.message}`);
+  process.exit(1);
+}
+const { scene, sceneUrl } = active;
+// WHICH SCENE. This gate declared itself scene-neutral in tools/test.js and then opened the BARE url, which
+// loads DEFAULT_SCENE -- scene 1 -- so `SCENE=whitehouse npm test` reported a shimmer verdict about scene 1
+// under the whitehouse's name. The URL comes from the registry now.
+const OUT = `${scene.out ?? 'out'}/nudge.json`;
+const SCENE_ID = scene.id;
 
 const started = Date.now();
 const gpu = wantsGpu('NUDGE');
@@ -125,7 +137,7 @@ try {
   // dead, and this gate could not report a console error, a page error or a failed request from the day
   // it landed until 2026-09-11. Found by review of the suite-cost change, not by a run.
   collectErrors(page, errors);
-  renderer = (await openScene(page, `${server.url}/`)).renderer;
+  renderer = (await openScene(page, sceneUrl(server))).renderer;
   const measured = await page.evaluate((nudge) => {
     const s = window.__scene;
     const gl = s.renderer.getContext();
@@ -235,8 +247,8 @@ for (const ratio of PIXEL_RATIOS) {
   if (!ok) failed = true;
   console.log(`${ok ? 'ok  ' : 'FAIL'} mean drastic change over ${at.length} poses at ratio ${ratio}: ${mean.toFixed(3)}% <= ${LIMIT[ratio].mean}%`);
 }
-mkdirSync('out', { recursive: true });
-writeFileSync(OUT, `${JSON.stringify({ renderer, askedForGpu: gpu, limitSet, nudgeMetres: NUDGE_METRES, viewport: VIEWPORT, limit: LIMIT, allLimits: LIMITS, means, poses: rows }, null, 2)}\n`);
+mkdirSync(scene.out ?? 'out', { recursive: true });
+writeFileSync(OUT, `${JSON.stringify({ scene: SCENE_ID, renderer, askedForGpu: gpu, limitSet, nudgeMetres: NUDGE_METRES, viewport: VIEWPORT, limit: LIMIT, allLimits: LIMITS, means, poses: rows }, null, 2)}\n`);
 
 if (failed) {
   console.error(`FAIL: the frame is unstable under a small camera move; see out/nudge.json. Rendered on ${rendererTag(renderer, gpu)} and held to the ${limitSet} limits in tools/nudge.js.`);
@@ -245,5 +257,8 @@ if (failed) {
   process.exit(1);
 }
 console.log(`nudge: ${rows.length} poses stable across device pixel ratios ${PIXEL_RATIOS.join(' and ')} on ${rendererTag(renderer, gpu)}, in ${((Date.now() - started) / 1000).toFixed(0)} s`);
+// WHICH SCENE the verdict is about, on a line of its own, because tools/test.js requires it: a gate that
+// opened the wrong page would otherwise report its green as this scene's, which is what this gate did.
+console.log(`scene: ${SCENE_ID}`);
 
 }

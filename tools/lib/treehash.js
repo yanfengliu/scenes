@@ -48,15 +48,21 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
-// index.html plus src/. Anything the page fetches from this repo is under one of these.
+// index.html plus src/. Anything the page fetches from this repo is under one of these -- for a scene whose
+// modules are the flat `src/*.js` set, which is scene 1's shape. A scene in a subdirectory names its own
+// folder as well (`sourcePaths` in src/scenes.js) and the walk of `src` stays one level deep, so one
+// scene's files cannot invalidate another scene's artifacts. That coupling was real: with the recursive
+// walk this file used to do, every edit to src/whitehouse/** changed scene 1's tree hash, and `shot`
+// deleted scene 1's render and its sidecar mid-run because it saw the tree move under it.
 export const SOURCE_PATHS = ['index.html', 'src'];
-// This repo has 27 (index.html + 26 files in src/). The floor is well under that and well over any
-// plausible pruning; it exists because zero files is the value that makes every comparison pass.
+// This repo has 28 files a scene can load (index.html + 27 direct entries in src/, nine of them the second
+// scene's folder). The floor is well under that and well over any plausible pruning; it exists because zero
+// files is the value that makes every comparison pass.
 export const MIN_FILES = 10;
 
 // CRLF -> LF, so the hash names the commit and not the checkout. Everything hashed here is text by
-// repository rule (AGENTS.md: nothing binary enters Git except japan.webp and docs/render.webp, neither
-// of which is under src/), and a buffer with no CR is returned unchanged.
+// repository rule (AGENTS.md: nothing binary enters Git except the reference photographs and
+// docs/render.webp, neither of which is under src/), and a buffer with no CR is returned unchanged.
 function toLf(buf) {
   if (!buf.includes(13)) return buf;
   const out = Buffer.allocUnsafe(buf.length);
@@ -68,11 +74,17 @@ function toLf(buf) {
   return out.subarray(0, n);
 }
 
-function walk(root, p, out) {
+// One entry of `paths`: a file is hashed; a directory is walked. `depth` is how many levels below a named
+// directory the walk may go: a bare `src` is walked ONE level, so it means the files directly in it, and a
+// path that named its own directory (`src/whitehouse`) is walked whole. That is the entire rule, and it is
+// a rule rather than a list of exclusions, so a third scene's folder is covered the moment its own registry
+// entry names it and is invisible to every other scene until then.
+function walk(root, p, out, depth) {
   const abs = join(root, p);
   const st = statSync(abs);
   if (st.isDirectory()) {
-    for (const entry of readdirSync(abs).sort()) walk(root, join(p, entry), out);
+    if (depth < 1) return;
+    for (const entry of readdirSync(abs).sort()) walk(root, join(p, entry), out, depth - 1);
   } else if (st.isFile()) {
     out.push({
       path: p.split(sep).join('/'),
@@ -83,16 +95,18 @@ function walk(root, p, out) {
 
 // { hash, files: [{ path, sha256 }], count }. `hash` is over "path sha256" lines, so it moves when a file
 // moves as well as when its bytes do.
-export function sourceTree({ root = '.', paths = SOURCE_PATHS } = {}) {
+export function sourceTree({ root = '.', paths = SOURCE_PATHS, deep = false } = {}) {
   const files = [];
   for (const p of paths) {
     try {
-      walk(root, p, files);
+      // `deep` walks every named path whole; otherwise a named directory is walked one level, so a bare
+      // `src` means the files directly in it and a scene's own folder is named to be descended into.
+      walk(root, p, files, deep ? Infinity : 1);
     } catch (err) {
       throw new Error(
         `cannot hash the scene source at "${relative('.', join(root, p)) || p}": ${err.message}. `
-        + 'The source-tree hash binds a views sweep to a compare score (tools/lib/treehash.js); it is read '
-        + `from disk relative to the working directory, so run this tool from the repo root. Expected `
+        + 'The source-tree hash binds a scene\'s artifacts to the source that drew them (tools/lib/treehash.js); '
+        + `it is read from disk relative to the working directory, so run this tool from the repo root. Expected `
         + `${paths.join(' and ')}.`,
       );
     }
@@ -101,9 +115,10 @@ export function sourceTree({ root = '.', paths = SOURCE_PATHS } = {}) {
   if (files.length < MIN_FILES) {
     throw new Error(
       `the scene source hash found only ${files.length} file(s) under ${paths.join(' and ')}, under the `
-      + `${MIN_FILES} this repo has (27: index.html and 26 in src/). An empty or near-empty walk hashes to `
-      + 'a constant, and a constant makes every sweep and every score AGREE about the tree — which is the '
-      + 'one way this check could report green while proving nothing. Run from the repo root.',
+      + `${MIN_FILES} this repo has (28: index.html and 27 direct entries in src/, nine of them another `
+      + 'scene\'s folder). An empty or near-empty walk hashes to a constant, and a constant makes every '
+      + 'sweep and every score AGREE about the tree -- which is the one way this check could report green '
+      + 'while proving nothing. Run from the repo root.',
     );
   }
   const hash = createHash('sha256').update(files.map((f) => `${f.path} ${f.sha256}`).join('\n')).digest('hex');

@@ -82,7 +82,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { startServer } from './serve.js';
 import { launch, collectErrors, openScene, isSoftwareRenderer, rendererTag, postWarnings, ACTION_TIMEOUT_MS, HIDE_UI_CSS } from './lib/browser.js';
-import { sourceTree, shortHash, diffTrees } from './lib/treehash.js';
+import { sourceTree, shortHash, diffTrees, SOURCE_PATHS } from './lib/treehash.js';
 import { isMainModule } from './serve.js';
 // An import must never start a gate. Everything below runs only when node was asked to run THIS file;
 // `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
@@ -100,7 +100,7 @@ try {
   console.error(`FAIL: ${err.message}`);
   process.exit(1);
 }
-const { scene, isDefaultScene, renderPath: OUT, treePath: OUT_TREE } = active;
+const { scene, isDefaultScene, renderPath: OUT, treePath: OUT_TREE, sourcePaths: SCENE_SOURCE_PATHS } = active;
 // The viewport, under the name the rest of this file already uses for it.
 const SHOT = scene.shot;
 // Written beside the render, naming the tree it came from. `compare` refuses to score a render whose
@@ -202,7 +202,11 @@ function checkPostState(atShot, atReady, warned) {
 // Read BEFORE the page is opened, so it is the tree the browser is about to load and not whatever is on
 // disk when the screenshot lands. Read again at the end and compared: an edit that arrives mid-run makes
 // the frame a mixture, and a mixture must not be recorded as either tree.
-const treeAtStart = sourceTree();
+// THIS SCENE'S source, not every scene's: the registry entry names the paths, so another scene's folder
+// moving cannot invalidate this scene's render. It could before -- the walk was recursive over all of
+// src/ -- and the failure was not theoretical: a second scene's edit landing mid-run made this tool delete
+// its own render and sidecar as "a mixture of two trees".
+const treeAtStart = sourceTree({ paths: SCENE_SOURCE_PATHS ?? SOURCE_PATHS });
 const server = await startServer({ port: 0, quiet: true });
 const browser = await launch();
 let errors = [];
@@ -266,7 +270,7 @@ try {
   // The tree must not have moved under the run. If it did, this frame is a mixture of two trees and
   // neither hash describes it, so there is nothing honest to record: fail, and let the `rmSync` below
   // take the render with it.
-  const treeAtEnd = sourceTree();
+  const treeAtEnd = sourceTree({ paths: SCENE_SOURCE_PATHS ?? SOURCE_PATHS });
   if (treeAtEnd.hash !== treeAtStart.hash) {
     throw new Error(
       `the scene source changed while this render was being made: ${shortHash(treeAtStart.hash)} when the `

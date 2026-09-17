@@ -66,6 +66,13 @@ const skipped = [];
 //
 // The third element is the scenes the gate applies to, and the fourth is why it does not apply to the
 // others, printed when it is skipped so the reason is in the log rather than in a reader's memory.
+//
+// A gate listed for EVERY scene must also print `scene: <id>` -- the scene it actually loaded -- and this
+// file requires that line from it. The list alone was a claim nothing checked, and a review found it
+// shipping: `nudge` and `blackframe` were declared scene-neutral and both opened the BARE url, which loads
+// SCENES[0], so `SCENE=whitehouse npm test` reported a shimmer and a blackout verdict about scene 1 under
+// the whitehouse's name. The evidence marker is what makes that impossible to repeat silently.
+const SCENE_MARKER = ['scene: '];
 const GATES = [
   // First, and it opens no browser: every tool must load and do nothing when imported. It runs before
   // the rest because it is the cheapest gate here (about 7 s) and because a tool that runs itself on
@@ -95,17 +102,19 @@ const GATES = [
   ['tools/animation.js', ['spread over '], ['japan'], "it pins the clock and scores frame by frame against scene 1's reference photo, at scene 1's photo size"],
   // Scene-neutral: it moves the camera the page was posed at by 2 mm and scores how much the frame
   // changes, so it needs no landmark, no photo and no name -- only a posed photo view, which every scene
-  // has. Its limits are keyed on the renderer the run got, not on the scene.
-  ['tools/nudge.js', ['nudge:'], null, ''],
+  // has. Its limits are keyed on the renderer the run got, not on the scene. It opens the scene the
+  // registry names and prints which one that was, which is the line required below.
+  ['tools/nudge.js', ['nudge:', ...SCENE_MARKER], null, ''],
   // Scene-neutral for the same reason: it asks whether the frame is there at all, at six window sizes and
-  // device pixel ratios, and a black frame is a black frame in any scene.
-  ['tools/blackframe.js', ['blackframe:'], null, ''],
+  // device pixel ratios, and a black frame is a black frame in any scene. It too opens the registry's
+  // scene and prints which, which is the line required below.
+  ['tools/blackframe.js', ['blackframe:', ...SCENE_MARKER], null, ''],
   // Scene 1's: it drives real mouse events through scene 1's camera clamp and asserts every frame of the
   // recording. The clamp is the thing under test and it is scene 1's.
   ['tools/record.js', ['record:'], ['japan'], "it drives scene 1's camera through scene 1's clamp and asserts every frame of the recording"],
 ];
 
-async function run(script, markers) {
+async function run(script, markers, sceneMarked) {
   console.log(`\n== ${script} ==`);
   const started = Date.now();
   // Piped rather than inherited so the output can be checked, and echoed as it arrives so the log reads
@@ -121,6 +130,20 @@ async function run(script, markers) {
   if (status !== 0) {
     console.error(`FAIL: ${script} exited with ${status ?? signal} after ${secs} s`);
     process.exit(status || 1);
+  }
+  // WHICH SCENE IT LOADED, not just that it ran. A gate listed for every scene must print `scene: <id>` and
+  // the id must be this run's: the marker list alone said only that the string appeared. `\s*${scene.id}`
+  // and not a plain substring, so `scene: japan` cannot satisfy a whitehouse run while `scene:whitehouse`
+  // (no space) still can -- the marker substring above is what pins the exact spelling.
+  if (sceneMarked && !new RegExp(`scene:\\s*${scene.id}\\b`).test(output)) {
+    console.error(`\nFAIL: ${script} exited 0 after ${secs} s but its verdict is not about scene "${scene.id}".`);
+    const printed = output.split('\n').filter((l) => l.startsWith('scene:'));
+    console.error(`  it printed ${printed.length ? printed.map((l) => JSON.stringify(l)).join(', ') : 'no "scene:" line at all'}.`);
+    console.error('  That line is the evidence the gate loaded the page this run is for: a tool that opens the');
+    console.error('  BARE url gets SCENES[0], whatever SCENE says, and then reports another scene\'s verdict');
+    console.error('  here. Open the URL from tools/lib/scene.js (`sceneUrl(server)`) or declare the gate');
+    console.error('  scene-specific in GATES. Both happened on 2026-09-17; a review found it.');
+    process.exit(1);
   }
   const missing = markers.filter((m) => !output.includes(m));
   if (missing.length) {
@@ -147,7 +170,7 @@ for (const [script, markers, scenes, why] of GATES) {
     skipped.push(script);
     continue;
   }
-  await run(script, markers);
+  await run(script, markers, markers.includes('scene: '));
 }
 
 // ---- thresholds, one file per scene -------------------------------------------------------------
@@ -176,7 +199,8 @@ const thresholdsPath = scene.thresholds ?? null;
 console.log(`\n== thresholds (${thresholdsPath ?? `none named for scene ${scene.id}`}) ==`);
 if (skipped.length) {
   console.log(`skipped for scene ${scene.id}: ${skipped.join(', ')} (each said why above; they are another scene's gates)`);
-}let asserted = false;
+}
+let asserted = false;
 if (!thresholdsPath || !existsSync(thresholdsPath)) {
   console.log(
     `skip ${thresholdsPath ? `${thresholdsPath} does not exist` : `src/scenes.js names no thresholds file for scene ${scene.id}`}, `
@@ -211,12 +235,21 @@ if (!thresholdsPath || !existsSync(thresholdsPath)) {
 const note = [];
 if (skipped.length) note.push(`${skipped.length} gate(s) skipped: ${skipped.map((s) => s.replace('tools/', '').replace('.js', '')).join(', ')}`);
 if (!asserted) note.push(`the scores of scene ${scene.id} are not asserted yet`);
-console.log(`PASS${note.length ? ` (${note.join('; ')})` : ''}`);
-// A run that established nothing must not read as a pass. Reachable only by a scene whose every gate is
-// another scene's -- which is a registry mistake, not a scene, and it says so instead of printing PASS.
-if (!asserted && skipped.length === GATES.length) {
-  console.error(`FAIL: every gate in this list is another scene's, so this run established nothing about scene ${scene.id}`);
+// A run that established nothing must not read as a pass. The denominator is the gates that COULD have
+// been skipped -- the entries with a scene list -- not GATES.length: five of the ten read no scene data and
+// always run, so comparing against the full list is a condition that can never hold. It was written that
+// way, and a review found it: the guard was dead code that read like a check. Reachable by a scene whose
+// every scene-scoped gate is another scene's and whose own scores are not asserted, which is a registry
+// mistake rather than a scene, and this is what says so instead of printing PASS.
+const skippable = GATES.filter(([, , scenes]) => scenes).length;
+if (!asserted && skipped.length === skippable) {
+  console.error(
+    `FAIL: every gate that can speak about a scene belongs to another scene, so this run established `
+    + `nothing about scene ${scene.id} and its scores are not asserted either. Add the gate this scene's `
+    + `own rules need, or give it a thresholds file at ${thresholdsPath ?? 'the path its thresholds field names'}.`,
+  );
   process.exit(1);
 }
+console.log(`PASS${note.length ? ` (${note.join('; ')})` : ''}`);
 
 }

@@ -8,6 +8,9 @@
 //   shot        the scored frame's size: the viewport `shot` renders at and writes down
 //   out         the directory this scene's artifacts are written to (render, sidecar, scores, sheets, views)
 //   thresholds  the file holding this scene's ```json thresholds block, asserted by `npm test`
+//   sourcePaths what `tools/lib/treehash.js` hashes to identify THIS scene's source: what the browser loads
+//               to draw it, and nothing else. Two scenes share the flat `src/*.js` modules and each has its
+//               own folder, and a scene's artifacts must not be invalidated by another scene's edit.
 //
 // index.html boots whatever ?scene= names, so adding an entry here is what puts a scene in the dropdown.
 // Scene 1's modules sit directly in src/, from when it was the only scene; a second scene gets its own
@@ -29,6 +32,7 @@ export const SCENES = [
     shot: { width: 1200, height: 1100 },
     out: 'out',
     thresholds: 'docs/PLAN-scores.md',
+    sourcePaths: ['index.html', 'src'],
   },
   {
     id: 'whitehouse',
@@ -39,6 +43,7 @@ export const SCENES = [
     shot: { width: 1200, height: 900 },
     out: 'out/wh',
     thresholds: 'docs/work/2_white-house-scene/scores.md',
+    sourcePaths: ['index.html', 'src', 'src/whitehouse'],
   },
 ];
 

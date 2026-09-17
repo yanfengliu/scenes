@@ -46,7 +46,7 @@ import { launch } from './lib/browser.js';
 import { decodeImage, fileToDataUrl, pngDataUrlToBuffer } from './lib/image.js';
 import { cellDistance, ssimGray } from './lib/metrics.js';
 import { LANDMARK_MARKS } from '../src/layout.js';
-import { sourceTree, shortHash, diffTrees } from './lib/treehash.js';
+import { sourceTree, shortHash, diffTrees, SOURCE_PATHS } from './lib/treehash.js';
 import { isMainModule } from './serve.js';
 // An import must never start a gate. Everything below runs only when node was asked to run THIS file;
 // `node -e "import('./tools/x.js')"` loads it and does nothing. The block is not re-indented so that
@@ -64,7 +64,7 @@ try {
   console.error(`FAIL: ${err.message}`);
   process.exit(1);
 }
-const { scene, renderPath: RENDER_PATH, treePath: RENDER_TREE_PATH, scoresPath: SCORES_PATH, comparePath: COMPARE_PATH, overlayPath: OVERLAY_PATH, lightAnchorPath: ANCHOR_PATH } = active;
+const { scene, renderPath: RENDER_PATH, treePath: RENDER_TREE_PATH, scoresPath: SCORES_PATH, comparePath: COMPARE_PATH, overlayPath: OVERLAY_PATH, lightAnchorPath: ANCHOR_PATH, sourcePaths: SCENE_SOURCE_PATHS } = active;
 const PHOTO_PATH = scene.photo;
 const COLS = 24;
 const ROWS = 22;
@@ -87,8 +87,12 @@ if (!existsSync(RENDER_PATH)) {
 }
 
 // A score is a claim about the current scene: refuse a render older than any source file, so a failed
-// or skipped shot can never be scored as if it had succeeded.
-const sources = ['index.html', ...readdirSync('src').map((f) => `src/${f}`)];
+// or skipped shot can never be scored as if it had succeeded. THIS SCENE'S source files, enumerated by the
+// same walk that hashes them (the registry entry names the paths), rather than `readdirSync('src')`: that
+// list was non-recursive and so was already blind to a scene in a subdirectory, while this one names the
+// files this scene actually loads. It hashes the tree an extra time to get them, which is a filesystem walk
+// and no browser. `japan.webp` is still outside it -- the header says what that costs.
+const sources = (SCENE_SOURCE_PATHS ? sourceTree({ paths: SCENE_SOURCE_PATHS }) : sourceTree()).files.map((f) => f.path);
 const newest = sources.map((f) => ({ f, mtime: statSync(f).mtimeMs })).sort((a, b) => b.mtime - a.mtime)[0];
 const renderMtime = statSync(RENDER_PATH).mtimeMs;
 if (renderMtime < newest.mtime) {
@@ -178,7 +182,7 @@ if (recorded.post.rung !== 0 || recorded.post.fallback || recorded.post.designed
   );
   process.exit(1);
 }
-const treeNow = sourceTree();
+const treeNow = sourceTree({ paths: SCENE_SOURCE_PATHS ?? SOURCE_PATHS });
 if (recorded.sourceTree !== treeNow.hash) {
   const changed = diffTrees({ files: recorded.sourceFiles }, treeNow, 'the render', 'the tree on disk');
   console.error(
