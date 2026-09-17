@@ -5,7 +5,7 @@ import { createCameraControls } from './camera-controls.js';
 import * as L from './layout.js';
 import { CAMERA, COLORS, uvToWorld } from './layout.js';
 import { buildScene } from './scene.js';
-import { buildLighting, applyShadowFlags } from './lighting.js';
+import { buildLighting, applyShadowFlags, envState } from './lighting.js';
 import { buildComposer, resizeComposer, postState, composerSize, watchPostChain } from './post.js';
 import { MATERIALS } from './materials.js';
 import { sceneRadiance } from './tonemap.js';
@@ -188,6 +188,9 @@ const api = {
       height: renderer.domElement.height,
       // What the post chain settled on for this size, and what the verification measured getting there.
       post: postState(),
+      // And what the light rig measured of the environment map it built, re-reading the cheap half now:
+      // src/lighting.js proves the map instead of assuming it, for the reason its header gives.
+      env: envState(),
     };
   },
   // True per-frame cost: render the whole chain, then read one pixel so the call blocks until the frame

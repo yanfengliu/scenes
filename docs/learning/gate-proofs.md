@@ -463,6 +463,158 @@ would rewrite the contract and pass. …
 - **Not yet proved: the green half on this tool's own renderer.** `npm run shot` unmutated on SwiftShader had not been run with this check in place when this was written — the machine's one CPU-rasterizing slot was held by another lane. `isSoftwareRenderer` returns true for the SwiftShader string (executed directly, with WARP, llvmpipe, the masked string and the RTX 4090 string beside it), so the branch is not taken, but that is an argument and not a run. `out/scratch/shot-refusal.sh` runs both halves plus a restore; run it and record the green line here.
 - Bound: it checks the renderer STRING through `isSoftwareRenderer`, so a CPU rasterizer under a name this repo has not met fails `shot` — loudly, with a message that says to add it to that function, which is the safe direction but is a false red until someone does. It says nothing about whether the SwiftShader it got is the same SwiftShader that produced the recorded digest; a chromium upgrade that changes the rasterizer's output passes this check and moves the contract, which is what `compare`'s thresholds are there to catch.
 
+## the environment map is proved, and the frame that did not get it (2026-09-17, later)
+
+- Claim (in `src/lighting.js`'s own header, and in `tools/shot.js` and `tools/compare.js`): the sky's environment map is measured after it is built — the radiance it carries, the shape three compiles each program's cube-UV lookup from, which environment each lit program was compiled against, and what the map actually adds to the photo view — a bad map is built once more before it is installed, and a frame whose map cannot be proved, or whose map had to be built twice, is not the contract.
+- Origin: **not a user report — an unexplained scored frame.** `npm run shot` drew `0e56fc677faf` at 0.0632 / 0.5718 from a tree that scored 0.05958 / 0.57134 in three other runs. The previous lane measured its signature as the loss of this map's contribution and nothing else: removing `scene.environment` puts **416 of 528 cells on the bad frame exactly**, against 63 for the good frame and 68 for the next best of twelve knobs, with a residual of mean 0.002 of a luma level over 86% of the frame. `src/lighting.js` built that map and never looked at it.
+- **What this does NOT claim.** It is not established that these checks would have caught that frame. The map's radiance and its contribution are measured once, at build, and the mechanism is still unproven, so a fault that removes the environment term after the build — without moving the texture's identity, its shape, the intensity or the binding — reads as proved and scores. What is established is that a map which fails at BUILD is now red on its own run, which `compare`'s same-tree light check cannot be on the first run of a fresh tree.
+- Healthy figures this is measured against, **and they differ by renderer, which is why nothing near them is pinned** (`out/scratch/env-probe.mjs`): map mean luma **115.6** on an RTX 4090 and **117.6** on SwiftShader over 1024 taps; contribution on a warmed page **2.768** and **2.812** luma levels at the photo view; **239 of 256** standard materials have a program and **0** disagree. Measured inside `buildLighting`, where the camera is square and the shadow flags are not applied yet, the contribution is **2.64** (GPU) and **2.69** (SwiftShader), and those are the figures a gate prints.
+
+### Four mutations driven through `npm run shot` itself
+
+Source mutations in `src/lighting.js`, reverted between arms, on **SwiftShader** (`shot` takes no GPU switch). Every arm was re-taken after an independent review's findings rewrote the tool the first set was taken against; the driver is `out/scratch/redo-proofs.sh`, which prints the file's digest after every revert (`9c1d79a7b399d8c9…` each time) so a half-applied mutation cannot read as a pass. `npm run shot` exits 1 and removes the render in four of the five.
+
+| id | mutation in `src/lighting.js` | exit | map mean luma | contribution | builds | reasons printed |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| R1 | the sky dome is `MeshBasicMaterial({color: 0x000000})` | 1 | **0** | **0** | 2 | 3 |
+| R2 | `target.texture.image.height = 0` | 1 (**over-determined**, see below) | 117.6 | **0** | 2 | 4 |
+| R2b | `target.texture.image.height = 4` | **0** | 117.6 | **3.27** | 1 | 0 |
+| R3 | `RIG.envIntensity = 0.001` | 1 | 117.6 | **0.02** | 1 | **1** |
+| R4 | the FIRST build's dome is black, the second is the sky | 1 | 117.6 | 2.69 | **2** | 1 |
+
+**R1 and R3 are the discrimination, and they are the point of the whole shape.** R1 is a black map: the map reads 0 and so does the contribution. R3 leaves the map at a healthy 117.6, the shape at 768x1024, the binding at 0 of 239 and the intensity matching the rig, and fails on the contribution alone:
+
+```
+FAIL: this frame did not get the light the scene is supposed to have, so it is not the contract
+docs/PLAN-scores.md records:
+  it adds 0.02 of a luma level to the photo view at 64x64 (56.64 with scene.environmentIntensity at
+  0.001, 56.62 at 0), under the 0.25 this scene requires. The map itself reads mean luma 117.6 over
+  1024 taps and its image is 768x1024, so if both of those look healthy the light is being lost
+  between the map and the materials rather than in the map
+```
+
+R3 also red-proves the ABSOLUTE half of the floor. The floor is `max(0.25, 4 x RIG.envIntensity)`; the proportional half tracks the rig so that nobody has to maintain a figure, and at `RIG.envIntensity = 0.001` it is 0.004 and would pass a scene with no environment light at all. 0.25 is what makes a floor built out of the constant it checks non-vacuous, and R3 is the mutation that reaches it.
+
+**R2 is the same discrimination from the other side** — a map reading a healthy 117.6 whose light does not arrive (contribution 0):
+
+```
+  has an image height of 0, and three compiles the cube-UV lookup's texel size and mip count into every
+  lit program from that height (envMapCubeUVHeight), so the lookup returns black however much radiance
+  the texture holds
+```
+
+**Its exit 1 is over-determined and that is not hidden:** the same run printed `FAIL: 18 page error(s)` first, from the console-error check that has always been in this tool. A height of 0 is not silent — three writes the mip count as `${Math.log2(height) - 2}.0`, so it emits `-Infinity.0` and eighteen fragment shaders fail to compile. **That kills a sub-hypothesis:** the 2026-09-17 frame completed and wrote a render, so its page had no console errors, so it was not a zero-height environment texture. What R2 proves about THIS check is that the reason is named in one sentence instead of eighteen shader dumps.
+
+**R2b is not a proof — it is a measurement that disproved the expectation behind it,** and it is recorded because it is the gate's largest bound. A height of 4 was expected to be the silent variant of R2 and to be caught by the contribution. Instead `npm run shot` **passed, exit 0**: the lookup reads the wrong texels rather than none, and the contribution read **3.27** against SwiftShader's healthy 2.69 — the frame got MORE light. So a wrong height baked in at build is caught by nothing here, and it is not necessarily a loss of light. What exists because of this measurement is the branch comparing the shape at the build with the shape read live, which is E below.
+
+**R4 proves the rebuild is a remedy and not dead code,** and the hunt corroborated it by accident. With the first build forced black and the second left alone, the rebuilt map reads 117.6 and the contribution 2.69 — the healthy figures exactly — and two runs of `out/scratch/hunt.mjs` that landed inside this mutation window recorded `builds: 2, ok: true` and drew **`ef7a32617aa6`, the byte-identical contract frame**. The gate still fails, on the event rather than on the pixels:
+
+```
+FAIL: this frame got the light it should have, and the map behind it did not build cleanly, so it is
+not the contract docs/PLAN-scores.md records:
+  the sky's environment map had to be built 2 times, so the first build of it on this run was black or
+  the wrong shape. The frame may well be identical to the contract -- the dome is deterministic, so a
+  rebuild that works is the same map -- and it is refused anyway: a first build that carries no light
+  is the unexplained 2026-09-17 flake happening on this machine, and it must not be scored as if
+  nothing had happened. Run npm run shot again.
+```
+
+Both halves of that sentence are branched, and both branches were wrong once. The headline said "did not get the light" for R4, whose frame got all of it; the body promised "the frame may well be identical to the contract" for R1 and R2, whose rebuilds did not work. R1's body now ends "and the rebuild did not fix it either, for the reason(s) above". An independent review caught the second after the first had already been fixed for the same reason.
+
+### Five page states no source edit can hold still
+
+`out/scratch/env-red-live.mjs` on the **GPU** (ANGLE/D3D11, RTX 4090), driving the real `window.__scene.describe().env` on a real page. **Every arm runs from a green control and is restored to one**, and the control rows are part of the evidence: the first version of this probe never restored arm A, so B, C and E each started red and none of them showed a green-to-red transition. An independent review caught that.
+
+| id | state forced | `ok` | the reason reported |
+| --- | --- | --- | --- |
+| — | control before A | **true** | (none) |
+| A | one of 239 materials' recorded environment set to `null` | false | `1 of 239 lit materials with a program were compiled against a different environment than the one on the scene` |
+| A | …and one frame later | false | the same — three does not repair it |
+| — | control after A | **true** | (none) |
+| B | `scene.environment` replaced with a bare `new THREE.Texture()` | false | three reasons: not the installed map, image height 0, **239 of 239** mismatched |
+| — | control after B | **true** | (none) |
+| C | `scene.environmentIntensity = 0` | false | `scene.environmentIntensity is 0, not the 0.12 this rig set` |
+| — | control after C | **true** | (none) |
+| E | `image.height` changed to 4 AFTER the build | false | `scene.environment's image was 768x1024 when this rig measured it and is 768x4 now` |
+| — | control after E | **true** | (none) |
+| F | `renderer.properties.get` stubbed to return `{}` | false | `none of the 256 lit materials in this scene has a program yet, so the check … measured nothing at all and its "0 disagree" says nothing` |
+| — | control after F | **true** | (none) |
+
+**A persists, and the reason is in three's source rather than in a guess.** `materialProperties.environment` is written in exactly one place, the program-build path (`three.module.js:18167` at the pinned 0.185.1), and the `needsProgramChange` chain tests `materialProperties.envMap` (`:18442`) and never `.environment`. So three does not repair a stale value — and equally, every natural way `scene.environment` can change also changes `envMap`, forces a rebuild and resyncs the field, which means the case measurement 3 was written for is caught by the identity check in arm B instead. The first draft explained A by frustum culling and a review showed that cannot be it: the build-time probe camera is aspect 1, NARROWER than the shot's 1200/1100, so its draw set is a subset.
+
+A sixth arm, D, is a **failed** mutation kept for the record: setting `material.envMapIntensity = 0` on all 256 lit materials changed the 64x64 reference render not at all (57.09 before, after, and after two more renders), because `three.module.js:18690` writes that uniform from `scene.environmentIntensity` on every draw. That is why the contribution is measured through the scene's intensity and why R3 mutates `RIG.envIntensity` instead.
+
+Arm G is not a proof but a cost: `describe().env` over 200 calls is **0.1285 ms** each on the GPU.
+
+### compare refuses the same two things from the sidecar
+
+Hand-edited `out/render.tree.json`, restored after each; both exit 1 and the control restores to exit 0 at 0.0571 / 0.5856.
+
+- `env` removed entirely: `FAIL: out/render.tree.json carries no environment state, so there is no record of the light out/render.png was drawn with.` This one was produced by accident first — the sidecar left by the run before this change had no `env` block at all and `compare` refused it on the first try.
+- `env.ok = false`: `FAIL: out/render.png was drawn with an environment map this repo cannot accept for the contract:` followed by the recorded reason.
+- `env.builds = 2` with `ok` still true: the same headline with the rebuild as the only reason.
+- `env.map` removed, leaving a partial block: `FAIL: out/render.tree.json carries an environment state this tool does not know the shape of: it is missing map.` That fourth one exists because a review found the success path dereferencing `recorded.env.map` after a gate that only required `contribution`, which would have thrown a bare TypeError three hundred lines later -- the same shape a review caught on `recorded.post.verdict` earlier the same day.
+
+### One scene is required to carry the block, not every scene
+
+An independent review caught this before it shipped and it was a blocker. `tools/test.js` runs `shot` and `compare` for every registered scene; the second scene has its own rig (`src/whitehouse/lighting.js`, which assigns `scene.environment` with no proof around it) and its own `describe()` with no `env` in it, so demanding the block unconditionally made `SCENE=whitehouse npm test` an unconditional red on a scene this lane never touched. Both tools now require it only of the DEFAULT scene and check it wherever it is present. Verified: `SCENE=whitehouse npm run shot` exits 0 printing `this scene's rig does not prove its environment map, so there is no light record beside this frame`, and `SCENE=whitehouse npm run compare` exits 0 at 0.1450 / 0.1269 — the figures that scene's plan already records.
+
+### The proof does not move the contract frame, on either renderer
+
+- **SwiftShader, the scored path.** `out/render.png` is sha256 `ef7a32617aa6f91fba930dd5c0729585832524d28288a4d640629ea7ef81b7c5` at `0.05714567082372411 / 0.585612723403553` **before** the change (tree `ef9ad4798a5efec4`, read off that run's own `out/scores.json`), after it (tree `e3db1ddfa1b87ba7`), and again after the widened src/post.js fix below (tree `af3550c0d20889fc`). Thirty-five runs of `out/scratch/hunt.mjs`, each a fresh process and a fresh chromium, drew that same digest and nothing else.
+- **The GPU, which `shot` cannot use.** `npm run try` run A/B/A/B with only `src/lighting.js` and `src/main.js` swapped between main's versions and this lane's: frame sha256 `4ade9bba0ba03416` in all four arms, SSIM 0.5865 in all four.
+- **Twelve window size and pixel-ratio combinations, including resizes.** `npm run blackframe` passes on all six views, both on load and after a resize, on the GPU.
+
+The build-time measurement renders two 64x64 frames and one 32x32 quad into its own targets, restores the render target and four of the five `renderer.info.render` counters, and touches no pixel of the scored frame. It deliberately does not restore `frame`, which is three's once-per-frame memo key for geometry, video-texture and UBO uploads — rolling that back would let the next couple of dozen real frames skip an upload in silence. An independent review caught that; the first version restored the whole object.
+
+### Three findings the review made that the lane's own file boundary had excluded
+
+The coordinator widened the scope for exactly these three files. Each is red-proved here on the tree that was handed off.
+
+**`tools/lib/browser.js`: every gate echoes an `env:` line, and it is the same shape as the defect that put `post:` there.** `collectErrors` returned early unless a console line began `post:` or `watchdog:`, so `src/lighting.js`'s `console.warn('env: ...')` would have been printed by no gate at all — the scene could be drawn with no image-based light on any gate's page and every one of them would report a pass and say nothing. That is exactly what post-chain step-downs did until a review found them earlier the same day. Red proof, both arms, with the black-sky-dome mutation in place and `npm run placement` as the gate (any gate would do — what is under test is the shared helper):
+
+| arm | `page: env:` lines printed |
+| --- | ---: |
+| with `env:` in the prefix list | **2** |
+| with `&& !text.startsWith('env:')` taken back out | **0** |
+
+```
+  page: env: the environment map this rig built out of the sky dome carries mean luma 0 over 1024 taps,
+  under the 12 a map with light in it has to reach (a healthy build reads about 116, a black one reads
+  0). Building it again (attempt 2 of 2); the dome is deterministic, so a second build is only a remedy
+  for something transient.
+```
+
+Echoed and NOT collected: `postWarnings` feeds `shot`'s "the page announced N post-chain step-down(s)" message, which would be a lie about an `env:` line, and `shot` already refuses on the state. `placement` still exits 0 in both arms, which is the point — the line is now visible in a gate that does not fail on it.
+
+**`tools/try.js` refuses an arm that did not get the map.** It already refused a frame the post chain did not draw as designed, on the grounds that two arms made by different machinery cannot be compared; a lost environment is the same fault and a much larger one — it costs this scene about 0.0036 of cell distance, **36 times this tool's own 0.0001 margin** — so an iteration lane would have read a broken instrument as a real result and chased it. Red proof, same mutation, `npm run try` exit 1:
+
+```
+FAIL: this frame did not get the light the scene is supposed to have, so its score cannot be compared
+with another arm's:
+  carries mean luma 0 over 1024 taps, under the 12 a map with light in it has to reach …
+  it adds 0 of a luma level to the photo view at 64x64 (56.23 with scene.environmentIntensity at 0.12,
+  56.23 at 0), under the 0.48 this scene requires …
+  the sky's environment map had to be built 2 times …
+  Losing the sky's environment map costs this scene about 0.0036 of cell distance, 36 times this tool's
+  margin, so this arm's number would read as a scene change and is not one.
+```
+
+Its calibration and its printed margin figures are untouched. Control: with the mutation reverted, `npm run try` exits 0 at the same GPU frame `4ade9bba0ba03416`.
+
+**`src/post.js`'s watchdog no longer rolls back `renderer.info.render.frame`.** The same mistake this lane wrote into `src/lighting.js` and a review caught there: `frame` is not a statistic, it is three's once-per-frame memo key, stored in a WeakMap by `WebGLObjects.update`, `updateVideoTexture` and the UBO cache, each of which SKIPS an upload whose memo already holds the current number. `watchPostChain`'s verification renders four times, so `Object.assign(renderer.info.render, counters)` rolled the counter back and the next few real frames could skip a geometry or instance-matrix upload in silence. Nothing in this scene notices today, because every `needsUpdate` in `src/` fires at build. It is a scene change and it is held to the scene-change bar: after it, `out/render.png` is still sha256 `ef7a32617aa6f91f…` at `0.0571 / 0.5856` on SwiftShader, and `npm run try` still draws `4ade9bba0ba03416` on the GPU. No mutation is offered for it — it removes a hazard rather than adding a check, and there is no gate here to make red.
+
+**And one lesson the blocker carries beyond this lane.** Requiring the new environment block of every scene would have made `SCENE=whitehouse npm test` an unconditional red on a scene this lane never touched and that belongs to someone else. A check added while working on one scene must be asked whether it is a rule about the REPO or a rule about that SCENE, because this one looked like the first and was the second: the proof lives in `src/lighting.js`, which is scene 1's rig, and every other scene has its own folder, its own rig and its own `describe()`.
+
+### Bounds
+
+- The map's radiance and the contribution are measured ONCE, at build. Only the cheap half — the texture's identity, its shape, the intensity and the per-material binding — is re-read at the shot. A map that goes black after the build is invisible to this; there is no watchdog for the light the way there is one for the post chain.
+- The shape check covers a height of 0 and a shape that CHANGES after the build. R2b measures that a wrong height present at build is covered by nothing.
+- Measurement 3 reads a field three writes when it builds a program and never tests for invalidation, so its natural case is covered by the identity check beside it rather than by the count.
+- `src/lighting.js` announces a failure with `console.warn('env: ...')`, every gate echoes it (`tools/lib/browser.js`, widened below) and `shot`, `compare` and `try` refuse on the state. Every OTHER gate still PASSES on a page whose map failed -- `nudge`, `blackframe`, `animation`, `views`, `record`, `placement`, `clearance` and `namerules` print the line and go on scoring their own question, which is deliberate: their verdicts are about different things and the frame that must not be wrong is the scored one.
+- It proves the map carries light and reaches the materials, never that the map is RIGHT: a sky rebuilt in the wrong colour passes every check here.
+- The field rate is zero. The mechanism of the 2026-09-17 frame did not reproduce in this lane's 37 hunt runs or in the previous lane's 56 fresh `shot` processes, so nothing here is evidence that the gate has ever seen the real defect — only that it goes red on every mutation that reproduces the defect's shape, and passes one that does not (R2b).
+
 ## the post chain's watchdog, and the frame the full chain did not draw (2026-09-17)
 
 Two gates and one scene fix, from one investigation. The scene fix is first because it is the one that removes a flake rather than reporting it.

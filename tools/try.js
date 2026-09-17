@@ -94,10 +94,19 @@
 //
 // ---- WHAT IT CHECKS, AND THAT IS NOT THE SCENE ------------------------------------------------------
 // It fails on a page error, on a frame not drawn by the post chain AS DESIGNED (a step-down, a watchdog
-// ratchet, a `post:` warning), and on the scene source changing under the run. None of those is a
-// threshold: they are instrument checks, and they are here because a lane's A/B is void if the two arms
-// were drawn by different chains or if the tree moved between them. `shot` refuses the same things for
-// the contract's sake; this refuses them for the comparison's sake.
+// ratchet, a `post:` warning), on a frame that did not get the sky's ENVIRONMENT MAP, and on the scene
+// source changing under the run. None of those is a threshold: they are instrument checks, and they are
+// here because a lane's A/B is void if the two arms were drawn by different chains or if the tree moved
+// between them. `shot` refuses the same things for the contract's sake; this refuses them for the
+// comparison's sake.
+//
+// The environment one is the newest (2026-09-17) and its SIZE is why it belongs here rather than in the
+// bounds below: `src/lighting.js` proves the map it builds and reports through `describe().env`, and
+// losing that map moved this scene's score 0.0632 against 0.05958 -- about 0.0036 of cell distance, which
+// is **36 times the margin this tool prints**. An arm that lost it would read as a real scene change by a
+// wide margin, which is the exact failure the margin exists to prevent. It is required here because this
+// tool IS scene 1; a scene with its own rig under `src/` carries its own proof or carries none, which is
+// the distinction `tools/shot.js` makes with `isDefaultScene`.
 //
 // ---- BOUNDS -----------------------------------------------------------------------------------------
 // - It is ONE frame at ONE clock (t = 0) at ONE size, like `shot`. It says nothing about the animation
@@ -186,6 +195,30 @@ function postProblems(post, warned) {
   if (warned.length) why.push(`the page announced ${warned.length} post-chain step-down(s), the first being: ${warned.slice(0, 2).join(' | ')}`);
   return why;
 }
+// And the same question about the LIGHT, on exactly the same grounds: an arm drawn without the sky's
+// environment map is an arm drawn by different machinery, not a scene that got worse. The size is what
+// makes this belong here rather than in the bounds section -- losing that map moved the score 0.0632
+// against 0.05958 on 2026-09-17, which is **36 times this tool's own 0.0001 margin**, so an iteration
+// lane would read a broken instrument as a real result and chase it. That is the exact failure the margin
+// exists to prevent.
+//
+// Required only of the DEFAULT scene, for tools/shot.js's reason: the proof is in src/lighting.js, which
+// is scene 1's rig, and a scene with its own rig under src/ has its own describe() and may carry no block
+// at all. A scene that reports one is checked whatever scene it is.
+function envProblems(env, required) {
+  if (!env) {
+    return required
+      ? ['the page reported no environment state at all (window.__scene.describe().env was null), so there is no record of the light this frame was drawn with']
+      : [];
+  }
+  if (!env.map || !env.contribution || !env.binding) {
+    return [`the page reported an environment state of a shape this tool does not know: ${JSON.stringify(env)}`];
+  }
+  const why = [];
+  if (env.ok !== true) why.push(...env.why);
+  if (env.builds > 1) why.push(`the sky's environment map had to be built ${env.builds} times, so the first build of it on this run was black or the wrong shape`);
+  return why;
+}
 
 const started = Date.now();
 const gpu = wantsGpu('TRY');
@@ -218,13 +251,14 @@ try {
   // the compositor has the canvas page.screenshot captures. It returns describe().post as its last act,
   // after both settle frames, so the state recorded is the one this frame was drawn with. Keeping this
   // identical to tools/shot.js is what makes the software frames byte-identical.
-  const post = await page.evaluate(async (css) => {
+  const { post, env } = await page.evaluate(async (css) => {
     const style = document.createElement('style');
     style.textContent = css;
     document.head.appendChild(style);
     window.__scene.setTime(0);
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-    return window.__scene.describe().post;
+    const described = window.__scene.describe();
+    return { post: described.post, env: described.env };
   }, HIDE_UI_CSS);
   const posed = Date.now();
   await page.screenshot({ path: OUT, type: 'png' });
@@ -236,6 +270,18 @@ try {
       + '  Two arms drawn at different rungs differ by the rung as well as by the scene. Re-run; if it '
       + 'persists, the top rung does not survive on this driver at this size and src/post.js says what it '
       + 'measured.',
+    );
+  }
+  // Always required here, and that is not an oversight: this tool opens the bare URL, hashes every file
+  // under src/ and writes out/try, so it IS scene 1 and its printed margin says so in as many words. If it
+  // ever learns about other scenes, this argument becomes their `isDefaultScene` the way `shot` has it.
+  const lightWhy = envProblems(env, true);
+  if (lightWhy.length) {
+    throw new Error(
+      `this frame did not get the light the scene is supposed to have, so its score cannot be compared with another arm's:\n  ${lightWhy.join('\n  ')}\n`
+      + "  Losing the sky's environment map costs this scene about 0.0036 of cell distance, 36 times this "
+      + "tool's margin, so this arm's number would read as a scene change and is not one. src/lighting.js "
+      + 'says what each figure is and what a healthy one looks like.',
     );
   }
   const treeAtEnd = sourceTree();
@@ -280,6 +326,9 @@ try {
     sourceTree: treeAtEnd.hash,
     sourceFileCount: treeAtEnd.count,
     post,
+    // And the light behind it, for the same reason `shot` records it: two arms that score differently are
+    // told apart by what they were drawn with, not by the two numbers.
+    env,
     drawCalls: info.drawCalls,
     triangles: info.triangles,
   };

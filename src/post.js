@@ -555,7 +555,15 @@ export function watchPostChain(renderer, composer, now = performance.now()) {
   // reference render inside `verifyComposer` would roughly double the draw calls and triangles reported
   // for whatever frame this ran on -- numbers nothing asserts, but ones `shot` prints and an
   // investigation reads as "identical draw calls". The extra work is this watchdog's, not the frame's.
-  const counters = { ...renderer.info.render };
+  //
+  // FOUR COUNTERS, AND DELIBERATELY NOT `frame`. It is not a statistic: `info.render.frame` is three's
+  // "once per frame" memo key, stored in a WeakMap by `WebGLObjects.update`, by `updateVideoTexture` and
+  // by the UBO cache, each of which SKIPS an upload whose memo already holds the current number. The
+  // verification below renders four times, so restoring the saved value rolls the counter back and the
+  // next few real frames can skip a geometry or instance-matrix upload in silence. Nothing in this scene
+  // notices today -- every `needsUpdate` in src/ fires at build -- and a future one would, invisibly.
+  // Found by an independent review of the same bug written into src/lighting.js on 2026-09-17.
+  const { frame, ...counters } = renderer.info.render;
   const verdict = verifyComposer(renderer, composer, subject.scene, subject.camera);
   const lit = canvasCarriesLight(renderer) === true;
   Object.assign(renderer.info.render, counters);

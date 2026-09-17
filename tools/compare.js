@@ -27,6 +27,14 @@
 // bind the score to a named scene, which is what replaced `out/views/1-photo.png` being byte-identical
 // to `out/render.png` (tools/lib/treehash.js says why that went).
 //
+// Since 2026-09-17 it refuses four more GROUPS, all of them about WHAT THE FRAME WAS DRAWN WITH rather
+// than which tree it came from: a sidecar with no post-chain state or no verdict inside it; one whose
+// rung src/post.js does not mark as the chain as designed; a sidecar with no environment state, or one of
+// a shape this tool does not know; and one whose environment map src/lighting.js could not prove or had
+// to build twice. The first pair and the second pair cover the two
+// halves of the same day's finding -- a frame drawn by a lesser post chain, and a frame drawn without the
+// light the scene is supposed to have -- and the second pair is the one aimed at the flake itself.
+//
 // **The reference photo is half of what this tool scores and is bound by NONE of them.** It is not in the
 // mtime list below — `['index.html', ...readdirSync('src')]` — and `sourceTree()` excludes it deliberately,
 // so a changed reference photo moves every score with no guard anywhere in this repo. That is the largest
@@ -64,7 +72,7 @@ try {
   console.error(`FAIL: ${err.message}`);
   process.exit(1);
 }
-const { scene, renderPath: RENDER_PATH, treePath: RENDER_TREE_PATH, scoresPath: SCORES_PATH, comparePath: COMPARE_PATH, overlayPath: OVERLAY_PATH, lightAnchorPath: ANCHOR_PATH, sourcePaths: SCENE_SOURCE_PATHS } = active;
+const { scene, isDefaultScene, renderPath: RENDER_PATH, treePath: RENDER_TREE_PATH, scoresPath: SCORES_PATH, comparePath: COMPARE_PATH, overlayPath: OVERLAY_PATH, lightAnchorPath: ANCHOR_PATH, sourcePaths: SCENE_SOURCE_PATHS } = active;
 const PHOTO_PATH = scene.photo;
 const COLS = 24;
 const ROWS = 22;
@@ -179,6 +187,76 @@ if (recorded.post.rung !== 0 || recorded.post.fallback || recorded.post.designed
     + 'a lesser configuration against numbers it cannot make. The step-down means the top rung did not '
     + 'survive on this driver at this size; src/post.js prints what it measured. Run npm run shot, which '
     + 'refuses to leave such a frame on disk.',
+  );
+  process.exit(1);
+}
+// ---- AND THE FRAME MUST HAVE GOT THE LIGHT THE SCENE IS SUPPOSED TO HAVE -----------------------------
+// The half of the 2026-09-17 class the rung refusal above states it cannot see. `src/lighting.js` builds
+// the sky's environment map, proves it carries light and reaches the materials, and reports what it
+// measured; `npm run shot` refuses a frame that fails that proof and records the numbers here. This
+// refuses a sidecar that reached the disk another way -- carried in from another machine, or written by a
+// tool from before this existed -- exactly as the rung refusal does.
+//
+// Bounds, the same two the rung refusal has and one more: it reads numbers the page reported about
+// itself; it proves the map carries light and not that the map is RIGHT; and `builds` and the map's own
+// radiance were measured when the rig was built, so a map that went black afterwards is not in them.
+//
+// ONE SCENE IS REQUIRED TO CARRY THIS, not every scene, for the reason `tools/shot.js` states at its own
+// `checkEnvState`: the proof lives in `src/lighting.js`, which is scene 1's rig, and a second scene has
+// its own rig and its own `describe()`. Demanding it of every scene made `SCENE=whitehouse npm test` an
+// unconditional red, which an independent review caught before it shipped. A scene that HAS a block is
+// checked whatever scene it is.
+//
+// Every field the messages below read is required here, not just `contribution`: a sidecar carrying a
+// `contribution` and no `map` would otherwise reach the summary print and throw a bare TypeError. That is
+// the same shape a review caught on `recorded.post.verdict`, and it was still here after that fix.
+const ENV_FIELDS = ['map', 'shape', 'contribution', 'binding'];
+const envMissing = recorded.env ? ENV_FIELDS.filter((f) => !recorded.env[f]) : null;
+if (isDefaultScene && !recorded.env) {
+  console.error(
+    `FAIL: ${RENDER_TREE_PATH} carries no environment state, so there is no record of the light `
+    + `${RENDER_PATH} was drawn with. That is exactly the gap the 2026-09-17 flake fell through: the `
+    + 'scored frame was 6.5% dark on every lit surface and not one number about the light existed to say '
+    + 'so. npm run shot writes this field from window.__scene.describe().env; a sidecar without it was '
+    + 'written by a tool from before 2026-09-17, by an interrupted run, or by hand. Run npm run shot again.',
+  );
+  process.exit(1);
+}
+if (recorded.env && (envMissing.length || typeof recorded.env.builds !== 'number')) {
+  console.error(
+    `FAIL: ${RENDER_TREE_PATH} carries an environment state this tool does not know the shape of: it is `
+    + `missing ${[...envMissing, ...(typeof recorded.env.builds === 'number' ? [] : ['builds'])].join(', ')}. `
+    + 'npm run shot writes the whole block out of window.__scene.describe().env, so a partial one was '
+    + 'written by hand or by an older tool. Run npm run shot again.',
+  );
+  process.exit(1);
+}
+if (recorded.env && (recorded.env.ok !== true || recorded.env.builds > 1)) {
+  // Two different faults, and the reasons say which happened. A message that blamed a dark frame for a
+  // rebuild that then worked would send a reader looking for something that is not there.
+  // `why` is read defensively: a hand-edited sidecar that drops it must produce a sentence, not a bare
+  // TypeError out of this line. A review caught the same shape on `recorded.post.verdict` on 2026-09-17.
+  const why = [];
+  if (recorded.env.ok !== true) {
+    why.push(...(Array.isArray(recorded.env.why) && recorded.env.why.length
+      ? recorded.env.why
+      : ['the sidecar records the proof as not passing and carries no reason, which npm run shot never writes']));
+  }
+  if (recorded.env.builds > 1) {
+    why.push(
+      `the map had to be built ${recorded.env.builds} times before it carried light, so the first build of `
+      + 'it on that run was black or the wrong shape -- which is the unexplained 2026-09-17 flake happening '
+      + 'on the machine that drew this frame, whatever the frame itself looks like',
+    );
+  }
+  console.error(
+    `FAIL: ${RENDER_PATH} was drawn with an environment map this repo cannot accept for the contract:\n`
+    + `  ${why.join('\n  ')}\n`
+    + `  It measured mean luma ${recorded.env.map?.meanLuma} in the map itself and a contribution of `
+    + `${recorded.env.contribution.delta} of a luma level to the photo view, against a floor of `
+    + `${recorded.env.floor}. The thresholds in docs/PLAN-scores.md are the fully lit scene's: the frame `
+    + 'this scene draws without that map scored 0.0632 against 0.05958 on 2026-09-17, which fails them. '
+    + 'Run npm run shot, which refuses to leave such a frame on disk.',
   );
   process.exit(1);
 }
@@ -451,6 +529,10 @@ try {
     // a frame, and a frame belongs to a post-chain rung and to the light the chain measured making it.
     // Two runs of one tree that score differently are told apart here and nowhere else.
     post: recorded.post,
+    // And the light that chain was fed: what src/lighting.js measured of the sky's environment map.
+    // Copied for the same reason as `post` -- two runs of one tree that score differently are told apart
+    // here and nowhere else, and on 2026-09-17 this was the block that did not exist.
+    env: recorded.env,
     renderSha256: renderSha,
     renderedAt: new Date().toISOString(),
   };
@@ -463,6 +545,14 @@ try {
     + `with ${recorded.post.samples} samples; the chain measured mean luma ${recorded.post.verdict.meanLuma} `
     + `against a plain-render reference of ${recorded.post.verdict.referenceLuma}`,
   );
+  if (recorded.env) {
+    console.log(
+      `the sky's environment map carried mean luma ${recorded.env.map.meanLuma} and added `
+      + `${recorded.env.contribution.delta} of a luma level to that reference (floor ${recorded.env.floor}), `
+      + `with ${recorded.env.binding.mismatched} of ${recorded.env.binding.compiled} lit programs disagreeing `
+      + 'about which environment they were compiled for',
+    );
+  }
   console.log(`wrote ${COMPARE_PATH}, ${OVERLAY_PATH}, ${SCORES_PATH}`);
 } catch (err) {
   failure = err;

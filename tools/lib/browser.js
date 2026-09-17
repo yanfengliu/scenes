@@ -186,7 +186,17 @@ export function collectErrors(page, sink) {
       // a lesser configuration. Without the echo those two were visible in exactly one gate's output --
       // `shot`, from the sidecar -- which is the "announced and nobody was listening" defect in
       // miniature, and an independent review said so.
-      if (!text.startsWith('post:') && !text.startsWith('watchdog:')) return;
+      //
+      // `env:` joined them on 2026-09-17, and it is the SAME SHAPE as the defect that put the other two
+      // here. src/lighting.js proves the sky's environment map and announces a failure with
+      // `console.warn('env: ...')`; without this line no gate would print it, so the scene could be drawn
+      // with no image-based light on any gate's page and every one of them would report a pass and say
+      // nothing -- which is exactly what `post:` step-downs did until a review found them. Echoed and NOT
+      // collected: `posts` feeds `shot`'s "the page announced N post-chain step-down(s)" message, which
+      // would be a lie about an `env:` line, and `shot` already refuses the frame on the STATE, read out
+      // of describe().env in the evaluate it already makes. The state is the channel a gate reads; this
+      // is the channel a person reads.
+      if (!text.startsWith('post:') && !text.startsWith('watchdog:') && !text.startsWith('env:')) return;
       // Printed as it arrives, not gathered for a summary: a gate that dies before its summary would
       // otherwise take the one record of a step-down with it.
       console.log(`  page: ${text}`);
