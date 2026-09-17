@@ -749,7 +749,13 @@ export function makeHillTexture({ size = 256, seed = 7, stops, vTop, vBottom, su
       // two texels and the next structure up was 9 cycles across the whole hill.
       const big = noiseB(u * 9, vv * 6);
       const stands = noiseB(u * 52 + 11, vv * 30 + 5);
-      let k = crown(u, vv) + (big - 0.5) * 0.3 + (stands - 0.5) * 0.12;
+      // The crown field's own contrast is damped and the two larger scales are raised. The crown grid is
+      // 571 cells per FRAME width and this texture spans 4.6 frames at 4096, so a crown is 1.56 texels:
+      // below Nyquist, which is why the hill reads as sandpaper from a sweep pose that fills a third of
+      // the screen with it while the same texels look like forest in the photo's 0.02 of frame. Damping
+      // what cannot be resolved and raising what can trades the speckle for structure without touching
+      // the row means, which is what the normalisation below holds.
+      let k = 0.55 + (crown(u, vv) - 0.55) * 0.68 + (big - 0.5) * 0.52 + (stands - 0.5) * 0.26;
       row[x] = k;
       mean += k;
     }

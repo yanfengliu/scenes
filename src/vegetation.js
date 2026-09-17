@@ -457,7 +457,7 @@ function groundPlants(b, rand) {
   // (that pot is built with the walls).
   const potSpot = L.uvToWorld(0.805, 0.83, 8);
   const potBase = L.rightTerraceY(potSpot.z);
-  const smallPot = new THREE.Mesh(new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(0.14, 0), new THREE.Vector2(0.18, 0.2), new THREE.Vector2(0.2, 0.26), new THREE.Vector2(0.17, 0.26), new THREE.Vector2(0.16, 0.04), new THREE.Vector2(0, 0.04)], 14), surface('glaze', C.pot, { seed: 48 }));
+  const smallPot = new THREE.Mesh(new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(0.14, 0), new THREE.Vector2(0.18, 0.2), new THREE.Vector2(0.2, 0.26), new THREE.Vector2(0.17, 0.26), new THREE.Vector2(0.16, 0.04), new THREE.Vector2(0, 0.04)], 14), surface('glaze', C.potSmall, { seed: 48 }));
   // +0.006 puts it on the flagstones rather than 5 mm inside them: `right walkway slabs` lays its tops at
   // rightTerraceY + 0.005 and this pot stands at x 3.07, z -7.11, which is inside the paved field. The
   // `small pot` grounding check cannot catch that -- its ground is matched by name prefix and
@@ -470,7 +470,7 @@ function groundPlants(b, rand) {
   b.add(instanced('shrub 2 leaves', cardGeometry, leafMat, shrub2, { uvOffsets: false }), 'shrub 2 leaves');
   const p = L.leftPotPlacement();
   const plant = [];
-  cluster(rand, plant, new THREE.Vector3(p.x, p.potY + 0.5, p.z + 0.2), { x: 0.42, y: 0.4, z: 0.75 }, 70, 0.24, C.plant, leaf.mean);
+  cluster(rand, plant, new THREE.Vector3(p.x, p.potY + 0.5, p.z + 0.2), { x: 0.42, y: 0.4, z: 0.75 }, 70, 0.24, C.leftPlant, leaf.mean);
   b.add(instanced('left plant leaves', cardGeometry, leafMat, plant, { uvOffsets: false }), 'left plant leaves');
 
   // Weeds: grass tufts standing at the wall bases along the stairs, on the gutter's curb and against the

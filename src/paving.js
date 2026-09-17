@@ -128,7 +128,14 @@ export function buildPaving(b) {
       uv: [rand() * 4, 0],
     });
   }
-  const treadMean = balancedMean(C.steps, mortarOf(C.steps), 0.065);
+  // The ramp along the flight (see `stepsFar` in src/layout.js), per slab, so it costs no draw call and no
+  // draw from `rand`: every slab after this is laid from the same stream it always was.
+  const treadMean = balancedMean(C.stepsFar, mortarOf(C.stepsFar), 0.065);
+  treads.forEach((it) => {
+    const z = it.position[2];
+    const t = Math.min(1, Math.max(0, (-z - 10.5) / 2.5));
+    it.color = scaleHex(mixHex(C.steps, C.stepsFar, t * t * (3 - 2 * t)), C.stepsFar);
+  });
   b.add(instanced('stair treads', slab, surface('stone', treadMean, { seed: 11, instancedUv: true }), treads), 'stair treads');
   b.add(instanced('stair risers', riserGeo, surface('stone', mortarOf(C.steps) + 0x0a0a0a, { seed: 12, instancedUv: true }), risers), 'stair risers');
   // Mortar body under the stairs: the stepped profile 3 cm below the tread tops and 3 cm behind the
@@ -580,5 +587,5 @@ function ribbon(b, name, z0, z1, width, color) {
   sgeo.setAttribute('position', new THREE.Float32BufferAttribute(skirt, 3));
   sgeo.setIndex(skirtIndex);
   sgeo.computeVertexNormals();
-  b.add(new THREE.Mesh(sgeo, material(C.stoneWallRight, { side: THREE.DoubleSide })), `${name} skirt`);
+  b.add(new THREE.Mesh(sgeo, material(C.skirtStone, { side: THREE.DoubleSide })), `${name} skirt`);
 }

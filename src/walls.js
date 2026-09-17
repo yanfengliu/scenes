@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import * as L from './layout.js';
 import { mulberry32, jitter, uniform } from './random.js';
 import { instanced, surface, stoneBlockGeometry, panTileGeometry, ridgeTileGeometry, basisAlong } from './instancing.js';
-import { mortarOf, balancedMean } from './paving.js';
+import { mortarOf, balancedMean, mixHex, scaleHex } from './paving.js';
 
 const C = L.COLORS;
 const S = L.STREET;
@@ -72,6 +72,17 @@ export function stackedStones(rand, { from, to, outward, top, bottom, course = 0
 const rubbleMean = (mean) => balancedMean(mean, mortarOf(mean), 0.15);
 const ashlarMean = (mean) => balancedMean(mean, mortarOf(mean), 0.03);
 
+// A stop table walked from the first entry down. `stops` is [[key, hex], ...] with the keys DESCENDING,
+// and the key is whatever the wall's own ramp is along — z for the two retaining walls, world y for the
+// tall ashlar one. Outside the table it holds the end value rather than extrapolating.
+const rampAt = (stops, k) => {
+  if (k >= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    if (k >= stops[i][0]) return mixHex(stops[i - 1][1], stops[i][1], (stops[i - 1][0] - k) / (stops[i - 1][0] - stops[i][0]));
+  }
+  return stops[stops.length - 1][1];
+};
+
 export function buildWalls(b) {
   const rand = mulberry32(7);
   const rubble = stoneBlockGeometry(true);
@@ -91,7 +102,11 @@ export function buildWalls(b) {
     style: 'ashlar',
     tintAmount: 0.07,
   });
-  b.add(instanced('left stone wall blocks', ashlar, surface('stone', ashlarMean(C.stoneBlocks), { seed: 31, instancedUv: true }), leftBlocks), 'left stone wall blocks');
+  // Per stone, by its own height (the ladder is on `stoneBlocksLeftBase` in src/layout.js): no draw call
+  // and no draw from `rand`, so `left stone wall top blocks` and everything after it are unchanged.
+  const LEFT_BLOCK_STOPS = [[3.5, C.stoneBlocksLeftBase], [3.1, C.stoneBlocksLeftUpper], [2.6, C.stoneBlocksLeftMid], [2.0, C.stoneBlocksLeftLower], [1.4, C.stoneBlocksLeftFoot], [0.6, C.stoneBlocksLeftLow]];
+  leftBlocks.forEach((it) => { it.color = scaleHex(rampAt(LEFT_BLOCK_STOPS, it.position[1]), C.stoneBlocksLeftBase); });
+  b.add(instanced('left stone wall blocks', ashlar, surface('stone', ashlarMean(C.stoneBlocksLeftBase), { seed: 31, instancedUv: true }), leftBlocks), 'left stone wall blocks');
   const leftTop = stackedStones(rand, { from: [W.x1 + 0.02, W.z1], to: [W.x1 + 0.02, W.z0], outward: [1, 0], top: () => W.top, bottom: () => W.top - 0.25, course: 0.25, depth: 0.55, style: 'ashlar', tintAmount: 0.05 });
   b.add(instanced('left stone wall top blocks', ashlar, surface('stone', ashlarMean(C.stoneBlocksTop), { seed: 32, instancedUv: true }), leftTop), 'left stone wall top blocks');
   b.box('left stone wall', { x0: W.x0, x1: W.x1 - 0.02, y0: L.streetY(W.z0) - 1, y1: W.top, z0: W.z0, z1: W.z1 }, mortarOf(C.stoneBlocks));
@@ -111,8 +126,46 @@ export function buildWalls(b) {
     depth: 0.45,
     style: 'rubble',
   });
+  // THE WALL'S OWN COLOUR, PER STONE, along the street AND down the face — so it costs no draw call and
+  // no draw from `rand`. One flat hex answered for a face the photo runs from #a9a39f to #5e5650 over four
+  // metres, which is why (0.229, 0.977) was the fourth-worst cell in the frame.
+  //
+  // `out/scratch/wallladder.mjs` is what reads it: it solves for the photo position whose ray meets the
+  // wall plane x = -2.8 a given depth BELOW that column's own top and samples the photo there, which is
+  // the only way to read a wall this camera sees nearly end-on (one compare cell spans 0.4 m of its
+  // height). Down from the top at 0.00 / 0.15 / 0.30 / 0.45 / 0.60 / 0.80 m:
+  //   z -5.30  #968c83 #8c837c #948c83 #918881 #8b837d
+  //   z -6.14  #9e9893 #ada8a3 #b2aba7 #aca59f #9f9995
+  //   z -6.98  #bbb7b7 #9a948f #656057 #564f45 #504842
+  //   z -7.82  #817a79 #807b7c #807d7c #7d7976 #69635e
+  //   z -8.66  #716d6a #5c5652 #827c77 #6d6a64 #5d5c58
+  //   z -9.50  #756a62 #88817a #76706c #696768 #67666b
+  // Two things are in that table and only one of them is a shadow along the street: at z -6.14 the face is
+  // pale at every depth, at z -6.98 it is pale for 0.15 m and then near black. So the wall is lit to about
+  // z -6.7 and shaded past it, AND it is lit near its top everywhere. The nine scored cells, placed by
+  // `out/scratch/posefind.mjs` on the photo pose rather than by arithmetic, agree: (0.188, 0.932) lands at
+  // z -6.2, 0.20 m down, and reads #a9a39f against the ladder's #ada8a3; (0.229, 0.932) lands at z -7.1,
+  // 0.31 m down, #817a75; (0.229, 0.977) at the same z 0.71 m down, #5e5650.
+  const TOP_STOPS = [[-5.0, C.stoneWallLeftTopNear], [-6.2, C.stoneWallLeftTopLit], [-7.1, C.stoneWallLeftTopFar]];
+  const BODY_STOPS = [[-5.5, C.stoneWallLeftBodyNear], [-6.2, C.stoneWallLeftBodyLit], [-7.1, C.stoneWallLeftBodyShade], [-8.4, C.stoneWallLeftBodyFar]];
+  const leftWallHex = (z, depth) => {
+    const t = Math.min(1, Math.max(0, (depth - 0.15) / 0.45));
+    return mixHex(rampAt(TOP_STOPS, z), rampAt(BODY_STOPS, z), t * t * (3 - 2 * t));
+  };
+  leftRubble.forEach((it) => {
+    const z = it.position[2];
+    const depth = L.leftCapY(z) - wallH - (it.position[1] + it.scale[1] / 2);
+    it.color = scaleHex(leftWallHex(z, depth), C.stoneWallLeft);
+  });
   b.add(instanced('left retaining wall stones', rubble, surface('rubble', rubbleMean(C.stoneWallLeft), { seed: 33, instancedUv: true }), leftRubble), 'left retaining wall stones');
-  b.bandSolid('left retaining wall', capZ0, capZ1, (z) => L.leftCapY(z) - wallH, (z) => L.streetY(z) - 0.6, S.x0 - 0.7, S.x0 - MORTAR_SETBACK, mortarOf(C.stoneWallLeft));
+  // The mortar body behind the stones is NOT only joints, which is what a first pass assumed and what
+  // `npm run probe` corrected: this band runs from x -3.5 to -2.85 while the stones cover -3.25 to -2.80,
+  // so 0.25 m of its TOP FACE is uncovered between the stones and the low wall's own foot, and the camera
+  // looks straight down on it. Three of six probe points inside cell (0.188, 0.932) hit the band before
+  // any stone. Darkening it to the shaded stretch's mortar took that cell 0.1593 to 0.1977 on a photo of
+  // #a9a39f — the brightest reading anywhere in the bottom-left quarter, because that face is horizontal
+  // and catching the sky.
+  b.bandSolid('left retaining wall', capZ0, capZ1, (z) => L.leftCapY(z) - wallH, (z) => L.streetY(z) - 0.6, S.x0 - 0.7, S.x0 - MORTAR_SETBACK, C.stoneWallLeftCore);
 
   // Low plaster wall with a gabled kawara cap: one row of pan tiles on each slope, ridge tiles along
   // the top and round caps at both eaves, in the wall's own light mean (the photo's cap is a light band).
@@ -176,6 +229,17 @@ export function buildWalls(b) {
     depth: 0.5,
     style: 'rubble',
   });
+  // The same treatment as the left wall, per stone, so no draw call and no draw from `rand`. The ladder
+  // that reads this face is recorded on `stoneWallRight` in src/layout.js — AND THIS TABLE IS NOT THAT
+  // LADDER. Taken at face value ("near black to z -7.5, light blue past it, where `RIGHT_WALL_NOTCH` cuts
+  // the wall down and the light gets in") it scored 0.0587 -> 0.0593 of cell distance, because
+  // `out/scratch/posefind.mjs` puts three scored cells at z -6.1 to -6.2 where the photo reads #556575,
+  // #364146 and #4c5354: the same z, 0.3 of cell distance apart, so whatever varies there does not vary
+  // along the street and this wall cannot carry it. The stops below move only where the cells agree —
+  // darker at the near end and at the z -7.4 shoulder, lighter inside the notch, and z -5.9 to -6.6 left
+  // at the one flat value the whole wall used to have.
+  const RIGHT_STOPS = [[-4.0, C.stoneWallRightNear], [-5.4, C.stoneWallRightNear], [-5.9, C.stoneWallRightMid], [-6.6, C.stoneWallRightMid], [-7.4, C.stoneWallRightNear], [-8.6, C.stoneWallRightNotch], [-11.5, C.stoneWallRightNotch], [-15.3, C.stoneWallRightFar]];
+  rightStones.forEach((it) => { it.color = scaleHex(rampAt(RIGHT_STOPS, it.position[2]), C.stoneWallRight); });
   b.add(instanced('right retaining wall stones', rubble, surface('rubble', rubbleMean(C.stoneWallRight), { seed: 38, instancedUv: true }), rightStones), 'right retaining wall stones');
   b.bandSolid('right retaining wall', 0, -15.3, wallTop, (z) => L.streetY(z) - 0.6, S.x1 + MORTAR_SETBACK, RT.xInner, mortarOf(C.stoneWallRightShade), 60);
 
