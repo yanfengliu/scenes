@@ -14,6 +14,14 @@
 import * as THREE from 'three';
 import { DIMS, COLORS, TERRACE, NORTH_LAWN, frameWidthAtZ } from './layout.js';
 import { mulberry32, uniform } from '../random.js';
+import { albedoOf, makeMaterial } from '../materials.js';
+
+// A smooth 0..1 ramp, 0 at or below `a` and 1 at or above `b`. Used for every edge the mowing modulation
+// has, because a stepped edge is the defect this file was rewritten for.
+function smoothstep(a, b, v) {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
 
 // The bed's own seed: the flowers must build identically on every load, so nothing here is Math.random.
 const SEED_BED = 20240621;
@@ -38,7 +46,7 @@ export function buildGrounds(b) {
   // made it read as a fallen beam. +-520 m covers the frustum from any camera the clamp allows.
   const TERRAIN_HALF = 520;
 
-  // ---- the north lawn, with its own rise ---------------------------------------------------------------
+  // ---- the north lawn, with its own rise, as ONE SMOOTH MOWN SURFACE -----------------------------------
   // Level at y = 0 from the wall out to NORTH_LAWN.flatTo, then a straight slope up to the camera's own
   // station at +47.863, then the plateau the camera stands on. Built from the same constants the camera
   // solve produced, so the ground under the camera is exactly the height the solve puts there.
@@ -47,79 +55,182 @@ export function buildGrounds(b) {
   // at +14.1 and the hedge at +3.7, so the whole of the calibrated foreground stands on the flat lawn and
   // the row arithmetic in layout.js holds.
   //
-  // THE LAWN'S MOWING BANDS ARE THE PHOTOGRAPH'S OWN MEASUREMENT: out/wh/scratch/meanbox.mjs reads the photo
-  // on a 10x20 lattice of 18x18 px boxes: rows v 0.775 to 0.975 run #607633 luma 104, #708540 119, #5c732d
-  // 100, #627a26 105, #5a7121 97 -- a mean of about 105 with a band-to-band swing of about 15 levels, and
-  // the swing is ACROSS the frame (u) and not with distance, which is what a mown lawn under a low sun looks
-  // like. So one surface is cut across u into mowing passes about 19 m wide, each pass taking the sampled
-  // near-lawn colour multiplied by the pass's own reflectance.
+  // WHY THIS IS ONE VERTEX-COLOURED MESH AND NOT 300 BOXES, and it is a measured defect, not a tidy-up. The
+  // lawn used to be a prism per (6 m band, 19 m mowing pass) cell, each with its own flat colour: 303 draw
+  // calls tiling the ground like a checkerboard, and every cell boundary a HARD straight edge. Two things
+  // were wrong with that and the second was the bad one:
+  //
+  //   * Amplitude. out/wh/scratch/whband.mjs scans the near lawn (v 0.78 to 1.00) as a row of 41 px box
+  //     means, detrends with a moving average and reports peak-to-trough. whitehouse.webp reads 13.0 luma
+  //     down the lawn and 18.3 across it; the render read 20.2 down and 6.5 across. So the render's banding
+  //     was 1.6x the photograph's down the frame -- and only 0.36x of it across, which is the part of the
+  //     brief's own claim that does not hold (see the pass note below).
+  //   * Edge. out/wh/scratch/whhp.mjs high-passes the same strip at a 3.3 m radius: the photograph's lawn
+  //     comes back as blade speckle with no structure at all, and the render's as a stack of ruled
+  //     horizontal bars. A stepped 6 m band is a bar; a mown lawn is not.
+  //
+  // So the mowing is ONE smooth field now, sampled per vertex, and it carries three properties:
+  //   * passes at a 19 m pitch, the width this file has always claimed for them;
+  //   * a slower change with depth at the four sampled bands' own 4 x 6 m = 24 m cycle, so the lawn still
+  //     varies the way the sampled palette did, without a 6 m sawtooth's hard edge;
+  //   * both are cosines, so every edge is a gradient and there is no boundary to see.
+  //
+  // WHICH OF THE TWO IS THE REAL ONE IS THE MEASUREMENT BELOW, AND IT SAYS THE PASSES RUN PARALLEL TO THE
+  // BUILDING. The old note here had it the other way, and the two readings disagree because they are read
+  // off different lattices; the 1200 px scan settles it at 4.5 luma across the frame against 13.0 down it.
+  //
+  // THE AMPLITUDES ARE THE PHOTOGRAPH'S OWN MEASUREMENT, and the instrument is out/wh/scratch/whband.mjs:
+  // the near lawn (v 0.78 to 1.00) scanned as a row of 41 px box means, detrended with a moving average of
+  // 0.12 of the frame, peak-to-trough over the scan. whitehouse.webp reads, per column of the scan:
+  //
+  //   mean luma across the frame   101.9 104.2 106.4 103.0 104.3 105.8 103.7   -- a 4.5 luma spread
+  //   peak-to-trough down it         9.4   6.5  16.2   8.0  16.2  13.5  21.4   -- mean 13.0
+  //
+  // THE 4.5 IS THE ONE THAT MEASURES A MOWING PASS, because a pass runs the full depth of the lawn: every
+  // column of the scan crosses the same passes, so a pass shows up as a difference between the columns'
+  // own MEANS, and the down-column figure is the change with distance. The photograph's lawn is very nearly
+  // flat across the frame (4.5 luma over 1200 px) and varies 13.0 with depth, which says the passes run
+  // PARALLEL TO THE BUILDING, not across the frame as this file's original note had it. That note was read
+  // off a 10x20 lattice whose u step was 3.5 m, which aliases a fine across-frame structure into a coarse
+  // one; the two figures above are from 1200 px of it.
+  //
+  // MOW_X IS SET BY THE ACROSS-FRAME FIGURE AND IT IS THE BRIEF'S AMPLITUDE DEFECT, MEASURED. That figure
+  // is the spread of the seven columns' own MEANS, which is the only across-frame reading that isolates
+  // structure running the lawn's full depth -- a mowing pass -- from the grass texture the row scan picks
+  // up. The photograph's seven means span 4.5 luma over 1200 px; the shipped render's span 2.5; the first
+  // cut of this field, at MOW_X 0.080, spanned 11.8; at 0.020 it spans 6.2 on the same scan. MOW_Z is the
+  // down-column 13.0, which the shipped field read as 20.2 and this one reads as 12.3. Both are
+  // reflectances on the mean, exactly as the old `passTint` was.
+  //
+  // WHAT THE SHIPPED FIELD GOT WRONG IS THEREFORE NOT SIMPLY "TOO STRONG". Down the lawn it was 20.2 against
+  // the photograph's 13.0, 1.55x -- but the brief's own words are "hard, straight edges", and that is the
+  // part the number cannot carry: the high-pass below is what it looks like. It was a 6 m sawtooth whose
+  // four colours stepped by up to 14 luma at once, and out/wh/scratch/whhp.mjs at a 3.3 m radius turns the
+  // photograph's near lawn into blade speckle and the shipped render's into a stack of ruled bars.
+  //
+  // WHAT IS *NOT* MATCHED, AND IT IS THE PART OF THE BRIEF THAT DOES NOT HOLD. The render's across-frame
+  // row reading is 6.7 against the photograph's 18.3, and no mowing field can close that: out/wh/scratch/
+  // whhp.mjs high-passes both near lawns at a 3.3 m radius and the photograph comes back as blade speckle
+  // with no structure in it, while the render's comes back as flat colour. The photograph's 18.3 is grass
+  // texture at a 1 to 3 m scale, which the column scan averages away (its own means are flat) and which a
+  // flat-shaded lawn has no counterpart for. Matching it would mean adding a grass texture, not a pass.
+  //
+  // THE BASE IS THE FOUR SAMPLED HEXES' OWN MEAN -- #647828, from lawnNear/lawnMid/lawnFar/lawnBand --
+  // carrying the 1.01375 the four pass tints used to average to and the measured LAWN_LIFT, so replacing
+  // the stepped field with a smooth one does not move the lawn's level. THE NORTH LAWN'S OWN GREENS DISPLAY
+  // LOW, AND THE LIFT IS THAT MEASUREMENT: out/critic/wh-relayout-rows.mjs reads the render against the
+  // photograph row by row, and at v 0.75 to 0.98 the photograph's lawn is luma 101 to 114 where this
+  // scene's bands displayed 88 to 98. The four sampled hexes are the photograph's own; what was out was
+  // their response to the rig. THE LIFT IS NOW CARRIED BY EVERY GROUND SURFACE AND NOT BY THE NORTH LAWN
+  // ALONE: unlifted, the far ground and the south lawn displayed 90 and 94 against the lawn's 112, which
+  // is a hard 20 luma line across the ground at z 0, at z 91.9 and at z -40.6 -- three more straight edges,
+  // in the one place a camera flying the grounds looks first. out/wh/scratch/whtop.mjs reads the top-down
+  // at 112 luma from z -90 to z +60 since.
   const rise = NORTH_LAWN.riseHeight;
-  const BAND = 6;
-  // THE BAND AND PASS INDICES ARE WRAPPED, AND THAT IS A MEASURED FIX. The mowing passes run from -11 to +11
-  // so that the lawn is cut either side of the building, and JavaScript's % keeps the sign of its left
-  // operand: passTint(-1) indexed [-1] and returned undefined, tintHex multiplied by it and produced NaN,
-  // and (NaN << 16) is 0 -- so every pass west of the centre line was painted PURE BLACK. In the frame that
-  // was a black wedge over the whole lower left quarter, exactly where the photograph has its brightest lawn.
-  const wrap = (i, n) => ((i % n) + n) % n;
-  const bandColor = (i) => [COLORS.lawnFar, COLORS.lawnMid, COLORS.lawnNear, COLORS.lawnBand][wrap(i, 4)];
-  // A mowing pass's own multiplier. The sampled swing of about 15 levels on a mean of 105 is +-7%.
-  const passTint = (i) => [1.0, 1.055, 0.972, 1.028][wrap(i, 4)];
-  // THE NORTH LAWN'S OWN GREENS DISPLAY LOW, AND THIS IS THE MEASURED LIFT. out/critic/wh-relayout-rows.mjs
-  // reads the render against the photograph row by row: at v 0.75 to 0.98 the photograph's lawn is luma 101
-  // to 114 and this scene's north lawn bands displayed 88 to 98, the same 15 luma low at every row and every
-  // band. The four sampled hexes are the photograph's own; what was out was their response to the rig, so the
-  // lift is stated here as a reflectance and it is applied to the north lawn only. The wall, the bed, the
-  // hedge and the sky all measure within a few levels and are untouched.
   const LAWN_LIFT = 1.15;
-  const lawnTint = (i, pass) => tintHex(bandColor(i), passTint(pass) * LAWN_LIFT);
-  const PASS = 19.0;
-  const PASS_HALF = 200; // metres either way: past this the fog owns the ground and a band costs a draw call
-  const passLoop = (i, z0, z1, y0, y1, tag) => {
-    for (let pass = -Math.round(PASS_HALF / PASS); pass <= Math.round(PASS_HALF / PASS); pass++) {
-      const x = pass * PASS;
-      b.box(`${tag} ${i + 1} pass ${pass}`, { x0: x - PASS / 2, x1: x + PASS / 2, y0, y1, z0, z1 }, lawnTint(i, pass), { metric: true });
-    }
+  const LAWN_BASE = tintHex(0x647828, 1.01375 * LAWN_LIFT);
+  const lawnBase = albedoOf(LAWN_BASE);
+  const PASS = 19.0; // the mowing passes' own width, across the frame
+  const PASS_Z = 24.0; // and the slower change with depth
+  const MOW_X = 0.020; // each pass's own reflectance against the mean
+  const MOW_Z = 0.072;
+  // THE MOWING COVERS THE NORTH LAWN'S OWN FOOTPRINT AND STOPS AT THE FENCE, AND THE MASK IS THE MEASURED
+  // PART OF THIS FIX. It used to run x = -218.5 to +218.5 over every z from 0 to 91.9, which is 437 m of
+  // mown ground: from the west and from above the passes tiled the whole visible world and ran on past the
+  // fence to the horizon. The north lawn is the panel between the building and the fence, and its own
+  // lateral edges are the drive's -- the sourced semicircular drive's chord IS the fence line at z +90.8 and
+  // its own ends are at x +-DIMS.fenceDistance - driveCentreZ (CLR p.384, "a semicircular paved access drive
+  // ... within the drive is a predominantly open, semicircular lawn"). So the panel is z 0 to the fence,
+  // |x| out to the drive's ends, and every edge of it is a 12 m smoothstep rather than a line. Beyond it the
+  // ground is still lawn; it is grass nobody cuts in this pattern, which is what the rest of the 1040 m is.
+  const PANEL_R = DIMS.fenceDistance - DIMS.driveCentreZ; // 50.3: the drive's own radius, and its ends
+  const mown = (x, z) => {
+    const across = 1 - smoothstep(PANEL_R - 6, PANEL_R + 6, Math.abs(x));
+    const toFence = 1 - smoothstep(DIMS.fenceDistance - 6, DIMS.fenceDistance - 1, z);
+    const fromWall = smoothstep(-4, 1, z);
+    return across * toFence * fromWall;
   };
-  // The level stretch, from the wall out to the slope's foot: one prism per (band, mowing pass) cell, so the
-  // mowing bands run the full depth of the lawn as they do in the photograph.
-  for (let i = 0, z = 0; z < NORTH_LAWN.flatTo - 1e-6; z += BAND, i++) {
-    passLoop(i, z, Math.min(NORTH_LAWN.flatTo, z + BAND), -0.8, 0, 'north lawn band');
-  }
-  // The slope, one strip per band, each a prism between its own two heights. Not one long ramp: a single
-  // ramp's own straight silhouette against the sky is the "hard straight edge" a reviewer saw.
+  const lawnColour = (x, z) => {
+    const m = mown(x, z) * (MOW_X * Math.cos((x / PASS) * Math.PI * 2) + MOW_Z * Math.cos((z / PASS_Z) * Math.PI * 2));
+    return [lawnBase.r * (1 + m), lawnBase.g * (1 + m), lawnBase.b * (1 + m)];
+  };
+  // THE SURFACE IS SAMPLED FINELY WHERE THE MOWING IS AND COARSELY WHERE IT IS NOT, because the fog owns
+  // everything past about 250 m and a 2 m grid over 1040 m would be 260,000 cells to draw a gradient nobody
+  // can see. The 2 m grid spans +-80 m, which is four full mowing passes either side of the axis.
+  const Z_STEP = 1.5;
+  const Z_END = NORTH_LAWN.riseTo + 44; // the plateau's own far edge, a metre past the fence
+  // ---- the ground behind and beside the building, which did not exist ----------------------------------
+  // THE BLUE BAND ACROSS THE GROUNDS WAS A HOLE WITH THE SKY BEHIND IT, and this grid is what closes it.
+  // The north lawn ran from z = 0 northwards and the south lawn began at z = -40.6, so a 40.6 m trench
+  // across the full 1040 m width -- plugged only by the building's own 51.2 m footprint -- had no mesh in it
+  // at all. out/wh/scratch/whvoid.mjs drops a downward ray on a 20 m grid over the whole world: at (60, -10)
+  // and (-60, -10) the first thing the ray met was the sky dome 2386 m BELOW, and out/critic/wh-topdown.mjs
+  // drew the same band as a black bar. From above it was the broad blue rectangle behind the building with
+  // hard straight edges running under both framing trees; from the west it was the pale wedge across the
+  // lawn. So the grid's own z range starts at the south lawn's edge, not at the wall.
+  //
+  // THE APRON'S GRADE IS WHY THIS IS ONE SURFACE AND NOT A SECOND SLAB. It falls from the north grade at the
+  // wall (y 0 at z 0) to the south lawn's own level over 40.6 m -- a 3.1 degree grade, which is what a lawn
+  // falling away to the south looks like -- so it meets the lawn at one end and the south lawn's top at the
+  // other with no step at either and no seam anywhere for the eye to find.
+  const SOUTH_LAWN_EDGE = -40.6; // the south portico's own bow, where the south lawn's box begins
+  const APRON_FALL = DIMS.southLawnDrop / -SOUTH_LAWN_EDGE; // 0.0739 m of fall per metre going south
+  const groundY = (z) => (z >= 0 ? NORTH_LAWN.yAt(z) : APRON_FALL * z);
+  const xs = [-TERRAIN_HALF, -400, -300, -220, -160, -120, -100, -80];
+  for (let x = -78; x <= 78; x += 2) xs.push(x);
+  xs.push(80, 100, 120, 160, 220, 300, 400, TERRAIN_HALF);
+  // The apron is a straight ramp with nothing on it, so it needs a fifth of the rows the mowing does.
+  const APRON_STEP = 5;
+  const zs = [SOUTH_LAWN_EDGE];
+  for (let i = 1; SOUTH_LAWN_EDGE + i * APRON_STEP < 0; i++) zs.push(SOUTH_LAWN_EDGE + i * APRON_STEP);
+  zs.push(0);
+  // The two creases are exact rows: the slope's toe at flatTo and its crest at riseTo. A grid that
+  // interpolated across them would round the building's own horizon line by a metre.
+  for (let i = 1; i * Z_STEP < NORTH_LAWN.riseTo; i++) zs.push(i * Z_STEP);
+  zs.push(NORTH_LAWN.riseTo);
+  for (let i = 1; NORTH_LAWN.riseTo + i * Z_STEP < Z_END; i++) zs.push(NORTH_LAWN.riseTo + i * Z_STEP);
+  zs.push(Z_END);
   {
-    let i = Math.round(NORTH_LAWN.flatTo / BAND);
-    for (let z = NORTH_LAWN.flatTo; z < NORTH_LAWN.riseTo - 1e-6; z += BAND, i++) {
-      const z1 = Math.min(NORTH_LAWN.riseTo, z + BAND);
-      const yBot = NORTH_LAWN.yAt(z);
-      const yTop = NORTH_LAWN.yAt(z1);
-      const shape = new THREE.Shape();
-      shape.moveTo(z, yBot);
-      shape.lineTo(z1, yTop);
-      shape.lineTo(z1, yTop - 0.8);
-      shape.lineTo(z, yBot - 0.8);
-      shape.closePath();
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: TERRAIN_HALF * 2, bevelEnabled: false });
-      geo.computeVertexNormals();
-      const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: tintHex(bandColor(i), LAWN_LIFT), roughness: 0.95, metalness: 0 }));
-      // THE SHAPE'S OWN x IS WORLD +z HERE, and the extrusion runs from x = +520 back to -520. The previous
-      // pass had this at position.x = -TERRAIN_HALF, which put the whole slope 520 m off to the west.
-      mesh.rotation.y = -Math.PI / 2;
-      mesh.position.set(TERRAIN_HALF, 0, 0);
-      mesh.receiveShadow = true;
-      b.add(mesh, `north lawn rise band ${i + 1}`);
+    const pos = [];
+    const col = [];
+    const idx = [];
+    for (let j = 0; j < zs.length; j++) {
+      for (let i = 0; i < xs.length; i++) {
+        pos.push(xs[i], groundY(zs[j]), zs[j]);
+        const c = lawnColour(xs[i], zs[j]);
+        col.push(c[0], c[1], c[2]);
+      }
     }
-  }
-  // The plateau the camera stands on, so the frame's own foreground is ground and not a hole.
-  for (let i = 0, z = NORTH_LAWN.riseTo; z < NORTH_LAWN.riseTo + 44 - 1e-6; z += BAND, i++) {
-    passLoop(40 + i, z, Math.min(NORTH_LAWN.riseTo + 44, z + BAND), -0.8, rise, 'north lawn plateau band');
+    for (let j = 0; j < zs.length - 1; j++) {
+      for (let i = 0; i < xs.length - 1; i++) {
+        const a = j * xs.length + i;
+        const b = a + 1;
+        const c = a + xs.length;
+        const d = c + 1;
+        // Wound so the face normal is +y: the ground is seen from above from every camera the clamp allows.
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    // DoubleSide because the camera clamp's floor is the wall's own grade, not the lawn's, so a user flying
+    // north at 1 m can put the eye under the rise; a one-sided surface there is a hole to the sky.
+    const lawn = new THREE.Mesh(geo, makeMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.9 }));
+    lawn.receiveShadow = true;
+    b.add(lawn, 'north lawn');
   }
   // The far ground beyond the drive and the fence, so the horizon has something under it from any angle.
-  b.box('far ground', { x0: -300, x1: 300, y0: -0.9, y1: rise - 0.1, z0: NORTH_LAWN.riseTo + 44, z1: NORTH_LAWN.riseTo + 260 }, COLORS.lawnFar, { metric: true });
+  // ITS TOP IS THE LAWN'S OWN HEIGHT AND ITS COLOUR IS THE LAWN'S OWN COLOUR: at rise - 0.1 and in
+  // COLORS.lawnFar it was 0.1 m and 22 luma below the lifted lawn beside it, which is a hard straight edge
+  // across the north horizon from any camera behind the fence.
+  b.box('far ground', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.9, y1: rise, z0: Z_END, z1: Z_END + 216 }, LAWN_BASE, { metric: true });
   // The south lawn, three metres lower than the north: the reason the south facade shows a third storey.
   // IT IS BEHIND THE BUILDING AND NOWHERE ELSE: it runs from the south portico's own bow outward, at z < -40,
   // so it can never be the camera's foreground. It used to run to z +300 and cover the whole photo view.
-  b.box('south lawn', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.8 - DIMS.southLawnDrop, y1: -DIMS.southLawnDrop, z0: -340.6, z1: -40.6 }, COLORS.lawnMid, { metric: true });
+  b.box('south lawn', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.8 - DIMS.southLawnDrop, y1: -DIMS.southLawnDrop, z0: SOUTH_LAWN_EDGE - 300, z1: SOUTH_LAWN_EDGE }, LAWN_BASE, { metric: true });
 
   // ---- the hedge band along the wall -------------------------------------------------------------------
   // THE BAND ALONG THE WALL IS NOT BUILT HERE. The photograph's own band, whose top is the row the wall's
