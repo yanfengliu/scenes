@@ -29,6 +29,7 @@ Both metrics are computed by `SCENE=whitehouse npm run compare`, which scores `o
 | Lawn blade speckle, and the colour path that was eating its hue | 0.0975 | 0.4138 |
 | Trees: 150 and 175 facet-toned lobes | 0.0949 | 0.4207 |
 | Ground voids gated, the terrain mended, and the crowns corrected | 0.0949 | 0.4207 |
+| The apron sourced: a step, not a ramp | 0.0950 | 0.4206 |
 
 ## A hole to the sky, which no scored number could see
 
@@ -88,7 +89,7 @@ toward it, the p1 and p5 ratios are the render's percentile over the photograph'
 | measurement, render over photograph | before | after | what it was |
 | --- | --- | --- | --- |
 | detail (high-pass luma sd) | 0.561 | **0.893** | a flat render reads 0.4; the lawn's blade speckle and the facet-toned crowns are most of the gain |
-| edge energy (levels/px) | 0.385 | **0.860** | the same two passes, measured as mean absolute gradient |
+| edge energy (levels/px) | 0.385 | **0.861** | the same two passes, measured as mean absolute gradient |
 | luma p5 ratio | 1.91 | **1.07** | the tree pass landed it on the photograph's own row (1.0026) from 1.91, the groundcover pass moved it to 1.06, and the crown correction blackframe required settled it at 1.07 |
 | pixels below luma 16 | 5.71% | **6.94%** | the photograph's own coverage is 6.86%; the frame's dark end is now within 0.08 of it |
 | luma p1 ratio | 1.07 | **2.64** | the one line that moved away, and the frame's remaining black-end residual: the darkest 1% is 2.64x the photograph's |
@@ -112,4 +113,6 @@ the run-to-run spread this scene has shown. They have tightened twice today — 
 start to 0.1061 / 0.4086 once the porch, the roofline and the lawn had moved the scores, and then to
 0.0968 / 0.4157 after the tree pass and the groundcover pass — from 0.1477 / 0.1212 earlier in the scene's
 history, which is the rule working as intended: thresholds follow the achieved scores down, and are never
-raised to make a red gate green.
+raised to make a red gate green. The apron pass's achieved 0.0950 / 0.4206 leaves them exactly where they are
+rather than re-deriving them, because re-deriving would be fractionally LOOSER on both lines (0.0950 x 1.02 =
+0.0969 and 0.4206 - 0.005 = 0.4156) and this repo never loosens a limit.

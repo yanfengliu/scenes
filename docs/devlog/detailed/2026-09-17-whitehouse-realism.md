@@ -1,9 +1,9 @@
 # 2026-09-17 — the White House realism session: what was believed, and what the measurement killed
 
-Six commits in this session's range, `4d7cdbf` to `2f1de21`, took the White House scene's scored pair from
-0.1040 / 0.4136 to 0.0949 / 0.4207 and its realism readings from detail 0.561 and edge 0.385 to 0.893 and
-0.860. This is the
-session's record for a later session: the five hypotheses that were believed and disproved with the
+Seven commits in this session's range, `4d7cdbf` to `1f35fee`, took the White House scene's scored pair from
+0.1040 / 0.4136 to 0.0950 / 0.4206 and its realism readings from detail 0.561 and edge 0.385 to 0.893 and
+0.861. This is the
+session's record for a later session: the six hypotheses that were believed and disproved with the
 measurement that killed each one, what a reviewer caught that the worker missed, the numbers that moved and
 from what, and the two extensions this scene made to the repo's shared surface. Paragraphs are one line
 each and the handoffs carry the full tables; `out/wh/` holds the evidence.
@@ -72,6 +72,38 @@ margin, for 1.6e-5 of cell distance and 4.0e-5 of SSIM — under the repo's own 
 moves the frame's below-16 toward the photograph rather than away. Evidence: `out/wh/pass-h-handoff.md`
 §1-§3.
 
+**6. That the apron between the north and south grounds was a 3.1 degree, 40.6 m ramp — and that the photo
+view could not move when it was replaced.** The apron was the last unsourced geometry on this scene: an
+earlier pass invented the ramp to close a 40.6 by 1040 m trench to the sky, and the work entry had carried it
+as residual (f) ever since. The HABS DC-37 sheets read at native resolution (Pillow; the repo's own
+CCITT-G4 decoder, `out/wh/scratch/tiff.mjs`, returns blank paper for these TIFFs, diagnosed in
+`tiffdiag.mjs`) draw it as something else: sheet 8 (West elevation) and sheet 10 (East elevation) each put
+the main block's rusticated ground-floor base on ONE HORIZONTAL LINE end to end and draw the grade change as
+a **step** — a vertical face with the lower grade at its foot — at the block's south end, the east sheet the
+exact mirror of the west, and sheet 12's datum chain sizes the step at 9 ft 8 in (2.95 m), the figure
+`DIMS.southLawnDrop` already carried. **What the sheets do NOT settle is the face's z**: sheets 2 and 3 (site
+and landscape plans, 1/50 inch to the foot, the site one made after the 1932 USGS contour survey) carry no
+contour on the axis between the two fronts and no spot elevation at the ends, so they settle two levels and a
+face rather than a ramp but cannot place the face along z; that one choice stands at the south lawn's own
+north edge, z -40.6, and the code says so. The brief's second claim — that the apron is occluded in the photo
+view, so the scored frame could not move — is **false, and measurably so**: the frame moved **11,009 px of
+1,080,000 (1.02%)**, in v 0.508-0.617, mean absolute luma change 8.97, max 38. The apron plane itself is
+occluded by the building, but the ground behind the building is 3 m higher over z 0..-40.6, so the sun's
+**shadow on the visible ground** changed: the surface is hidden, the light off it is not. Scores
+0.0949 / 0.4207 -> **0.0950 / 0.4206**, each 0.0001 in the wrong direction, one tenth of the repo's 0.0010
+noise floor and both inside the thresholds. `measure.mjs` is unmoved on detail 0.893, p5 1.07, below-16 6.94%
+and p1 2.64 and moves only edge 0.860 -> **0.861**; `groundcover` stays green at 0 of 5,915; the eight
+calibrated rows read 0.0 px; and the two south magnolias moved z -38.1 -> -48.6, because flat ground would
+have left their trunks 3 m in the air (that move alone is 0 px, byte-identical). Two errors in the scene's own
+research record were corrected on the way: the local sheet-index naming in `out/wh/habs-findings.md`, and the
+`out/wh/habs/big_NN.jpg` copies that follow it, is wrong for sheets 30-42 (`big_7.jpg` is the north
+elevation, not the site plan; the content-identified indices are site plan 2, landscape plan 3, north
+elevation 7, west elevation 8, east elevation 10) while `research-dims.md`'s URL table is the right one, so a
+future pass must re-check a citation's sheet by content before trusting its index; and the "granite retaining
+wall about 18 in high flanking the lawn" quoted in the old residual (f) is the **fence's own boundary stone
+base**, not a north-south wall, and was deliberately not used as one. Evidence: `out/wh/pass-e-handoff.md`
+§1-§4.
+
 ## What a reviewer or coordinator caught that the worker missed
 
 **The coordinator's doubt about the missing blocks.** Pass G's brief came from a coordinator who looked at a
@@ -96,15 +128,17 @@ Scores, each a real `npm run shot` + `compare`: **0.1040 / 0.4136 -> 0.1019 / 0.
 tones) -> **0.1009 / 0.4198** (pass G, the measured roofscape and the rake seating) -> **0.1055 / 0.4151**
 (pass C, the speckle, a regression) -> **0.0975 / 0.4138** (pass C2, the per-channel colour) ->
 **0.0949 / 0.4207** (pass B, the crowns) -> **0.0949 / 0.4207** (pass F/E and H, the terrain and the
-crowns). The thresholds tightened twice in the day, 0.1066 / 0.3877 -> 0.1061 / 0.4086 -> **0.0968 / 0.4157**,
-both times toward the achieved score and never away from it.
+crowns) -> **0.0950 / 0.4206** (the apron, each line 0.0001 in the wrong direction and each one tenth of the
+0.0010 noise floor). The thresholds tightened twice in the day, 0.1066 / 0.3877 -> 0.1061 / 0.4086 -> **0.0968 / 0.4157**,
+both times toward the achieved score and never away from it; the apron's pair would have re-derived them
+fractionally looser (0.0969 / 0.4156), so they were left exactly where they were.
 
 The realism numbers, by `node out/critic/measure.mjs whitehouse.webp out/wh/render.png`: detail 0.561 ->
-**0.893**, edge energy 0.385 -> **0.860**, luma p5 ratio 1.91 -> **1.07** (the tree pass landed it exactly,
+**0.893**, edge energy 0.385 -> **0.861**, luma p5 ratio 1.91 -> **1.07** (the tree pass landed it exactly,
 1.0026, the groundcover pass moved it to 1.06, and the crown correction blackframe required settled it at
 1.07), pixels below luma 16 5.71% -> **6.94%** against the photograph's 6.86%, and luma p1 ratio 1.07 ->
 **2.64**, the one line that moved away. The two instruments are not interchangeable: `measure.mjs` compares
-at the photograph's own 600x550 and reads the shipped frame 0.893 / 0.860, while `out/wh/scratch/real.mjs`,
+at the photograph's own 600x550 and reads the shipped frame 0.893 / 0.861, while `out/wh/scratch/real.mjs`,
 the arm checker used inside the passes, compares at 600x450 and reads the same frame 0.88 / 0.78.
 
 ## The two shared-surface extensions this scene made
