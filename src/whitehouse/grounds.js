@@ -44,8 +44,17 @@ export function buildGrounds(b) {
   // left edge looks PAST the lawn's west edge and the void behind it renders black. A reviewer saw exactly
   // that from the west and read it as "a dark slab-like object floating beside the building's west end";
   // it was the hole beyond the ground, and the boundary wall's own lit top edge cutting across it is what
-  // made it read as a fallen beam. +-520 m covers the frustum from any camera the clamp allows.
-  const TERRAIN_HALF = 520;
+  // made it read as a fallen beam.
+  //
+  // +-520 m WAS STILL NOT ENOUGH, AND THAT IS NOW A GATE RATHER THAN A PARAGRAPH. `npm run groundcover`
+  // drops a ray straight down on a 20 m grid over x +-640 m, z +-900 m and asks whether any of them reaches
+  // the sky dome. Neither of the gate's numbers is a taste either: 640 m is 260 m of the camera clamp's own
+  // orbit distance (main.js) plus 0.7213 x 520 of the frame's half-width at this scene's old ground edge,
+  // and 900 m is the fog's own far distance, past which ground and sky cannot be told apart. On the +-520
+  // tree **4,166 of its 5,915 cells reached the sky**: 12 cells in each of 32 rows, six at each end
+  // (x +-540 to +-640), plus every row past z -320 and past z +320, where the ground simply stopped. 680 is
+  // the gate's 640 plus two of its cells, so the gate reads ground here rather than the edge of this fix.
+  const TERRAIN_HALF = 680;
 
   // ---- the north lawn, with its own rise, as ONE SMOOTH MOWN SURFACE -----------------------------------
   // Level at y = 0 from the wall out to NORTH_LAWN.flatTo, then a straight slope up to the camera's own
@@ -340,11 +349,33 @@ export function buildGrounds(b) {
   // ITS TOP IS THE LAWN'S OWN HEIGHT AND ITS COLOUR IS THE LAWN'S OWN COLOUR: at rise - 0.1 and in
   // COLORS.lawnFar it was 0.1 m and 22 luma below the lifted lawn beside it, which is a hard straight edge
   // across the north horizon from any camera behind the fence.
-  b.box('far ground', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.9, y1: rise, z0: Z_END, z1: Z_END + 216 }, LAWN_BASE, { metric: true });
+  //
+  // ITS DEPTH IS THE GATE'S OWN NORTH EDGE PLUS A MARGIN. It was 216 m, ending at z +307.9, and
+  // `groundcover`'s box ends at z +900: every cell past +307.9 reached the sky. 850 m puts the edge at
+  // +941.9, two of the gate's 20 m cells past its own edge. Nothing behind the camera can move the scored
+  // frame, and it does not: measured, `out/wh/render.png` is byte-identical (sha256 f1d1475a...) across
+  // this widening and the TERRAIN_HALF one above it.
+  b.box('far ground', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.9, y1: rise, z0: Z_END, z1: Z_END + 850 }, LAWN_BASE, { metric: true });
   // The south lawn, three metres lower than the north: the reason the south facade shows a third storey.
   // IT IS BEHIND THE BUILDING AND NOWHERE ELSE: it runs from the south portico's own bow outward, at z < -40,
   // so it can never be the camera's foreground. It used to run to z +300 and cover the whole photo view.
-  b.box('south lawn', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.8 - DIMS.southLawnDrop, y1: -DIMS.southLawnDrop, z0: SOUTH_LAWN_EDGE - 300, z1: SOUTH_LAWN_EDGE }, LAWN_BASE, { metric: true });
+  //
+  // ITS FAR EDGE WAS THE ONE RIM THAT COULD NOT BE MENDED WITHOUT MOVING THE SCORED FRAME, AND THIS PASS
+  // PAID THAT PRICE ON MEASUREMENT RATHER THAN ASSUMING IT. The slab used to stop at z -340.6, and that
+  // line is where the frame's own horizon was drawn -- which is why the band of sky BELOW the frame's true
+  // horizon at its left and right edges was this same defect seen from the photo view, and why it is
+  // measurable. Extending the slab to -940.6 changes 2,185 pixels of the 1,080,000 in the 1200x900 frame,
+  // in rows 460 to 516: two bands either side of the building, columns 54-154 (1,630 px) and 1045-1083
+  // (508 px), plus about ten stray pixels in six isolated columns up to 1109, with a maximum channel delta
+  // of 93 -- sky below the horizon before, fogged ground after. The frame's sha256 goes f1d1475a -> ea77c0d6
+  // and the numbers move with it: cell distance 0.09492570 -> 0.09490477, SSIM 0.42069753 -> 0.42077211,
+  // detail 0.891 -> 0.892, edge energy 0.854 -> 0.856, luma p5 1.00 -> 1.00 and pixels below luma 16
+  // 7.25% -> 7.25%. Cell distance and SSIM both improve, which is what the coordinator's condition for
+  // allowing the frame to move asked for (cell <= 0.0951, SSIM >= 0.4207, detail >= 0.887, edge >= 0.851,
+  // p5 <= 1.01, below-16 <= 7.30%), and 900 m is the gate's own south edge plus two of its cells. The
+  // extension is 100% fogged where it ends, so what the frame gains is ground-coloured haze where it used
+  // to show the sky dome through the gap.
+  b.box('south lawn', { x0: -TERRAIN_HALF, x1: TERRAIN_HALF, y0: -0.8 - DIMS.southLawnDrop, y1: -DIMS.southLawnDrop, z0: SOUTH_LAWN_EDGE - 900, z1: SOUTH_LAWN_EDGE }, LAWN_BASE, { metric: true });
 
   // ---- the hedge band along the wall -------------------------------------------------------------------
   // THE BAND ALONG THE WALL IS NOT BUILT HERE. The photograph's own band, whose top is the row the wall's

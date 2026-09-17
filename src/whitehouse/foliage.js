@@ -197,27 +197,44 @@ function facingRamp(facing, { litAt = 0.62, litSpan = 0.30, lo = -0.72, hi = -0.
 //
 // THE TWO ENVELOPE NUMBERS ARE UNCHANGED and the polar pair is placed exactly as the tree pass placed it, so
 // the crown's own top and base stay at cy +- 1.225 * ry. `n`, `spread` and `size` are the caller's and are
-// what this pass moved: 18 and 16 lobes at 0.20-0.33 of the envelope became 108 and 132 at 0.16-0.25 (west)
-// and 0.13-0.20 (east), i.e. four to eight times the count at two thirds of the radius, which is the tree
-// pass's own prescription. The pair of numbers is the whole geometry of a lobe field: a lobe's centre at
-// 0.34-0.98 of the way out and its radius at 0.13-0.20 of the envelope means neighbours overlap and the far
-// ones stand clear, which is the mass-with-holes the photograph's own profile shows.
+// what this pass moved: 18 and 16 lobes at 0.20-0.33 of the envelope became **150 and 175 at 0.13-0.20 and
+// 0.12-0.19**, i.e. eight and eleven times the count at two thirds of the radius, which is the tree pass's
+// own prescription. The pair of numbers is the whole geometry of a lobe field: a lobe's centre at 0.34-0.98
+// of the way out and its radius at 0.12-0.20 of the envelope means neighbours overlap and the far ones stand
+// clear, which is the mass-with-holes the photograph's own profile shows.
 //
 // WHY THE TONE IS PER FACE AND NOT PER LOBE. A lobe is one number in the tree pass's version, so a lobe is a
 // DISC: it has no interior structure at all, and the crown's variance lives entirely on the silhouette
-// between lobes. The photograph's crown is the opposite -- its high-pass sd at a one-pixel radius is 11 to 17
-// luma where the flat-lobed render's is 7.5 -- so the tone has to change WITHIN a lobe. It is applied per
-// face, on a NON-INDEXED copy of each lobe (`toNonIndexed()`), because that is the only way three can give
-// one triangle its own colour: a vertex colour is shared by every triangle that owns the vertex, and a
-// `SphereGeometry` vertex is owned by four to six of them. The cost is the vertex count (a 9x7 sphere is 126
-// triangles and 378 vertices instead of 80) and it buys a facet-level tone field at the resolution of the
-// lobe's own facets -- 0.13 to 0.25 of the envelope is 0.9 to 1.9 m a lobe and 8 to 16 facets across it, so
-// the tone changes every 0.1 to 0.2 m, which is one to one-and-a-half pixels of the SCORED 600x550 frame at
-// the west crown's own depth. That is "leaf-scale detail at a scale the scored frame can resolve".
+// between lobes. The photograph's crown is the opposite -- its high-pass sd at a one-pixel radius is 17.2
+// (west) and 11.0 (east) where the tree pass's crown read 5.3 and 4.3 -- so the tone has to change WITHIN a
+// lobe. It is applied per face, on a NON-INDEXED copy of each lobe (`toNonIndexed()`), because that is the
+// only way three can give one triangle its own colour: a vertex colour is shared by every triangle that owns
+// the vertex, and a `SphereGeometry` vertex is owned by four to six of them. The cost is the vertex count (a
+// 9x7 sphere is 126 triangles and 378 vertices instead of 80) and it buys a facet-level tone field at the
+// resolution of the lobe's own facets -- 0.12 to 0.20 of the envelope is 0.8 to 1.9 m a lobe and 8 to 14
+// facets across it, so the tone changes every 0.1 to 0.2 m, which is one to one-and-a-half pixels of the
+// SCORED 600x550 frame at the west crown's own depth. That is "leaf-scale detail at a scale the scored frame
+// can resolve" -- and section 3 of out/wh/pass-b-handoff.md is the measurement of how far it got.
+//
+// `leafSpread` WAS RAISED 1.50 -> 2.10 BY THE BLACKFRAME GATE, AND THAT IS THE ONLY THING THAT MOVED IT.
+// The lobe COUNT is not the lever here and neither is the geometry: `tools/blackframe.js` asked whether any
+// twelfth of the frame is at or over 98% pixels below luma 24, and the west framing crown's own tile
+// answered yes at 98.8% -- a solid black rectangle at the frame's edge, 7120 of a 160x90 tile's 7200
+// pixels. The photograph does not do that: measured on the gate's own statistic it is 64.0% at its darkest
+// and 88.3% at its second darkest (out/wh/scratch/blackframe-photo.mjs). So the tile was not dark because
+// the subject is dark; it was dark because this swing's own cubic put nearly every facet at or under the
+// 0.04 tone floor (`tone = shade * swing^3 * 2`, and `shade` is 0.62 at the crown's base). At 1.50 the
+// frame failed at 5 of the gate's 12 size/ratio rows; at 1.75 it passed all 12 with its worst tile at
+// 97.8%, which is 0.2 points of margin on a hard limit; at 2.10 the worst row is 95.2% and the two scored
+// numbers barely notice -- cell distance 0.09490477 -> 0.09492484 and SSIM 0.42077211 -> 0.42071607, which
+// is 1.6e-5 and 4.0e-5 and both under this repo's own 0.0010 cross-machine noise -- while the frame's blacks
+// move TOWARD the photograph, below-16 from 7.54% to 7.21% against the photograph's 7.00%. 2.10 is what
+// ships: not the smallest value that clears 98, but the last one before the curve flattens, so the margin is
+// 2.8 points instead of a coin flip, and it is the only one of the three that also improves the blacks.
 function crownLobes(b, name, x, y, z, rx, ry, rz, opts) {
   const {
     n, seed = 0, spread = [0.34, 0.98], size = [0.16, 0.25], litAt = 0.62, rampLo = -0.72, gain = 0.5,
-    leafSpread = 1.75, rough = 0.12, segments = 9, rings = 7, mottleSeed = 7,
+    leafSpread = 2.10, segments = 9, rings = 7, mottleSeed = 7,
   } = opts;
   const lo = rampLo;
   const hi = lo + 0.69; // the same span the tree pass's three buckets had (see facingRamp)
@@ -302,7 +319,12 @@ function crownLobes(b, name, x, y, z, rx, ry, rz, opts) {
       // the frame and its VARIANCE is what the frame sees, not its edges. A leaf is not a tone -- it is a
       // surface that catches or misses the sun at its own scale -- so the field below is a MULTIPLICATIVE
       // swing about the facet's own sampled tone, drawn from a three-dimensional noise field in WORLD METRES.
-      // `leafSpread` is the half-width of that swing. The three octaves are the leaf, the cluster of leaves
+      // `leafSpread` is the half-width of that swing. It is 2.10, and the number is set by the frame's
+      // DARK END rather than by this comment's texture argument: at 1.50 the west crown's own blackframe
+      // tile was 98.8% near-black and at 2.10 it is 95.2%, with the crown texture the same to two decimals
+      // (high-pass sd at a one-pixel radius 9.50 against 9.52 in the same box) -- so the lift comes from
+      // fewer facets landing under the tone floor, not from a softer crown. See the paragraph above
+      // `crownLobes` for the full A/B. The three octaves are the leaf, the cluster of leaves
       // and the branch, at 0.90 m, 2.0 m and 3.5 m in world metres and weighted 0.25 / 0.45 / 0.30.
       //
       // THOSE THREE WAVELENGTHS ARE A MEASUREMENT, AND THE FIRST SET OF THEM WAS WRONG. A feature has to be

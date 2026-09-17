@@ -14,6 +14,7 @@
     "probe": "node tools/probe.js",
     "placement": "node tools/placement.js",
     "clearance": "node tools/clearance.js",
+    "groundcover": "node tools/groundcover.js",
     "namerules": "node tools/namerules.js",
     "animation": "node tools/animation.js",
     "inspect": "node tools/inspect.js",

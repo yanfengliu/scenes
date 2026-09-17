@@ -2,6 +2,8 @@
 
 Each retired lesson's gate is listed with the mutation that made it go red, the failure it produced, and where the evidence lived before retirement. A gate that was never seen red proves nothing.
 
+**2026-09-17, later: the White House grounds get a gate of their own, and one void class is closed on all four sides.** `tools/groundcover.js` joins `npm test` as that scene's own gate: a ray dropped straight down on a 20 m grid over x +-640 m, z +-900 m must never reach the sky dome. It was made to go red by the REAL defect rather than a synthetic one (4,166 of its 5,915 cells blank, exit 1) and then green by the fix (0 of 5,915) -- and both of its floors were made to go red as well, which `clearance`'s floors have never been. The scored frame moved for the first time in this scene's pass and that is recorded with its numbers rather than argued: the south rim could not be closed without it, the condition the coordinator set for allowing it is in the section below, and both scored numbers improve across it. One thing found on the way and NOT fixed here, because it is another lane's: `SCENE=whitehouse npm test` now fails at `blackframe` (5 of 12 views, a 160x90 tile 98.8% near black at 1280x720@1.5), and that failure reproduces with `src/whitehouse/grounds.js` restored to its original extents, so it is the head commit's own tree change -- "the frame's dark end landed" -- and not this work.
+
 **2026-09-16, later: the bend exemption was narrowed and one new gate was added.** `tools/` changed and `src/` did not — every mutated `src/` file came back to its own digest (`src/layout.js` `fae90a623b246f99…`, `src/lighting.js` `417c0400272d0716…`, `src/background.js` `09d3fdc561bcab36…`, `src/figures.js` `9b1341aa2b3eff64…`), which are this tree's digests at main `a78ba8f` and not the `861fffbb03e0b469…` the entry above records for `src/layout.js` — iteration 4 edited that file. `clearance`'s exemption went from 40 rows and three mesh names to 6 rows and one, and the new section `check 2's exemption is the size of the region it guards` carries the proof, including the control showing that the old pin passed the mutation the new one fails. The new gate is `name rules: a mesh name is an interface between rules that do not import each other`, and B1 was re-run against the narrowed exemption to show check 2's own proof is unaffected. **An independent critic returned two blockers against the new gate, both of them the gate's own header claiming something the code did not keep**, and both are recorded in its section with the fix and a fresh red proof: its CLAIM to cover every mesh-name rule was false, and `declarationOf` could read a rule that does not run. Its red proofs were then re-run a second time, because the fixes rewrote the tool that the first set of proofs was taken against.
 
 **2026-09-16: the two `clearance` proofs were re-run on the tools follow-up work, and three new gates were added below.** `tools/` changed and `src/` did not — both mutated files came back to their own digests and `out/render.png` came back to `09a8825e072c84d7…`, the digest iteration 3 recorded. A1 reproduces word for word. **B1's numbers have shifted, and not because of this work**: iteration 3 built shopfronts onto the far row, so B1's near-half failure is now 24 rows at z -29.75 naming three meshes where the recorded proof has 23 rows at z -30.00 naming one. Its eave line is unchanged. The restored figures have moved for the same reason — the shipped narrowest near-half run is **0.95 m**, not the 1.10 m the 2026-09-10 entry restores to. The new sections are `clearance: a mesh is classified by what it is`, `the sweep and the score are of one tree`, and `views: a pose is a fixed point of the frame loop`.
@@ -785,3 +787,114 @@ FAIL: 2 page error(s):
 - Two, one per device pixel ratio, which also shows the sink now collects across both of the gate's pages where the old code collected across neither. Restored, `nudge: 6 poses stable across device pixel ratios 1 and 2`.
 - The same misuse is in `tools/paintcheck.js` (lines 94 and 105, `errors = collectErrors(page)` reassigned per page inside a loop, which drops every earlier page's errors). `paintcheck` is a diagnostic and is not in `npm test`, it was not touched by this work, and it has **not** been fixed or proved — it is named here so the next person does not have to find it again.
 - Bound: this proves the plumbing, not the coverage. `collectErrors` watches `console`, `pageerror` and `requestfailed` and nothing else, so a page that fails quietly still passes; and it is attached per page, so work moved to a page nobody passed to `collectErrors` is unwatched — which is why `openInspector` takes the caller's array.
+
+## groundcover: no downward ray over the built grounds reaches the sky (2026-09-17)
+
+- Claim (in the gate's own header, `tools/groundcover.js`): over x +-640 m and z +-900 m, a ray dropped from 400 m straight down meets something other than the sky dome in EVERY cell — 0 of the 5,915 cells blank — with a floor of 5,000 cells swept, and exactly one mesh named `sky` in the scene. The gate's extent comes off the camera and the fog, never off the ground it measures: 640 m is the clamp's own 260 m of orbit distance plus 0.7213 x 520 of the frame's half-width at the scene's old ground edge, and 900 m is `fogFor`'s far distance, past which ground and sky cannot be told apart.
+- Origin: two sightings of one class, both in `defect-register.md` — the blue band across the grounds (a 40.6 m by 1040 m trench, 718 of 1995 cells blank on `out/wh/scratch/whvoid.mjs`) and the slab-like object beside the building's west end, which was the frame looking PAST the ground's west edge. The scratch detector is what this gate is shaped like. The reason a gate is needed rather than a score is in the scene's own scores file: the pass that closed the trench "moved both scores the right way for unrelated reasons", because the trench lies behind the building from the photo view.
+- **G1, the real defect, and it is not synthetic.** Run against the tree as it stood — `TERRAIN_HALF` 520, the far ground 216 m deep, the south lawn ending at z -340.6, scene source tree `95fb02b661d3aff0`, HEAD `eb23990` — the gate exits 1:
+
+```
+renderer: ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11) [GPU]
+scene: whitehouse
+FAIL blank cells over x -640..640 m, z -900..900 m, every 20 m: 4166 of 5915 (limit 0) -- the first ray to reach the sky is listed below
+     z   -900: x -640..640, 65 blank cell(s)
+     ...
+     z   -320: x -640..-540, x 540..640, 12 blank cell(s)
+     ...
+     z    320: x -640..640, 65 blank cell(s)
+     ...
+     z    900: x -640..640, 65 blank cell(s)
+     swept 65 x 91 cells at 20 m; 1749 covered, 4166 blank; 1 mesh named "sky" in the scene.
+groundcover: 4166 of 5915 downward rays reach the sky over x -640..640 m, z -900..900 m, every 20 m (limit 0), 1749 cells held up by 27 mesh(es), on ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11) [GPU]
+```
+
+  The shape is the whole class in one log: **12 cells in each of 32 rows, six at each end (x +-540 to +-640)** is the x rim, and **every row past z -320 and past z +320** is where the slabs simply stop. The full output is `out/wh/scratch/groundcover-red.log`. The count is NOT the 246 the brief quotes: 246 is the same defect as `whvoid.mjs` reads it in its own narrower window (x +-560, z -360..+320 at 20 m), and the wider window here is the point — the fix covers the wider box, so the gate has to sweep it.
+- Restored by the fix (`TERRAIN_HALF` 680, the far ground 850 m deep, the south lawn to z -940.6; scene source tree `de1fb1afa497f88a`), exit 0, `groundcover` costs 9 s inside `npm test`:
+
+```
+ok   blank cells over x -640..640 m, z -900..900 m, every 20 m: 0 of 5915 (limit 0)
+     swept 65 x 91 cells at 20 m; 5915 covered, 0 blank; 1 mesh named "sky" in the scene.
+groundcover: 0 of 5915 downward rays reach the sky over x -640..640 m, z -900..900 m, every 20 m (limit 0), 5915 cells held up by 27 mesh(es), on ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11) [GPU]
+```
+
+  The covering census is what lets a reader audit that pass rather than trust it: 2,795 cells stand on the south lawn, 2,649 on the far ground, 441 on the north lawn, 5 on the north drive, 3 on the roof south slope, and 22 meshes hold exactly one cell each.
+- **G2, the cell-count floor, which is what stops a run that measured nothing from reading as a pass.** `Z_HALF_M` 900 -> 60 collapsed the grid to 65 x 7 = 455 cells, all of which the ground covers, so the blank assertion PASSED — and the gate exits 1 anyway:
+
+```
+ok   blank cells over x -640..640 m, z -60..60 m, every 20 m: 0 of 455 (limit 0)
+FAIL: 1 ground cover problem(s):
+  the sweep covered 455 cells, under the 5000 that mean it swept the world rather than a corner of it (this run swept 65 x 7; as shipped the grid is 65 x 91 = 5,915 cells). Either the extent or the step collapsed, or the loops that build the grid are wrong, and a run that measured nothing reports the same "0 blank" as a run that measured the world.
+```
+
+- **G3, the sky-name floor.** The blank test is written against the name `sky`, so a dome renamed or never added makes every cell look covered. Renaming it gives exit 1 with the blank assertion passing, which is the whole argument for the floor:
+
+```
+ok   blank cells over x -640..640 m, z -900..900 m, every 20 m: 0 of 5915 (limit 0)
+FAIL: 1 ground cover problem(s):
+  found 0 mesh(es) named exactly "sky" in the built scene, and the blank test is written against that name. With no dome to reach, every ray meets whatever the dome is called instead and this gate reports cover where there is none. Either the dome was renamed in src/whitehouse/sky.js (its name is set by the `b.add(mesh, 'sky')` at the end of buildSky, and NOT by the assignment above it, which the builder overwrites) or it was not added to the scene.
+```
+
+  **The first attempt at this proof changed the wrong line and the gate stayed green.** `mesh.name = 'sky'` in `buildSky` is overwritten by `b.add(mesh, 'sky')` on the next line, so renaming the assignment moved nothing. That is recorded here because it is the same defect one step over — a check reading a symbol that is not the one that decides — and it is why the failure text now names the line that actually sets the name. `src/whitehouse/sky.js` came back to its own bytes (`git diff` empty for that file) and the gate back to `0 of 5915` on tree `de1fb1afa497f88a`.
+- **The scored frame, which is the part of this that is not free.** The x and north extensions are byte-identical on it: `out/wh/render.png` is sha256 `f1d1475abcb375f7…` on scene tree `259ba9baa2369137` (grounds pristine) and on tree `48117b34f430f250` (x and north widened) — each arm freshly shot, each printing its own tree hash, which is what makes the identity a measurement rather than a stale file seen twice. The south extension is NOT byte-identical and could not be: it changes **2,185 pixels of 1,080,000**, in rows 460-516, in two bands either side of the building (cols 54-154, 1,630 px, and cols 1045-1083, 508 px, plus ~10 stray pixels in six isolated columns up to 1109), max channel delta 93, sha256 `f1d1475a…` -> `ea77c0d690bbd0f0…`. Before, those rows show the ground ending in a hard straight edge with sky BELOW the frame's own true horizon (row 450); after, the ground continues and fades into the fog band. The A/B crop is `out/wh/scratch/groundcover-south-rim-ab.png` — left pair cols 20-199, right pair cols 1000-1179, rows 445-534, before over after at 3x — and the two frames are kept at `out/wh/scratch/render-before-southfix.png` and `out/wh/scratch/render-ext-south.png`.
+- The condition the coordinator set for allowing that frame to move, and the measurement against every clause of it: cell distance 0.09492570 -> 0.09490477 (limit <= 0.0951), SSIM 0.4206975303443851 -> 0.42077211400581055 (>= 0.4207), detail 0.891 -> 0.892 (>= 0.887), edge energy 0.854 -> 0.856 (>= 0.851), luma p5 1.00 -> 1.00 (<= 1.01), pixels below luma 16 7.25% -> 7.25% (<= 7.30%). Both scored numbers improve, and the scene's own thresholds (0.1061 / 0.4086) keep 0.0122 of SSIM room. `SCENE=whitehouse npm run shot && npm run compare` reproduces both numbers on the fixed tree, twice.
+- **What this gate cannot see, and does not claim.** A hole outside the box x +-640 m, z +-900 m; a hole NARROWER THAN ONE CELL, which can fall between rays however visible it is (at 100 m a 2 m hole subtends 1.1 deg, about 9 px of the 1200x900 frame); and a hole HIDDEN UNDER ANOTHER MESH, because the ray stops at the first non-sky hit — the cover census printed every run is what keeps that auditable. The box is not a bound on the camera either: `clampCamera` in `src/whitehouse/main.js` never reads x or z, so a user who pans far enough can still be put over ground no finite box contains. What the box IS is the region a camera looking at this scene can see ground in.
+- The gate is scene-specific and says so twice: `tools/test.js` lists it for `['whitehouse']` with the reason every other scene is skipped printed on the skip line, and the tool prints `scene: whitehouse` from `tools/lib/scene.js`'s own resolution while opening the URL that module returns (`sceneUrl(server)`), never the bare one.
+- Renderer: **the GPU**, because no pixel enters the verdict — every cell is one `THREE.Raycaster` hit against the built scene graph on the CPU, and `openScene` is asked for no settling frames because this gate screenshots nothing. Both runs above print the renderer they got. `GROUNDCOVER_GPU=0` (or `GATES_GPU=0`) forces SwiftShader, which is what CI gets anyway, so CI's verdict is unchanged.
+
+## blackframe on the White House: the limit was right and the crowns were wrong (2026-09-17)
+
+- Claim, and it is the gate's own: no tile of a 12x12 grid over the frame may be 98% or more pixels below luma 24, at any of the six window sizes and device pixel ratios in `VIEWS`, on load and after a resize. `SCENE=whitehouse npm test` failed this at five of the twelve rows with the darkest tiles at 98.6-98.8%.
+- **The first question was not "how do we lighten the crowns" but "is 98 the right number for THIS subject", and the gate had never asked it.** Its header records where 98 came from: scene 1, a back-lit Kyoto sunset whose correct frames read 7.6 to 16.1% on the worst tile and where the tile fraction rather than a fixed 32x32 was chosen precisely because that scene has honest all-shadow patches. Nothing in the repo had ever measured the White House's own reference photograph on the same statistic. So this is the calibration measurement the gate was missing, taken with the gate's own constants imported rather than retyped (`DARK_LUMA` 24, `GRID` 12, the luma weights, the whole-tiles-only worst rule) and the photograph decoded through `tools/lib/image.js` `decodeImage` at 1200x900 — the same path `compare.js` scores it through. The script is `out/wh/scratch/blackframe-photo.mjs`, output kept at `out/wh/scratch/blackframe-photo.txt`:
+
+```
+whitehouse.webp: native 1200x900, measured at 1200x900
+statistic: 12x12 tiles, near black is luma < 24 of 255, worst tile is the darkest WHOLE tile
+
+darkPct    9.12%  (gate limit 20%)
+worstBlock 64.0%  (gate limit 98%)
+meanLuma   109.0
+lumaStd    49.8  (gate floor 8)
+
+tiles at or over the 98% limit: none
+worst tile: 64.0% at col 1 of 12, row 6 of 12 (counted from the image's bottom-left)
+verdict: the photograph's own worst tile is under the gate's 98% limit by 34.0 points
+
+whitehouse.webp sha256 6d10f85c21001c9ab766fc883edc7f938d318fe549f300ac8bb8db6fd09ba74a (211052 bytes)
+```
+
+  Per-tile near-black %, top row of the image first:
+
+```
+  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0
+  0.0  0.0  0.0  0.0  0.0  0.1  0.0  0.0  0.0  0.0  0.0  0.0
+  0.0  0.0  0.0  0.0  0.0  0.0  0.1  0.0  0.0  0.0  0.0  0.0
+ 12.9 21.0 22.3 28.1 28.0 32.0 24.9 23.9 26.2 27.5 25.8 20.5
+ 51.3 32.8 43.2 40.5 46.0 28.4 24.5 43.8 39.8 35.2 45.1 59.7
+ 57.5  3.5 10.6  3.2  1.8  0.0  3.6  2.5  0.9  4.3 38.0 86.8
+ 64.0  1.2  4.3  0.0  0.1  4.7  6.5  0.0  0.1  0.7 21.0 88.3
+ 54.2  0.0  0.2  2.6  2.5  0.0  0.0  1.9  1.7  0.2  2.3 55.5
+  0.4  0.0  0.0  0.1  0.0  0.0  0.0  0.0  0.1  0.0  0.0  3.2
+  0.0  0.0  0.0  0.0  0.0  1.4  0.5  0.0  0.0  0.0  0.0  0.0
+  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0
+  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0  0.0
+```
+
+  The photograph's darkest tile is 64.0% (the west framing crown, col 1 row 6 from the bottom) and its next darkest are 88.3 / 86.8 / 59.7 / 57.5 / 55.5 / 54.2, every one of them in the two edge columns — the framing crowns — with the body of the frame between 0 and 57. **The subject's own darkest twelfth is 34 points under the limit, so the limit is not what is wrong and it was left alone.** `git diff tools/blackframe.js` is empty and `LIMIT.worstBlock` is 98 for every scene.
+- What settled it independently of the photograph: 98.8% of a 160x90 tile is 7,120 of 7,200 pixels, and `direct.worstBlock` read the same 98.8% with the composer bypassed entirely (`renderer.render(scene, camera)` with no post chain), so the black rectangle is scene content and not the post chain. A tile that is a solid unbroken rectangle of near-black at a frame edge is not what a correctly exposed photograph of this subject produces, and this one does not.
+- **The A/B, three values of one parameter, each scored, `BLACKFRAME_VIEWS=1` for the intermediate sweeps and the full twelve-row sweep for each row below.** `leafSpread` is the half-width of the per-facet tone swing in `crownLobes` (`src/whitehouse/foliage.js`); it is the `tone = shade * swing^3 * 2` term's input, so raising it moves facets off the 0.04 tone floor at the crown's base. Worst tile over the twelve rows, and the six score/realism numbers the coordinator fixed:
+
+| `leafSpread` | worst tile (of 12 rows) | cell (exact) | SSIM (exact) | frame sha256 | detail r/p | edge mean r/p | p5 r/p | below-16 r/p |
+|---|---|---|---|---|---|---|---|---|
+| 1.50 — the tree that failed | **98.8%, 5 of 12 rows red** | 0.09490476690539626 | 0.42077211400581055 | `ea77c0d690bb` | 0.88 | 0.77 | 6.9 / 6.5 | 7.54% / 7.00% |
+| 1.75 — restored | 97.8%, 12 rows pass | 0.09490886580273787 | 0.42075654530934925 | `fa357a9a71b2` | 0.88 | 0.78 | 7.1 / 6.5 | 7.38% / 7.00% |
+| **2.10 — shipped** | **95.2%, 12 rows pass** | 0.09492484316494001 | 0.4207160694781627 | `0c1940a97397b6` | 0.88 | 0.78 | 7.3 / 6.5 | 7.21% / 7.00% |
+
+  Each row is a distinct drawn frame, and each row's `npm run shot` was re-run and re-scored afterwards to confirm the number belongs to the frame beside it (same frame digest reproduced both times, same two scores both times).
+
+  The five red rows at 1.50 were 1280x720@1.5 on load, 1153x641@1.25 after a resize, 960x540@2 after a resize, 1366x768@1 on load, and 1367x769@1 after a resize (98.8 / 98.7 / 98.8 / 98.6 / 98.6). 1.75 clears them all but its worst row is 0.2 points under a hard limit, which is a coin flip and not a margin; 2.10 puts the worst row 2.8 points under it.
+- **The scores do not move and the realism numbers move the right way, which is why 2.10 and not 1.75.** Both scored numbers at 2.10 are a hair WORSE than at 1.50 and 1.75, and the amount is the point: cell distance 0.09490476690539626 (1.50) and 0.09490886580273787 (1.75) become 0.09492484316494001 (2.10), a move of 1.6e-5 against a 0.0010 cross-machine SSIM noise floor and a bound of 0.0951; SSIM 0.42077211400581055 (1.50) and 0.42075654530934925 (1.75) become 0.4207160694781627 (2.10), a move of 4.0e-5 against a bound of 0.4207. So the cost is 1/300 of the scene's own SSIM room (0.0122 to 0.4086) and it is below this repo's own stated noise floor, which is why it is called no cost rather than a small one. Detail (0.88) and edge (0.78) are unchanged at every value. The one number that moves materially is the frame's own dark end, and it moves TOWARD the photograph: pixels below luma 16 go 7.54% -> 7.38% -> 7.21% against the photograph's 7.00%, and luma p5 6.9 -> 7.1 -> 7.3 against 6.5. So the lift is not a fudge that buys the gate at the subject's expense; it undoes an over-darkening. The crown texture is untouched to two decimals: the west crown's high-pass sd reads 9.50 at 1.50 and 9.52 at 2.10 in the same box, so what changed is how many facets land under the tone floor, not how textured the crown is.
+- Further out, measured on view 1 only, to show where the frontier is: 1.90 -> 97.2 / 92.9 (load / resized), 2.35 -> 92.8 / 88.5, 2.60 -> 90.8 / 86.7. Monotone with sharply diminishing returns — the first 0.60 of `leafSpread` above 1.50 buys 4.5 points and the next 0.50 buys 3.6. **`COLORS.treeMassCore` was deliberately not moved**: it is not an estimate but a measured median of the photograph's own framing-crown core (`#060806`, `layout.js`, box u 0.940-1.000 v 0.44-0.54), and this pass has no evidence for overwriting a measurement to buy a gate margin.
+- Shipped tree: `src/whitehouse/foliage.js` `leafSpread` 1.50 -> 2.10 with the A/B written into the two comments that own the number. Scene source tree `1541fc090dde0da3`, frame sha256 `0c1940a97397b662` (identical to the pre-comment-edit trees `a0f86ca9ec6931a2` and `735d6b8cc8815772`, which is the point: a comment cannot move a pixel). `SCENE=whitehouse npm test` is green — `import-inert`, `shot`, `compare`, `groundcover`, `nudge`, `blackframe` all ok, the five scene-1 gates skipped with their reasons, cell distance 0.0949 <= 0.1061 and SSIM 0.4207 >= 0.4086, `blackframe: 12 size/ratio combinations from 6 of 6 views`, renderer ANGLE/D3D11 on the RTX 4090.
+- **A disagreement with the brief that is worth recording, because it changes what the defect was.** The brief states that the committed tree `eb23990` passed a full `SCENE=whitehouse npm test` with `blackframe: ok` at 11:58 on 2026-09-17, that the only source change since then was the pass B tidy-up of `leafSpread` 1.75 -> 1.50 plus comment corrections, and that the failing tidied tree's worst tiles were 98.8 / 98.7 / 98.8 / 98.6 / 98.6. This pass measured 98.8 / 98.7 / 98.8 / 98.6 / 98.6 on the **1.50** tree — the tidied one — and 97.8 / 97.1 / 97.8 / 97.7 / 97.4 on **1.75**, the committed value, which passes. So either the 11:58 green run and this pass differ on the same parameter value, or the tree that produced the 11:58 green run was not at `leafSpread` 1.75. Both readings agree on the actionable part — 1.50 is a genuinely failing tree and 1.75 clears the limit — but they disagree about whether the tidy-up broke a green state or merely removed the last 0.2-point margin from a marginal one. Nobody should read this pass as having reproduced the 11:58 green: what it establishes is the 1.50/1.75/2.10 frontier, measured three times each on one machine and one GPU.
+- Bounds. The margin is measured on ONE renderer (`ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 …, D3D11)`, GPU, the renderer `blackframe` asks for by design); CI runs this gate on SwiftShader and the 2.8-point margin is not transferable evidence, only local. The 98 limit is a fraction of a fixed grid, so a crown that grows to fill two tiles can still reach it at the seam where one tile did not; the tile grid was not changed and this pass did not look for that. And the A/B is one parameter: `COLORS.treeMassCore` and the per-crown `gain` are the other two levers the brief named and neither was moved, so the frontier reported here is `leafSpread`-only.

@@ -14,7 +14,9 @@
 // whose gates all applied to nothing is not a pass. `shot` and `compare` are scene-scoped through
 // tools/lib/scene.js; `placement`, `clearance`, `namerules` and `animation` import scene 1's own
 // `src/layout.js` and pose its street, and `record` drives scene 1's camera through its own clamp, so
-// those five are scene 1's and are skipped for any other scene.
+// those five are scene 1's and are skipped for any other scene. `groundcover` is the other way round: it
+// is the White House's, because the slabs it sweeps and the camera clamp its extent is derived from are
+// that scene's own, so it runs for `whitehouse` and is skipped for every other scene.
 //
 // `nudge` and `blackframe` are the two halves of one question and neither can answer the other's. Nudge
 // scores how much the frame *changes*, so a frame that is entirely black is the most stable frame there
@@ -97,6 +99,13 @@ const GATES = [
   // It measures the built scene rather than importing anything from src/, but every name it classifies and
   // every surface it sweeps is scene 1's street, so it has no verdict to give about another scene.
   ['tools/clearance.js', ['clearance headroom:', 'clearance street:'], ['japan'], "it sweeps scene 1's paving for headroom under scene 1's cherry and clear run along scene 1's street"],
+  // The White House's own, and the only gate in this table that belongs to the scene the OTHER nine call
+  // "another scene". It casts downward rays at the ground the White House builds and asks whether any of
+  // them reaches the sky -- the blue band across the grounds and the slab-like object beside the building's
+  // west end were both this, and no scored metric can see either one. Its extent is derived from the White
+  // House's own camera clamp (the orbit distance and the frame's half-width), and scene 1's world is a 30 m
+  // street whose ground is not a question with this answer.
+  ['tools/groundcover.js', ['groundcover:'], ['whitehouse'], "the slabs it sweeps and the camera clamp its extent comes from are the White House's own; scene 1's world is a 30 m street whose ground is not a ground-cover question"],
   // Scene 1's: it scores frames against scene 1's reference photo at PHOTO/PHOTO's size, off scene 1's
   // module. The clamp it walks is scene 1's camera clamp.
   ['tools/animation.js', ['spread over '], ['japan'], "it pins the clock and scores frame by frame against scene 1's reference photo, at scene 1's photo size"],
