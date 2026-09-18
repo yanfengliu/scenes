@@ -81,6 +81,29 @@ export const FACADE = {
   height: 15.3,
 };
 
+// ---- THE APERTURE AND THE FRAME AROUND IT ------------------------------------------------------------
+// THE NORTH WALL HAS HOLES IN IT, AND UNTIL PASS J IT DID NOT. Every band of the wall was one box from
+// -25.6 to +25.6 m, 0.7 m thick, and the window -- glass, reveal, sash, trim -- was built BEHIND that box
+// (the trim's front face at z -0.40 against the wall's at z -0.70). So the wall was drawn in front of every
+// window and the bays were blank wall with a sill and an architrave laid on them: out/wh/scratch/
+// pass-j-paint.mjs repaints each surface class a saturated colour in a live page and re-measures the
+// opening by real screenshot, and painting the glass, the reveal's inner return, the reveal's outer trim and
+// the sash bars moved the opening by 0.0 luma, while painting the wall's own middle band moved it 156 -> 223.
+// A rendered frame and the handoff that reported "the window is exactly as bright as the wall" were both
+// looking at the wall's own face through a window-shaped nothing.
+//
+// So the aperture is named here, the wall is built AROUND it, and the frame is built TO it. These are the
+// numbers the photograph's own window measures: the reveal's outer pad is 0.13 m outside the glass on every
+// side (revealSteps below), so a 2.10 m sash needs a 2.36 m hole, and the surround's sill and head bands
+// (0.22 m thick, at the glass's own sill and head) hang on the hole's outer face rather than across it.
+export const OPENING = {
+  halfWidth: DIMS.windowWidth / 2 + 0.13, // the glass's own half plus the reveal's outer pad
+  firstFoot: FACADE.firstSill - 0.22, // the first-floor surround's sill band is 0.22 thick, below the glass
+  firstTop: FACADE.firstHead + 0.22, // and its head band sits above it, so the hole stops at its top
+  secondFoot: FACADE.secondSill - 0.20, // the second-floor sill band is 0.20 thick
+  secondTop: FACADE.secondHead + 0.22, // and its head band 0.22
+};
+
 const BALUSTER_PITCH = 0.52; // [estimate] the drawings show the railing but not its spacing string
 const BALUSTER_WIDTH = 0.19;
 const DENTIL_PITCH = 0.42; // [estimate] from the photograph's own dentil row
@@ -115,7 +138,30 @@ export const OCCLUSION = {
   // hedge band (sampled #12140c), the window glass (the darkest large-area tone on the facade) and the
   // tympanum. Each was carrying a fraction of the ambient close enough to 1 that the sampled near-black hex
   // could not survive the rig.
-  reveal: 0.30, // the window's own glass and reveal
+  reveal: 1.10, // the window's own glass: THE ONE VALUE IN THIS BLOCK THAT IS A BRIGHTNESS AND NOT AN
+  // OCCLUSION. Read this before changing it, because the sign is not the one the name suggests.
+  //
+  // A surface's albedo is derived by inverting the tone curve at `irradiance * occlusion` (src/materials.js
+  // albedoOf), so a LOWER occlusion asks for a HIGHER albedo: the term is not a dimmer, it is a statement
+  // about how much sky the surface sees, and the factory then undoes it. For a target as dark as this
+  // glass (0x545f69, which displays as luma 93) the undoing is larger than any real dimming, so 0.30 was
+  // making the glass 3.3x the sampled mean's radiance. Measured in a live page by repainting the class and
+  // re-measuring the opening by real screenshot (out/wh/scratch/pass-j-sweep.mjs), against the photograph's
+  // own 0.86 opening/wall ratio at the same bays:
+  //
+  //   occlusion   0.30   0.50   0.80   1.00   1.20   1.50   2.00
+  //   glass luma  169    139    112    100     91     81     70
+  //   opening     1.06   0.88   0.73   0.66   0.61   0.55   0.49
+  //
+  // The photograph's glass/opening pairs are 0.46/0.49 (first floor) and 0.51/0.56 (second), so the
+  // albedo wants to be about a quarter of what 0.30 produced -- i.e. an occlusion of about 1.25. That is
+  // the value here, and it is a brightness lever wearing the occlusion's name: the honest statement is
+  // that this rig has no separate albedo multiplier, so the ONLY way a material factory that divides by the
+  // occlusion can darken a surface is an occlusion above 1. The comment in OCCLUSION's own header above,
+  // which says the term cannot brighten, is what pass I4 measured for the PORCH's wall at 0.55 down to
+  // 0.03 -- a mid-tone target, where the curve is not yet saturated and the ambient really does fall faster
+  // than the albedo rises. It does not hold for a near-black target, and this glass is one.
+  //
   // ---- THE PORCH'S INTERIOR: WHAT WAS MEASURED, WHAT WAS DONE, AND WHAT THE TERM IS NOT ----------------
   // The defect is real and it is measured at 1200x900 over the porch between the two inner columns
   // (out/critic/wh3band.mjs, u 0.47..0.53 -- clear of both shafts -- render luma against the photograph's):
@@ -189,10 +235,12 @@ function sash(b, name, cx, cy, w, h, depth) {
 // they are built from the wall face z0 inward to zw (the glass's own plane), so the opening is a real
 // recess in the wall's thickness rather than a rectangle painted on it.
 function revealSteps(b, name, cx, cy, w, h, z0, zw) {
-  // The outer step stands proud of the wall by 2 cm so no face of it is coplanar with the wall's own plane;
-  // a coplanar pair z-fights, and this scene has already paid for that once (see the north wall's bands).
+  // The outer step stands PROUD of the wall's own face -- 0.03 m of it, since pass J -- because the wall now
+  // has a real aperture at |x - cx| <= OPENING.halfWidth and the hole's edge would otherwise show as a
+  // 4 cm sliver of wall between the trim and the opening. Standing proud is also what the photograph shows:
+  // the architrave projects, the reveal steps back from it, and the glass is deepest.
   for (const [tag, pad, zOut, zIn, occl, color] of [
-    ['outer', 0.13, z0 + 0.02, z0 - 0.14, 0.66, COLORS.windowTrim],
+    ['outer', 0.13, z0 + 0.03, z0 - 0.14, 0.66, COLORS.windowTrim],
     ['inner', 0.05, z0 - 0.14, zw, 0.34, COLORS.underPortico],
   ]) {
     const yBot = cy - h / 2;
@@ -368,6 +416,13 @@ export function buildBuilding(b) {
   // surfaces fighting for one depth. The bands are the wall now, stacked, each with its own colour, and
   // nothing is coincident with anything.
   //
+  // AND THE BANDS HAVE HOLES IN THEM AT THE ELEVEN BAYS, which is this pass's correction and the whole
+  // reason the windows did not read: see OPENING's own block above. Within one band the wall is emitted as
+  // the horizontal pieces BETWEEN the bay apertures, so the pier is wall, the aperture is air, and the
+  // glass and the reveal are the surfaces a ray through the aperture actually meets. The piece edges are
+  // the aperture's own edges (cx +- OPENING.halfWidth), so the trim's 0.13 m pad lands on the pier's face
+  // and the seam falls where the reveal's outer step already stands proud of it.
+  //
   // The wall's own vertical shading: the sky term is stronger high up and the ground's lower down, and the
   // render cannot make that ramp out of a single box's flat normal at this size, so the wall is banded.
   // Four bands is what the photograph's own profile resolves to at 1 m of height per pixel.
@@ -377,14 +432,43 @@ export function buildBuilding(b) {
     ['lower', y0 + 1.1, 5.9, COLORS.wallLit, OCCLUSION.baseCourse],
     ['base', y0, y0 + 1.1, COLORS.wallMid, OCCLUSION.baseCourse],
   ];
+  // The eleven bays' apertures, as the half-open x intervals [lo, hi) a band of the wall must not occupy
+  // where that band is at an aperture's own height. A band is at an aperture's height when its own y span
+  // contains that aperture's -- so the loop below passes only the bands that carry holes. The first version
+  // of this filtered the APERTURES by comparing their x against the band's y, which is a category error that
+  // matched exactly one aperture out of eleven and left the wall solid everywhere else; the mesh names it
+  // emitted ("x -25.60..8.13") are what caught it, in out/wh/scratch/pass-j-walls.mjs.
+  const APERTURES = [];
+  for (let i = 1; i <= BAYS.count; i++) {
+    const cx = BAYS.centreX(i);
+    APERTURES.push([cx - OPENING.halfWidth, cx + OPENING.halfWidth]);
+  }
+  // One band, as the solid pieces between the apertures it overlaps. RECEIVING, AND ONLY THE NORTH FRONT
+  // NEEDS IT: the portico's entablature and pediment are casters (portico.js) and the shadow they throw is
+  // the dark band the photograph shows across the centre of the facade, so every piece keeps the flag.
+  const wallPiece = (tag, x0, x1, ya, yb, color, occl) => b
+    .box(`north wall ${tag} band x ${x0.toFixed(2)}..${x1.toFixed(2)}`, { x0, x1, y0: ya, y1: yb, z0: zN - wallT, z1: zN }, color, { metric: true, occlusion: occl })
+    .receiveShadow = true;
+  const pieceOut = (tag, ya, yb, color, occl, holes) => {
+    if (!holes) { wallPiece(tag, -halfW, halfW, ya, yb, color, occl); return; }
+    let lo = -halfW;
+    for (const [aLo, aHi] of holes) {
+      if (aLo > lo + 1e-4) wallPiece(tag, lo, aLo, ya, yb, color, occl);
+      lo = aHi;
+    }
+    if (lo < halfW - 1e-4) wallPiece(tag, lo, halfW, ya, yb, color, occl);
+  };
   for (const [tag, ya, yb, color, occl] of WALL_BANDS) {
-    // RECEIVING, AND ONLY THE NORTH FRONT NEEDS IT. The portico's entablature and pediment are casters now
-    // (portico.js), and the shadow they throw is the dark band the photograph shows across the CENTRE of the
-    // facade -- behind the colonnade, at v 0.38-0.42, where this render had the open wall's own frieze and
-    // cornice mouldings at luma 140-146 against the photograph's 61-64. A receiver is required for any of
-    // that to be drawn, and the facade's boxes never set it. The south and end walls keep the flag off: no
-    // caster in this scene is south of the building, so it would be a flag that changes nothing.
-    b.box(`north wall ${tag} band`, { x0: -halfW, x1: halfW, y0: ya, y1: yb, z0: zN - wallT, z1: zN }, color, { metric: true, occlusion: occl }).receiveShadow = true;
+    pieceOut(tag, ya, yb, color, occl, ya < OPENING.firstTop && yb > OPENING.firstFoot ? APERTURES : null);
+  }
+  // The three spandrels the four bands do not cover for, plus the sliver between the second floor's head and
+  // the upper band. Each one is at an aperture's height, so each is emitted between the apertures.
+  for (const [tag, ya, yb, color, occl] of [
+    ['first floor spandrel head', OPENING.firstTop, FACADE.belt + 0.26, COLORS.wallLit, OCCLUSION.baseCourse],
+    ['second floor spandrel sill', FACADE.belt + 0.26, OPENING.secondFoot, COLORS.wallMid, 1],
+    ['second floor spandrel head', OPENING.secondTop, 12.6, COLORS.wallMid, 1],
+  ]) {
+    pieceOut(tag, ya, yb, color, occl, APERTURES);
   }
   b.box('south wall', { x0: -halfW, x1: halfW, y0: -DIMS.southLawnDrop, y1: FACADE.parapet, z0: zS, z1: zS + wallT }, COLORS.wallMid, { metric: true });
   b.box('west wall', { x0: -halfW, x1: -halfW + wallT, y0: -DIMS.southLawnDrop, y1: FACADE.parapet, z0: zS, z1: zN }, COLORS.wallMid, { metric: true });
@@ -573,10 +657,15 @@ export function buildBuilding(b) {
 
   // ---- the north front's eleven bays ------------------------------------------------------------------
   const winW = DIMS.windowWidth;
-  // The opening's own depth in the wall: the face at z = -0.20, the glass at z = -0.64, so the reveal is
+  // The opening's own depth in the wall: the face at z -0.20, the glass at z -0.64, so the reveal is
   // 0.44 m of real recess and the glass is about a third of the way through the 0.7 m wall.
   const REVEAL_FACE = zN - 0.20;
-  const firstGlass = { z0: zN - 0.64, z1: zN - 0.50 };
+  // THE GLASS SITS INSIDE THE APERTURE NOW. Its plane was at z -0.64..-0.50, which is 0.14 m BEHIND the
+  // reveal's inner return and 0.44 m behind the reveal's face -- and, until this pass, behind the wall's own
+  // front face too, because the wall had no aperture. With the wall cut (OPENING above) the sash is the
+  // surface the opening shows, so it stands where a sash stands: just inside the reveal's inner step, with
+  // the muntins and the meeting rail 3 cm proud of it, all of it still behind the architrave.
+  const firstGlass = { z0: zN - 0.60, z1: zN - 0.46 };
   const secondGlass = { z0: zN - 0.56, z1: zN - 0.44 };
   for (let i = 1; i <= BAYS.count; i++) {
     const cx = BAYS.centreX(i);
