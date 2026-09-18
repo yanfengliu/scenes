@@ -119,13 +119,36 @@ export const PORTICO_HEIGHTS = {
 // which its code did not implement (it read COLUMN_Z = Z_FRONT + 5.4, i.e. 1.1 m from the wall).
 const COLUMN_Z = Z_FRONT - 1.1;
 const BACK_Z = 0.1; // the porch's roof and the pediment run back to the wall
-// THE RAKING CORNICE'S OWN OUTER END, measured off the photograph rather than derived from the pediment's
-// width. The photograph's silhouette leaves the sky at v 0.3650 (its raking cornice's outer end) and its
-// dark roof band (top v 0.3711, #000408) runs unbroken from u 0.3458 to u 0.3642, so the rake's corner lies
-// WEST of u 0.3642; on the east it must lie EAST of u 0.6325, where the photo's band starts. Inverting both
-// through this camera at the eave plane (dn = 47.863 - 6.5) gives |x| <= 9.1 m. The pediment's own half-width
-// stays W/2 + 1.2 (the eave cornice and the tympanum are drawn to it); only the raking cornice stops here.
-const RAKE_HALF_WIDTH = 9.0;
+// THE PEDIMENT'S OWN HALF-WIDTH, AND IT IS NOW ONE NUMBER FOR ALL THREE OF ITS PARTS. Measured off the
+// photograph in pass I (out/wh/pass-i-handoff.md; tools out/wh/scratch/pass-i-rows.mjs, pass-i-grid.mjs,
+// roofline-tops.mjs, and the 14x crops out/wh/scratch/pass-i-leftend.png / pass-i-west-20x.png):
+//
+//   the rakes' outer ends      west u 0.369, east u 0.6355 at their feet. The photograph's raking cornice is
+//                              a straight silhouette of image slope -0.512 (world 0.384) read at 0.0025 u over
+//                              u 0.4375..0.4950; its west end dies into the horizontal cornice at
+//                              (u 0.369, v 0.3636) -- visible in the 14x crop as the band's lower-left
+//                              corner, the cornice's own end face immediately below it.
+//   the eave cornice's extent  the same u 0.369 / 0.6355: nothing horizontal reaches past the rakes' feet.
+//                              The dentil course's own west end is u 0.379, i.e. 0.010 u (13 px) INBOARD --
+//                              the cornice moulding's return, not a wider member.
+//   the tympanum's base        the same width: its base row is hidden from this camera by the eave cornice's
+//                              front face (which covers v 0.3438..0.3630), and its visible hypotenuse is
+//                              parallel to the rakes' silhouette, so the only width it can be built to is the
+//                              rakes' own foot span -- which is what the previous pass's `halfWidth * 0.94`
+//                              was standing in for at the pediment's (9.78 m) width.
+//
+// With the building's own centre at u 0.5022 (the two rake top-edge lines intersect at u 0.5022 v 0.2952, and
+// the two inner chimney stacks' midpoints are 0.3350 and 0.6700), 1 m = 0.016760 u at the eave plane
+// (dn = 47.863 - 6.5), so |x| = 0.1332 / 0.016760 = **7.9 m**. The old 9.0 was the same photograph read
+// through the BACK plane (dn 47.76, 1 m = 0.014517) instead of the front one, and the eave cornice and
+// tympanum were never narrowed with it: they stayed at halfWidth + 0.5 = 10.28 and halfWidth * 0.94 = 9.19, so
+// a pale brim projected to u 0.3258 (and the portico's own cornice to 0.3348) across the photograph's dark
+// roof band at u 0.3475..0.3625 -- 25 px of error.
+//
+// WHAT DOES NOT MOVE: the apex (17.90 m, row 0.3030), the eave cornice's own top (16.00 m, row 0.3458) and
+// its rear at 15.15 m (the measured fix that closes the facade's bright bar over the porch), and the eave
+// cornice's front face, which is still the 0.55 m band whose top row is the eave.
+const RAKE_HALF_WIDTH = 7.9;
 // A plain Ionic column: a square plinth, a base moulding, the shaft and a capital block. The volutes are
 // left to a later wave -- at the photo's scale they are four pixels across.
 //
@@ -174,53 +197,49 @@ function column(b, name, x, z, y0, height, radius, color, occlusion = 1) {
 // its front face, 0.3 m behind the rakes, so the triangle is never an open frame with sky through it.
 function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThickness = 0.42, measuredRakeHalfWidth = null) {
   const rise = yApex - yEave;
-  const slope = Math.atan2(rise, halfWidth);
-  // THE RAKE'S OWN LENGTH, AND WHY IT IS ITS THICKNESS AND NOT A HALF METRE. Two boxes of thickness t
-  // rotated to the slope and run to `hypot + e` past the corner cross each other above the apex and stand
-  // `e * rise / hypot + t / cos(slope)` clear of it, which at the old +0.5 over a 0.85 m rise was a 0.5 m
-  // spike -- the wedding cake in miniature. `e` is the thickness, which is the least overhang that closes
-  // the mitre, and the apex block covers what is left.
-  const len = Math.hypot(halfWidth, rise) + rakeThickness;
+  // THE RAKE'S LENGTH IS NOW THE GABLE'S OWN HYPOTENUSE, NOT `hypot + thickness`. The overrun was there to
+  // close a mitre between two boxes that were rotated to the slope and crossed above the apex; with the two
+  // rakes' upper-outer faces intersecting exactly on the apex (see below) there is nothing left to close.
   // THE RAKE'S THICKNESS IS NOT A TASTE AND IT IS NOT THE SHEET'S 0.42 m EITHER -- IT WAS, AND NOW IT IS
   // AGAIN. It is passed in so the caller states it with the rise it belongs to: 0.26 was right for the old
   // 0.85 m rise, where a 0.42 m rake covers half the tympanum and leaves a wedge instead of a gable, and
   // 0.42 is right for the photograph's 2.09 m, where 0.26 is a pencil line under a 12 px-deep shadow.
   const rake = rakeThickness;
   const zc = zFront + depth / 2;
-  // THE RAKE'S OUTER END, IN METRES ALONG X, AND THE EAVE CORNICE IS NOT ITS LIMIT. The half-width above is
-  // the PEDIMENT's own -- the line its raking cornices reach at the eave, and the line the eave cornice is
-  // drawn to -- and the raking cornice stops where the photograph's does. The photograph's own reading
-  // (out/wh/scratch/roofline-tops.mjs, 1-px columns, 2026-09-17): its silhouette leaves the sky at v 0.3650
-  // and the dark roof band's top (v 0.3711, #000408) runs unbroken from u 0.3458 to u 0.3642, so the raking
-  // cornice's outer end lies WEST of u 0.3642 -- x -8.63 m at the eave plane -- and NOT out at the eave
-  // cornice's u 0.3333. With the rakes run to the full half-width their corners projected to u 0.3320-0.5041
-  // and covered the band and both blocks' outer thirds (out/wh/scratch/roofline-scan-before.txt).
-  // The apex and the eave rows do not move: the upper-inner corner is seated on (0, rise) and only the
-  // outer end is shortened, so the gable's top and base are exactly where they were.
+  // THE RAKE'S OUTER END IS THE PHOTOGRAPH'S OWN MEASURED FOOT, AND THE RAKE IS NOW A RAKE. The rakes are the
+  // third part of the inconsistency this pass fixes: the eave cornice and the tympanum were still drawn to the
+  // pediment's nominal half-width (10.28 m and 9.19 m) while the rakes stopped at 9.0, so the render showed a
+  // pale brim past the rakes' feet where the photograph's gable base and its rakes span the same width. All
+  // three now share `RAKE_HALF_WIDTH` = 7.9 m, which the photograph measures three ways: its rakes' silhouette
+  // leaves the sky at u 0.369 / 0.6355, the eave cornice's own end face is that same line (the 14x crop shows
+  // the raking band dying into it), and the dark roof band's inner ends at u 0.3642 / 0.6425 bound it from
+  // inside. See RAKE_HALF_WIDTH's comment for the numbers.
+  //
+  // AND EACH RAKE RUNS FROM ITS FOOT ON THE EAVE TO THE APEX. `near` and `far` used to be handed the SAME y --
+  // `rise * (1 - rakeOuter / halfWidth)` -- so `rslope` was 0 and both `side` iterations placed the SAME BOX:
+  // two coincident HORIZONTAL SLABS 18.16 m long at y 15.73..16.15 (measured: out/wh/scratch/roofline-bbox.mjs
+  // returns the identical box for `... rake west` and `... rake east`). The pediment therefore had no raking
+  // cornice at all -- its silhouette was the tympanum's triangle crossed by a flat bar, and the scored frame
+  // reads a notch (render tops v 0.3233 at u 0.4650 dipping to 0.3367 at u 0.4850, then jumping to 0.3044 at
+  // u 0.4975) where the photograph is one straight line from its foot to its apex. The box is now laid ON the
+  // segment from (side * rakeOuter, 0) to (0, rise) in the pediment's own frame, with its UPPER-OUTER face
+  // exactly on that segment: the foot lands on the eave cornice's top (16.00 m, row 0.3458) and the mitre
+  // closes on the apex (17.90 m, row 0.3030), so neither calibrated row moves and, with the two upper-outer
+  // faces intersecting exactly at the apex, the mitre no longer needs an overrun to close.
   const rakeOuter = Math.max(0.4, measuredRakeHalfWidth ?? halfWidth);
-  const near = new THREE.Vector2(-rakeOuter, rise * (1 - rakeOuter / halfWidth));
-  const far = new THREE.Vector2(rakeOuter, rise * (1 - rakeOuter / halfWidth));
-  const rlen = far.clone().sub(near).length() + rake * 0.40; // the mitre's own closing overrun
-  const rslope = Math.atan2(far.y - near.y, far.x - near.x);
-  const rmid = near.clone().add(far).multiplyScalar(0.5);
+  const rakeSlope = Math.atan2(rise, rakeOuter); // the gable's own slope at the measured foot
+  const rlen = Math.hypot(rakeOuter, rise);
   for (const side of [-1, 1]) {
     const geo = new THREE.BoxGeometry(rlen, rake, depth);
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: COLORS.stoneTrim, roughness: 0.9, metalness: 0 }));
-    // THE RAKE'S UPPER-INNER CORNER IS SEATED ON THE APEX, AND THAT IS A MEASURED FIX. `+ rake * 0.25` used
-    // to stand here and it lifted the mitre 0.35 m above the gable: rotated by `slope`, the box's inner
-    // corner sits `rake / 2` above the centre, so the two rakes met at yApex + rake/2 = 18.11 m over a 1.90 m
-    // rise and drew a FLAT PLATEAU across the top of the pediment instead of a point. Measured on the
-    // 2026-09-17 roofline pass (out/wh/scratch/roofline-scan.mjs, rays at 0.02 u): the render's silhouette
-    // then read v 0.3000-0.3022 flat from u 0.3367 to 0.4883 and u 0.5092 to 0.6650 -- the crossed tips --
-    // where the photograph's raking cornice descends in a clean triangle (photo tops v 0.3022 at u 0.4100
-    // falling to 0.3511 at u 0.3650). That plateau is 32-34 px above the photograph's dark roof band at
-    // u 0.3475-0.3625 (photo top v 0.3711 #000408) and it buried the outer thirds of both rooftop blocks.
-    // The centre is placed so the box's own upper-inner corner lands exactly on the apex end of the measured
-    // segment; `xMid` is that corner pulled back by the corner's own slope offset.
-    const xMid = side * (rmid.x + (rake / 2) * Math.sin(rslope));
-    const yMid = rmid.y - (rake / 2) * Math.cos(rslope);
+    // THE BOX'S CENTRE IS THE SEGMENT'S MIDPOINT MOVED `rake / 2` INWARDS along the outward-up normal
+    // `(side * sin, cos)`, which is what puts the upper-outer face on the segment instead of the centre.
+    const nx = side * Math.sin(rakeSlope);
+    const ny = Math.cos(rakeSlope);
+    const xMid = (side * rakeOuter) / 2 - (rake / 2) * nx;
+    const yMid = rise / 2 - (rake / 2) * ny;
     mesh.position.set(cx + xMid, yEave + yMid, zc);
-    mesh.rotation.z = -side * rslope;
+    mesh.rotation.z = -side * rakeSlope;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     b.add(mesh, `${name} rake ${side < 0 ? 'west' : 'east'}`);
@@ -229,11 +248,13 @@ function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThick
     // pale line running down each slope with the tympanum set back behind it. Without it the pediment is a
     // grey triangle with two grey bands on its edges, which is exactly how a reviewer described this one
     // ("a plain grey triangle with a flat top"). This is a second, thinner box lying ON the rake's inner
-    // edge and standing 0.14 m proud of it, so the run catches the sky above the tympanum's own shade.
+    // edge and standing 0.14 m proud of it in z, so the run catches the sky above the tympanum's own shade;
+    // it is retired 0.02 m inside that inner face so no two faces are coplanar.
     const mgeo = new THREE.BoxGeometry(rlen * 0.995, 0.16, depth + 0.14);
     const mmesh = new THREE.Mesh(mgeo, new THREE.MeshStandardMaterial({ color: COLORS.stoneTrim, roughness: 0.85, metalness: 0 }));
-    mmesh.position.set(cx + side * (xMid - (rake / 2 - 0.08) * Math.sin(rslope)), yEave + yMid - (rake / 2 - 0.08) * Math.cos(rslope), zc + 0.04);
-    mmesh.rotation.z = -side * rslope;
+    const mOff = rake - 0.06;
+    mmesh.position.set(cx + xMid - mOff * nx, yEave + yMid - mOff * ny, zc + 0.04);
+    mmesh.rotation.z = -side * rakeSlope;
     mmesh.receiveShadow = true;
     b.add(mmesh, `${name} rake moulding ${side < 0 ? 'west' : 'east'}`);
   }
@@ -251,8 +272,11 @@ function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThick
   // sample and the "plain" complaint is answered by the MOULDING and the CAP below rather than by the
   // colour, which is what was actually wrong with it: it had no edge and no point.
   const tymp = new THREE.Shape();
-  tymp.moveTo(-halfWidth * 0.94, 0);
-  tymp.lineTo(halfWidth * 0.94, 0);
+  // ITS BASE IS THE RAKES' OWN FOOT SPAN, not a fraction of the pediment's nominal width. `halfWidth * 0.94`
+  // stood here and it was the third part of the same inconsistency: at halfWidth 9.78 it gave 9.19 m, so the
+  // tympanum was a metre and a half wider than the rakes it is supposed to sit between.
+  tymp.moveTo(-rakeOuter, 0);
+  tymp.lineTo(rakeOuter, 0);
   tymp.lineTo(0, rise * 0.9);
   tymp.closePath();
   const geo = new THREE.ExtrudeGeometry(tymp, { depth: depth * 0.62, bevelEnabled: false });
@@ -277,7 +301,12 @@ function pediment(b, name, cx, zFront, depth, halfWidth, yEave, yApex, rakeThick
   // to 15.15 m: at z 0.22 the underside then projects to v 0.4436 and at the wall's plane to 0.4022, which
   // covers the whole band from the front of the porch to the wall. Its FRONT face is untouched -- it is still
   // the 0.55 m band whose top row is the eave the photograph measures.
-  b.box(`${name} eave cornice`, { x0: cx - halfWidth - 0.5, x1: cx + halfWidth + 0.5, y0: yEave - 0.85, y1: yEave, z0: zFront - 0.35, z1: zFront + depth + 0.45 }, COLORS.stoneTrim, { metric: true });
+  //
+  // AND ITS WIDTH IS THE RAKES' OWN, which is the pass-I fix. `halfWidth + 0.5` stood here (10.28 m at this
+  // portico) and projected the brim to u 0.3258, 25 px above the photograph's dark roof band. The photograph
+  // measures the eave cornice's own end at the rakes' feet (u 0.369 / 0.6355 = 7.9 m), so it is drawn to
+  // `rakeOuter` and the three parts now share one measured half-width.
+  b.box(`${name} eave cornice`, { x0: cx - rakeOuter, x1: cx + rakeOuter, y0: yEave - 0.85, y1: yEave, z0: zFront - 0.35, z1: zFront + depth + 0.45 }, COLORS.stoneTrim, { metric: true });
   // The apex's own cap. IT IS SMALLER THAN IT WAS, AND THAT IS THE REVIEWER'S "FLAT TOP". At 1.1 m wide and
   // 0.8 m tall over a gable whose whole rise is 1.90 m this block WAS the top of the pediment: it drew a
   // 13-px-wide flat rectangle across the apex where the photograph has a point. 0.6 m by 0.47 m is a cap on
@@ -338,7 +367,13 @@ export function buildPortico(b) {
   // the shadow coming from at the recess wall's own head: the frieze is 1.3 m below the pediment and runs
   // the porch's whole depth, so between them the two cover the recess from its head down past the hedge.
   b.box('north portico frieze', { x0: -W / 2 - 0.85, x1: W / 2 + 0.85, y0: arch, y1: friezeTop, z0: BACK_Z - 0.05, z1: Z_FRONT + 0.05 }, COLORS.stoneTrim, { metric: true, occlusion: 0.86 }).castShadow = true;
-  const dentilN = Math.max(1, Math.floor((W + 1.7) / 0.42));
+  // THE DENTIL ROW IS THE EAVE CORNICE'S OWN BED MOULD, SO IT IS INSET FROM THE CORNICE'S END. It used to run
+  // to +/-9.43 m under a 10.28 m cornice; with the cornice narrowed to the photograph's measured 7.9 m
+  // (pass I) that old extent would have hung 1.5 m of toothed band out past the cornice's own end. The
+  // photograph's dentil course ends at u 0.379 against the cornice's end face at u 0.369 -- 0.010 u, 13 px,
+  // inboard -- which is the cornice's 0.5 m projection, so the row is drawn to that.
+  const dentilHalf = RAKE_HALF_WIDTH - 0.5;
+  const dentilN = Math.max(1, Math.floor((2 * dentilHalf) / 0.42));
   {
     // THE DENTIL'S OWN HEIGHT IS NOT THE ENTABLATURE'S, and it was allowed to become so: the block below is
     // 0.22 m tall on sheet 76's own scale, where the band from the frieze to the cornice was 0.30 m. When the
@@ -355,14 +390,18 @@ export function buildPortico(b) {
     const mesh = new THREE.InstancedMesh(geo, makeMaterial({ color: COLORS.corniceShadow, roughness: 0.9, occlusion: OCCLUSION.eaveUnder }), dentilN);
     const m4 = new THREE.Matrix4();
     for (let i = 0; i < dentilN; i++) {
-      m4.makeTranslation(-W / 2 - 0.85 + (i + 0.5) * ((W + 1.7) / dentilN), 14.97, Z_FRONT + 0.22);
+      m4.makeTranslation(-dentilHalf + (i + 0.5) * ((2 * dentilHalf) / dentilN), 14.97, Z_FRONT + 0.22);
       mesh.setMatrixAt(i, m4);
     }
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
     b.add(mesh, 'north portico dentils');
   }
-  b.box('north portico cornice', { x0: -W / 2 - 1.2, x1: W / 2 + 1.2, y0: corniceTop - 0.20, y1: entTop, z0: BACK_Z - 0.2, z1: Z_FRONT + 0.33 }, COLORS.stoneTrim, { metric: true });
+  // THE PORTICO'S OWN CORNICE IS THE SAME MEMBER AS THE PEDIMENT'S EAVE CORNICE -- one continuous cornice in
+  // the building -- so it takes the pediment's measured half-width with it. It stood at W/2 + 1.2 = 9.78 and
+  // was the box that would still have drawn the brim (its top row is the same 16.00 m, so it projected to
+  // u 0.3348 across the photograph's dark roof band) had only the pediment's three parts been narrowed.
+  b.box('north portico cornice', { x0: -RAKE_HALF_WIDTH, x1: RAKE_HALF_WIDTH, y0: corniceTop - 0.20, y1: entTop, z0: BACK_Z - 0.2, z1: Z_FRONT + 0.33 }, COLORS.stoneTrim, { metric: true });
   // The porch's ceiling: the soffit between the wall and the entablature's back, which is what a camera
   // looking up into the recess sees, and the darkest surface the photograph has. Measured against the
   // photograph's own box (u 0.470-0.530, v 0.440-0.470, luma 71) this was displaying 139, exactly twice its
@@ -376,7 +415,14 @@ export function buildPortico(b) {
   // The wood soffit between the columns, at the entablature's underside: the plane the photograph shows as
   // the porch's own ceiling when the camera is low enough to see under the architrave. It is the surface
   // HABS sheet 76's own "soffit plan" draws, and without it the recess has no lid.
-  b.box('north portico colonnade soffit', { x0: -W / 2, x1: W / 2, y0: entTop - 0.22, y1: entTop, z0: COLUMN_Z - 0.5, z1: Z_FRONT + 0.1 }, COLORS.underPortico, { occlusion: OCCLUSION.porchInterior }).receiveShadow = true;
+  //
+  // ITS WIDTH IS THE CORNICE'S OWN (W/2 = 8.58 m stood here). Its top is the same 16.00 m row as the eave
+  // cornice's, so once the cornice was narrowed to the photograph's 7.9 m this soffit was left standing
+  // 0.68 m proud of it on each side -- measured in the pass-I frame as a dark tab, `north portico colonnade
+  // soffit` at (-8.3, 16.0, 6.6), image u 0.3558..0.3661 at v 0.3451, where the photograph has sky. The
+  // photograph decides it: at the eave's own rows nothing is wider than the cornice that caps it, so the
+  // soffit ends flush with the cornice and disappears behind it.
+  b.box('north portico colonnade soffit', { x0: -RAKE_HALF_WIDTH, x1: RAKE_HALF_WIDTH, y0: entTop - 0.22, y1: entTop, z0: COLUMN_Z - 0.5, z1: Z_FRONT + 0.1 }, COLORS.underPortico, { occlusion: OCCLUSION.porchInterior }).receiveShadow = true;
   // THE PORCH'S OWN INTERIOR: the wall the colonnade stands in front of, which is the single change that
   // turns the porch from a flat panel into a porch. It is the same wall the open facade uses, at the same
   // plane, but the sun cannot reach it past the entablature and the sky sees it through a colonnade, so it
