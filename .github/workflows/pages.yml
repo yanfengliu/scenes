@@ -31,14 +31,39 @@ jobs:
         with:
           enablement: true
 
-      # Everything the page needs, and nothing else: no node_modules, no gate output, no tools.
+      # Everything the page needs, and nothing else: no node_modules, no gate output, no tools, no docs/work.
+      #
+      # IT COLLECTS EVERY SCENE, AND IT DID NOT UNTIL 2026-09-17. It used to copy `src/*.js` and one photo,
+      # which is scene 1's shape alone: `src/boot.js` imports the selected scene's own entry module
+      # dynamically (`await import(scene.entry)`), so with a second scene in the registry -- `?scene=whitehouse`,
+      # or that scene in the picker -- the deployed page asked for `src/whitehouse/main.js`, got a 404 and
+      # failed to load, while every workflow run reported success. A scene the registry advertises has to be
+      # in the artifact. `src/.` copies that folder's whole tree, subdirectories included, and the loop takes
+      # every photo the registry can name, so a third scene is served the day its entry lands.
+      #
+      # The step also cannot fail on an absent optional file: every copy but the two required ones is
+      # guarded, and the listing at the end is what a failed deploy gets read from.
       - name: Collect the site
         run: |
           mkdir -p _site/src _site/docs
-          cp index.html japan.webp _site/
-          cp src/*.js _site/src/
-          cp README.md _site/
+          cp index.html README.md _site/
+          for f in *.webp; do
+            if [ -f "$f" ]; then cp "$f" _site/; fi
+          done
+          cp -r src/. _site/src/
           if [ -f docs/render.webp ]; then cp docs/render.webp _site/docs/; fi
+          echo "collected $(find _site -type f | wc -l) files:"
+          find _site -type f | sort
+
+      # THE ARTIFACT HAS TO CARRY EVERY SCENE THE REGISTRY ADVERTISES, and this is the check that says so.
+      # It exists because the collection step above shipped a site that was missing one: `src/boot.js`
+      # imports the selected scene's entry dynamically, so the page 404'd only for someone who picked the
+      # White House, and nine workflow runs reported success. The check reads `src/scenes.js` itself, so a
+      # scene added to the registry is covered the day its entry lands rather than the day someone
+      # remembers to edit this file. Its bound is written in the tool: it proves the artifact is complete,
+      # not that a scene loads.
+      - name: Every scene the registry names is in the artifact
+        run: node tools/sitecheck.js _site
 
       - uses: actions/upload-pages-artifact@v3
         with:
