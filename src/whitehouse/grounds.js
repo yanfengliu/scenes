@@ -29,6 +29,18 @@ function smoothstep(a, b, v) {
 // The bed's own seed: the flowers must build identically on every load, so nothing here is Math.random.
 const SEED_BED = 20240621;
 
+// ---- THE BED'S OWN TUNING PARAMETERS, AND THE TEST-ONLY OVERRIDE ON THEM -----------------------------
+// Pass L2 swept the bed's darkness distribution to find the frontier between its tone histogram and the
+// two scored numbers; a sweep that has to edit this file between renders is 27 edits and a tree hash that
+// moves under the score. The override lets ONE page load carry its own numbers, so every arm is a render
+// of the same tree. IT IS INERT WITHOUT `globalThis.__BED_PARAM`: absent it, every constant below is the
+// literal that ships, and the frame is the frame -- proved by rendering the shipped tree with an empty
+// override and diffing it against `npm run shot`'s frame (pixel-identical). The sweep's own tool is
+// out/wh/scratch/l2batch.mjs and its frontier is in out/wh/pass-l2-handoff.md. The values that actually
+// ship are the ones written into these literals, not into a page global.
+const BED_PARAM = (globalThis.__BED_PARAM) || {};
+const param = (name, value) => (typeof BED_PARAM[name] === 'number' ? BED_PARAM[name] : value);
+
 // ---- THE BED'S OWN TONE PALETTE, AND WHERE EVERY ANCHOR COMES FROM -----------------------------------
 // Seven tones, every one of them off the photograph, and the palette is the bed's own tone SPAN rather than
 // two samples of it. The anchors are, in order, the lattice's darkest pair, its dark quartile, its mid pair,
@@ -62,7 +74,7 @@ const SUNWARD = [0.254, 0.669, 0.698];
 // lands a little under the hexes it was sampled from. Each render moves it once, in the ratio the render's own
 // bed mean was off, and the value that ships is the one whose measured mean is on the photograph's. See
 // out/wh/pass-l-handoff.md section 3 for the renders and the numbers.
-const BED_GAIN = 0.37;
+const BED_GAIN = param('gain', 0.37);
 // THE PALETTE IS SAMPLED OFF THE ANCHORS AS A CONTINUUM, NOT INTERPOLATED BETWEEN THEM PAIR BY PAIR, and that
 // is the fix for the last of the flatness. `pushLobe`'s tone indexes this table, so with the seven anchors used
 // directly a facet's colour could only ever be one of SEVEN values and the bed's histogram came back as a comb
@@ -132,11 +144,13 @@ function noise2(x, y, scale, seed) {
 //   * CLUMP, a fine octave on the facet's WORLD position, which is the petal-scale mottle.
 //   * SHADE, the facet's own height in the lobe: a crest facet is out in the light and a facet at the lobe's
 //     foot is under the mass above it, which is the shadow BETWEEN the blooms that a two-tone lobe cannot have.
-function pushLobe(parts, cx, cz, rx, ry, rz, bottom, top, litAt, anchors) {
+function pushLobe(parts, cx, cz, rx, ry, rz, bottom, top, litAt, anchors, gain = 1) {
   const na = anchors.length - 1;
   // Two of the leaf-scale octaves of foliage.js's crown field, at 0.55 m and 1.70 m in world metres. They are
   // deliberately NOT an `albedoOf` ramp: see the note at `BLOOM_LIT`.
   const oct = [0.55 * 1.8, 1.7 * 1.6];
+  const mottle0 = param('mottle0', 0.95);
+  const mottle1 = param('mottle1', 0.70);
   const cy = (bottom + top) / 2;
   const g = new THREE.SphereGeometry(1, 9, 7).toNonIndexed();
   g.scale(rx, (top - bottom) / 2, rz);
@@ -149,7 +163,14 @@ function pushLobe(parts, cx, cz, rx, ry, rz, bottom, top, litAt, anchors) {
   const ac = new THREE.Vector3();
   const fn = new THREE.Vector3();
   const tmp = new THREE.Color();
-  const shade0 = 0.74 + 0.32 * hash2(cx * 97, cz * 89, SEED_BED + 5);
+  // THE FLOOR OF THE VERTICAL SHADE, AND THE ONE PLACE THE SWEEP'S OWN INSTRUMENT LIED. The shipped form is
+  // a per-lobe draw: a lobe's foot is at 0.70 + up to 0.32 of its own hash, so the lobes do not all go dark
+  // together. A SWEEP THAT SETS ONLY THE BASE OF THAT DRAW IS A SWEEP THAT SILENTLY VARIES SOMETHING ELSE,
+  // and pass L2's first 60 arms did exactly that: `shadeFloor` replaced the whole expression, which pinned
+  // the floor at its base and made every arm about 3 luma darker than the literal it was standing for. The
+  // frame the literals draw and the frame the same numbers draw through the override are now compared in
+  // out/wh/pass-l2-handoff.md section 5, and `shadeJitter` exists so the amplitude can be swept too.
+  const shade0 = param('shadeFloor', 0.70) + param('shadeJitter', 0.32) * hash2(cx * 97, cz * 89, SEED_BED + 5);
   for (let t = 0; t < pos.count; t += 3) {
     va.fromBufferAttribute(pos, t);
     vb.fromBufferAttribute(pos, t + 1);
@@ -157,8 +178,9 @@ function pushLobe(parts, cx, cz, rx, ry, rz, bottom, top, litAt, anchors) {
     fn.copy(ab.subVectors(vb, va)).cross(ac.subVectors(vc, va)).normalize();
     const facing = fn.x * SUNWARD[0] + fn.y * SUNWARD[1] + fn.z * SUNWARD[2];
     // The lit gate is the same shape facingRamp uses, so a facet square at the sun takes the lit anchor and a
-    // facet turned away stays wherever the ramp put it.
-    const lit = smoothstep(litAt - 0.30, litAt, facing);
+    // facet turned away stays wherever the ramp put it. `param('boost')` scales the whole lit term; absent the
+    // override it is the literal 1.
+    const lit = smoothstep(litAt - 0.30, litAt, facing) * param('boost', 1);
     const tone = Math.min(1, Math.max(0, 0.5 * (facing + 1))) * (1 - 0.35 * lit) + 0.35 * lit;
     const k = Math.round(tone ** TONE_EMPH * na);
     const a0 = anchors[k];
@@ -166,10 +188,13 @@ function pushLobe(parts, cx, cz, rx, ry, rz, bottom, top, litAt, anchors) {
     // The petal-scale mottle, +-30%: on the facet's world position, so two lobes side by side are not the same
     // field sampled twice.
     const px = pos.getX(t) + cx, py = pos.getY(t) + cy, pz = pos.getZ(t) + cz;
-    const am = (noise2(px, py, oct[0], SEED_BED + 11) - 0.5) * 2 * 0.95
-      + (noise2(pz, py, oct[1], SEED_BED + 31) - 0.5) * 2 * 0.70;
-    const shade = shade0 + 0.62 * ((py - bottom) / (top - bottom));
-    const f = (1 + am) * shade;
+    const am = (noise2(px, py, oct[0], SEED_BED + 11) - 0.5) * 2 * mottle0
+      + (noise2(pz, py, oct[1], SEED_BED + 31) - 0.5) * 2 * mottle1;
+    // `shadePow` reshapes the same vertical ramp without moving its endpoints: 1 is the linear ramp that
+    // shipped, below 1 pushes the mass's own area up towards the crest, above 1 down towards the foot.
+    const hn = (py - bottom) / (top - bottom);
+    const shade = shade0 + param('shadeCrest', 0.75) * (param('shadePow', 1) === 1 ? hn : hn ** param('shadePow', 1));
+    const f = (1 + am) * shade * gain;
     const fq = f < 0.03 ? 0.03 : f > 3.2 ? 3.2 : f;
     for (let v = t; v < t + 3; v++) {
       col[v * 3] = tmp.r * fq;
@@ -194,6 +219,12 @@ function tintHex(hex, k) {
   if (k === 1) return hex;
   const ch = (v) => Math.max(0, Math.min(255, Math.round(v * k)));
   return (ch((hex >> 16) & 255) << 16) | (ch((hex >> 8) & 255) << 8) | ch(hex & 255);
+}
+
+// The same scale as an integer hex, for the test-only soil override above. `k === 1` returns the literal
+// unchanged, so the shipped frame's colours are the shipped literals.
+function scaleHex(hex, k) {
+  return k === 1 ? hex : tintHex(hex, k);
 }
 
 export function buildGrounds(b) {
@@ -625,8 +656,8 @@ export function buildGrounds(b) {
   // and taking the two palette anchors directly put the near band's own red below the red-mask detector's
   // r - g >= 30 threshold -- which is how the bed's own red came to end at v 0.714 instead of the photograph's
   // 0.733. These two are the bed's shadow red and its mid tone at the soil's own reflectance.
-  const SOIL_DARK = 0x5e2127;
-  const SOIL_MID = 0x712a2f;
+  const SOIL_DARK = scaleHex(0x5e2127, param('soilGain', 1));
+  const SOIL_MID = scaleHex(0x712a2f, param('soilGain', 1));
   // Each soil row is cut into cells in BOTH directions and a cell's tone comes off the noise field, so the soil
   // is a scatter of dark cells with a few of the mid tone in it rather than bands. The rows keep the
   // photograph's own taper, which is what draws the bed's ends in as it comes towards the camera.
@@ -646,7 +677,9 @@ export function buildGrounds(b) {
         // depth is drawn per column, so the line is broken.
         const jitter = (k === nz - 1 && za > 12) ? noise2((x0 + x1) / 2, 3.7, 1.1, SEED_BED + 509) * 0.85 : 0;
         const zc1 = za + ((k + 1) / nz) * (zb - za) - jitter;
-        b.box(`flower bed soil ${za.toFixed(1)} ${i + 1} ${k + 1}`, { x0, x1, y0: 0, y1: h, z0: zc0, z1: Math.max(zc0 + 0.12, zc1) }, soilColour((x0 + x1) / 2, (zc0 + zc1) / 2), { metric: true });
+        const soilTilt = 1 + param('soilTilt', 0.10) * ((x0 + x1) / 2 / bedHalf);
+        const base = soilColour((x0 + x1) / 2, (zc0 + zc1) / 2);
+        b.box(`flower bed soil ${za.toFixed(1)} ${i + 1} ${k + 1}`, { x0, x1, y0: 0, y1: h, z0: zc0, z1: Math.max(zc0 + 0.12, zc1) }, scaleHex(base, soilTilt), { metric: true });
       }
     }
   }
@@ -729,19 +762,38 @@ export function buildGrounds(b) {
       // overlaps -- which is what puts the crest on the bloom mass's own tops instead of on the box under it. A
       // 0.20 m lobe is 4 px across at the bed's own depth in the contract frame, which is the photograph's own
       // bloom-head size; 66 x 12 = 792 of them per layer against the 486 the flat two-tone version drew.
-      const r = uniform(rand, 0.15, 0.27) * (1 + 0.30 * clump + 0.18 * broad);
+      const r = uniform(rand, param('r0', 0.15), param('r1', 0.27)) * (1 + 0.30 * clump + 0.18 * broad);
       // THE BLOOM MASS IS TWO LAYERS OF WIDE, LOW MOUNDS, and both of those words are the fix. A lobe that is
       // 1.20 m tall and 0.40 m across reads as a ball standing on a slab -- which is what the crop showed --
       // so the upper layer is about 0.6 m tall and 2.7 radii across, and the lower layer is flatter again.
       // The two tops are DIFFERENCED rather than added, so the lower one can never poke through the crest.
-      const top = 0.74 + 0.25 * crest + 0.12 * broad + 0.10 * clump + uniform(rand, -0.06, 0.06);
-      const lowerTop = 0.56 + 0.15 * crest + 0.12 * clump + uniform(rand, -0.05, 0.05);
+      // `topBase`, `topCrest`, `lowerBase` and `lowerCrest` are the same two layer definitions with the two
+      // constants that set how far the mass's own crest rises above its foot exposed for the sweep; their
+      // literals are the shipped ones. RAISING THEM IS THE ONE GEOMETRIC LEVER THAT REACHES THE CREST: the
+      // photograph's bed runs 104 luma at its top row and 46 at its foot, and this render ran 75 and 57
+      // (out/wh/scratch/l2vprof.mjs, the row profile in the fixed box).
+      const top = param('topBase', 1.00) + param('topCrest', 0.25) * crest + 0.12 * broad + 0.10 * clump + uniform(rand, -0.06, 0.06);
+      const lowerTop = param('lowerBase', 0.56) + param('lowerCrest', 0.15) * crest + 0.12 * clump + uniform(rand, -0.05, 0.05);
       // The upper lobe first, so its own facet tones are the ones on the crest. BOTH LAYERS TAKE THE BRIGHT
       // PALETTE: the lower layer is seen only as the dark band at the foot of the mass, and its own height in
       // the lobe (the `shade` term) puts it there without a second, darker palette.
-      pushLobe(parts, x, z, r, r * 1.35, 0.62, 0.30, top, 0.60, BLOOM_LIT_RAMP);
+      // THE BED'S OWN WEST-TO-EAST TILT, and it is a calibration and not a taste. THE DEFECT THIS FIXES IS
+      // PASS L'S OWN: the rebuilt mass renders 21 luma brighter at the bed's west end than the photograph's
+      // and 16 luma darker at its east end -- measured as the bed band's u-profile, render minus photograph,
+      // west half +11.2 / east half -10.7 against a photograph that is FLAT (66.2 61.6 59.4 60.7 64.1 68.3
+      // 62.7 60.6 60.0 66.1 across ten u bands, out/wh/scratch/l2uprof.mjs). The pre-pass slab was flat too
+      // (-0.8 / -2.3), so the gradient is new, and it is what cost the two scored numbers: the process on the
+      // far side of the camera makes the west-side lobes the sunlit ones, and a flat bed cannot be drawn by
+      // lighting alone. `tilt` scales each lobe's own palette linearly across the bed's width, so it corrects
+      // the level and leaves the mixture. With it, the same profile measures west +0.9 / east -4.6.
+      const tilt = param('tilt', 0.45);
+      // A second, depth-axis calibration: the mass's own near edge is its brightest row and its far edge the
+      // darkest (see the tilt note above), so a negative `zTilt` takes the far edge down and lets the near one
+      // stay. It is smaller than the width tilt because the depth profile is mostly a level shift.
+      const gainLobe = (1 + tilt * (x / bedHalf)) * (1 + param('zTilt', -0.15) * (tz - 0.5) * 2);
+      pushLobe(parts, x, z, r, r * param('tall', 1.35), 0.62, 0.30, top, param('litAt', 0.60), BLOOM_LIT_RAMP, gainLobe);
       // The lower lobe: wider, flatter, and never taller than the crest above it.
-      pushLobe(parts, x + uniform(rand, -0.10, 0.10), z, r * 0.92, r * 1.45, 0.34, 0.12, lowerTop, 0.28, BLOOM_LIT_RAMP);
+      pushLobe(parts, x + uniform(rand, -0.10, 0.10), z, r * 0.92, r * 1.45, 0.34, 0.12, lowerTop, param('litAtLow', 0.28), BLOOM_LIT_RAMP, gainLobe);
     }
   }
   const merged = mergeGeometries(parts, false);
