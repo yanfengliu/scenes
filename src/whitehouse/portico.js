@@ -3,11 +3,13 @@
 // colonnade on a rusticated podium with a double staircase.
 //
 // EVERY HEIGHT HERE IS ANCHORED TO A PHOTO ROW, and the anchor is stated in its comment. The reference
-// frame's own scale is 1 m = 0.01714 of the frame height at the wall's plane; at the portico's front, 6.5 m
-// nearer the camera, 1 m = 0.01897. The rows this file is built to:
+// frame's own scale is 1 m = 0.019312 of the frame height at the wall's plane (1 / (2 tanV d), d 47.863 m);
+// at the portico's own front plane, dn 41.363, 1 m = 0.022347. The rows this file is built to:
 //
-//   the pediment apex        v 0.2973   where the centre column leaves the sky, luma 122 -> 75 -> 62
-//   the pediment's eave      v 0.3458   the top of the raking cornices where they meet the horizontal one
+//   the pediment apex        v 0.3030   where the centre column leaves the sky -- the row the apex is built
+//                            to; the 0.2973 here was the first reading, since corrected (see PORTICO_HEIGHTS)
+//   the pediment's eave      v 0.3458   the horizontal cornice's front face, NOT the top of the rakes: the
+//                            rakes die into that face and the top surface above it is at v 0.3311
 //   the entablature's top    v 0.3458   the same line: the eave cornice sits on the entablature
 //   the capitals' abaci      v 0.390-0.409   a bright band at u 0.44 and 0.56, `#abaf9f` luma 172
 //   the column bases         NOT measurable -- the hedge and the steps hide them, so the column height is
@@ -42,12 +44,17 @@ const TAN_V = Math.tan((56.82 / 2) * DEG);
 // behind the wall and the triangle reads as lying on the facade.
 //
 // The photograph is right and the worldToUV arithmetic confirms it takes no special pleading: a point at
-// (0, y, z) projects to v = 0.5 - (y - 9.086) / (2 * 0.54092 * (47.863 + z)). Two rows come out of that and
-// both are the photograph's own measurement rather than a free choice: the pediment's apex lands on the
-// photo's v 0.303 at y = 16.15, and the eave lands on the photo's v 0.345 at y = 15.30 -- which is exactly
-// the block's own 15.3 m parapet, so the pediment's base is level with the balustrade behind it and its
-// apex stands 0.85 m clear of it. That is the building: a shallow gable just clear of the balustrade, and
-// not a second storey. The rise is what this pass reversed; the previous 3.9 m made the tympanum 59 px tall
+// (0, y, z) projects to v = 0.5 - (y - 9.086) / (2 * 0.54092 * (47.863 - z)), the depth of the point being
+// dn = 47.863 - z because the camera stands at +47.863 and looks along -z. THE PLUS SIGN STOOD HERE UNTIL
+// PASS I3 and the two heights this paragraph used to quote, 16.15 and 15.30, were read off THAT form: it
+// is wrong at every z but 0 (at the pediment's own front plane it returns 76 % of the right height, 42 px
+// low at the apex) because it divides by the depth on the far side of the camera. Re-inverted correctly,
+// the same two measured rows give the eave 16.00 m and the apex 17.90 m -- PORTICO_HEIGHTS' own numbers.
+// Both are the photograph's own measurement rather than a free choice: the eave lands on the photo's
+// v 0.3458 and the apex on its v 0.3030. The eave's 16.00 m stands 0.70 m above the block's 15.3 m
+// parapet rather than exactly level with it, so the gable sits on the balustrade rather than beside it:
+// the building is a shallow gable just clear of the balustrade, NOT a second storey. The rise is what that
+// pass reversed; the previous 3.9 m made the tympanum 59 px tall
 // where the photograph's is 21. The columns then follow from the entablature: a capital at 14.02 m is a
 // 9.0 m order over a 4.4 m porch floor, which is 7.3 diameters of a 1.24 m column.
 // THE PORCH STANDS NORTH OF THE WALL, IN +z, AND ITS FLOOR IS THE TERRACE'S OWN DECK.
@@ -68,13 +75,15 @@ const TAN_V = Math.tan((56.82 / 2) * DEG);
 const Z_FRONT = DIMS.porticoProjection;
 // THE PEDIMENT'S RISE IS NOW THE PHOTOGRAPH'S OWN, and this is the fix the previous pass left as a
 // measurement in its report. Both numbers below are rows in the photograph, inverted on this camera at the
-// pediment's own depth of 41.36 m (dn = eye.z - Z_FRONT, so 1 m = 0.011179 of the frame height):
+// pediment's own depth of 41.36 m (dn = eye.z - Z_FRONT, so 1 m = 0.022347 of the frame height):
 //
-//   the eave   the top of the pediment's own horizontal cornice, v 0.3458 in the render's own terms. The
-//              photograph's centre column runs `#4f5f6e` (luma 92, the eave's front face) from v 0.3400 to
-//              0.3560 and its tympanum above it, and the row 0.3458 is inside that band: **16.00 m**.
-//   the apex   the photograph's centre column leaves the sky at v 0.2973..0.2987, going from luma 122 to
-//              75 to 62, and its documented apex row is v 0.2989-0.3033. Row 0.2973 inverts to **18.09 m**.
+//   the eave   the top of the pediment's own horizontal cornice, v 0.3458 in the render's own terms -- the
+//              cornice's FRONT FACE, since its top surface is at v 0.3311 (pass I2). The photograph's centre
+//              column runs `#4f5f6e` (luma 92, the eave's front face) from v 0.3400 to 0.3560 and its
+//              tympanum above it, and the row 0.3458 is inside that band: **16.00 m**.
+//   the apex   the file's own calibrated test (the highest 12-px-deep non-sky run on the centre columns)
+//              reads v 0.3030 on the photograph, which inverts here to **17.90 m**. The centre column's own
+//              luma 122 -> 75 -> 62 sky exit was first read at v 0.2973, i.e. 5 px above the calibrated row.
 //
 // THE OLD PAIR WAS 15.30 / 16.15 -- a rise of 0.85 m where the photograph's is 2.09 -- and it was NOT solved
 // at 41.36 m: its apex implies a depth of 33.2 m and its eave 37.2 m, so the two were inconsistent at ANY
@@ -374,11 +383,14 @@ export function buildPortico(b) {
   // entablature band the photograph actually shows (14.40..14.86 m is 0.46 m, where the architrave below it is
   // 0.38 m and the eave cornice above it is 0.85 m) and it left u 0.3625 still covered. The width is what the
   // photograph measures: at row 0.3711 the dark band's inner edge is at **u 0.3630** (west; east mirror
-  // **u 0.6429**, `pass-i2-col.mjs`/`pass-i2-score.mjs`), which is x -8.20 m through this camera's own
-  // arithmetic at the frieze's front plane (z 6.55: x = (u-0.5)*2*1.5*0.54092*41.313, and taking the
-  // mid-band reading u 0.3655 as the frieze's own silhouette gives -8.13 m). ±8.13 m is that number, and it
-  // is the brief's own reading. Measured, not argued: at ±9.43 m the render's top at u 0.3600 is
-  // `#929aa5` luma 153 (the frieze); at ±8.13 m it is `#0c0f19` luma 15 (the roof), against the photograph's
+  // **u 0.6429**, `pass-i2-col.mjs`/`pass-i2-score.mjs`), which is x -8.18 m through this camera's own
+  // arithmetic at the frieze's front plane (z 6.55: the frame is 2 * 0.54092 * 4/3 * 41.313 = 59.59 m wide
+  // there, so x = (u - 0.5) * 59.59), and taking the mid-band reading u 0.3655 as the frieze's own
+  // silhouette gives -8.03 m. THE 1.5 THAT STOOD HERE UNTIL PASS I3 IS NOT THIS CAMERA'S HORIZONTAL SCALE --
+  // it is tanH / tanV, and the frame's own 4:3 aspect makes the ratio 4/3, as the calibrated wall end
+  // confirms: u 0.1292 at z 0 is x -25.60 m under 4/3 against -28.80 under 1.5. ±8.13 m below is that
+  // pair's own midpoint -- the brief's own reading and, at 0.9 m from either, inside a pixel of both.
+  // Measured, not argued: at ±9.43 m the render's top at u 0.3600 is
   // `#070b1c` luma 12 at v 0.3711.
   //
   // AND NOTHING ELSE WENT WITH IT. The architrave (±9.38) and the inner soffit (±8.58) were left alone: the

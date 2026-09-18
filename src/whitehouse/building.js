@@ -28,8 +28,10 @@ import * as THREE from 'three';
 import { DIMS, BAYS, COLORS, TERRACE } from './layout.js';
 
 // The north facade's own horizontal bands, in metres above the NORTH LAWN. Read off the reference photo by
-// the fitted camera's own scale: at the wall's plane 1 m is 0.01714 of the frame height (15.3 m over the
-// frame's v 0.3800 to 0.6180 at the base's own height), so a measured row converts directly.
+// the fitted camera's own scale: at the wall's plane 1 m is 0.019312 of the frame height (1 / (2 tanV d)
+// with d 47.863 m, i.e. 15.3 m over the frame's v 0.3800 to 0.6180 at the base's own height), so a
+// measured row converts directly. THE 0.01714 THAT STOOD HERE UNTIL PASS I3 WAS 11 % SMALL: a row-to-metre
+// conversion made with it understates every height by 1.127 (0.019312 / 0.01714).
 //
 //   the first-floor glass  v 0.5680 (head) to 0.6120 (sill)  ->  7.22 m to 4.16 m
 //   the second-floor glass v 0.4350 (head) to 0.4900 (sill)  ->  12.42 m to 9.24 m
