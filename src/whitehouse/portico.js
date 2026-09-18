@@ -366,7 +366,28 @@ export function buildPortico(b) {
   // ITS FRIEZE CASTS TOO, and it is the second caster because the entablature is what the photograph shows
   // the shadow coming from at the recess wall's own head: the frieze is 1.3 m below the pediment and runs
   // the porch's whole depth, so between them the two cover the recess from its head down past the hedge.
-  b.box('north portico frieze', { x0: -W / 2 - 0.85, x1: W / 2 + 0.85, y0: arch, y1: friezeTop, z0: BACK_Z - 0.05, z1: Z_FRONT + 0.05 }, COLORS.stoneTrim, { metric: true, occlusion: 0.86 }).castShadow = true;
+  // ITS OUTER END IS THE PHOTOGRAPH'S OWN MEASUREMENT, AND THAT IS THE PASS-I2 FIX. It ran to
+  // `±(W/2 + 0.85)` = ±9.43 m, so at u 0.3475-0.3625 and 0.6325-0.6575 it projected its front face to
+  // v 0.3656 and covered the top 4-5 px of the building's dark roof band, where the photograph has its
+  // roofline at v 0.3711. A height cut was tried first and REJECTED: lowering `entablatureFrieze` to 14.86 m
+  // moved the frieze's top edge onto row 0.3711 and revealed the band, but it also took the frieze out of the
+  // entablature band the photograph actually shows (14.40..14.86 m is 0.46 m, where the architrave below it is
+  // 0.38 m and the eave cornice above it is 0.85 m) and it left u 0.3625 still covered. The width is what the
+  // photograph measures: at row 0.3711 the dark band's inner edge is at **u 0.3630** (west; east mirror
+  // **u 0.6429**, `pass-i2-col.mjs`/`pass-i2-score.mjs`), which is x -8.20 m through this camera's own
+  // arithmetic at the frieze's front plane (z 6.55: x = (u-0.5)*2*1.5*0.54092*41.313, and taking the
+  // mid-band reading u 0.3655 as the frieze's own silhouette gives -8.13 m). ±8.13 m is that number, and it
+  // is the brief's own reading. Measured, not argued: at ±9.43 m the render's top at u 0.3600 is
+  // `#929aa5` luma 153 (the frieze); at ±8.13 m it is `#0c0f19` luma 15 (the roof), against the photograph's
+  // `#070b1c` luma 12 at v 0.3711.
+  //
+  // AND NOTHING ELSE WENT WITH IT. The architrave (±9.38) and the inner soffit (±8.58) were left alone: the
+  // photograph's row 0.3900 reading that looks like an architrave end at u 0.3729 is confounded by the block's
+  // balustrade rail, which stands 0.1 m BEHIND the portico's plane at x -10.3 m and passes through the same
+  // rows -- and narrowing the architrave was TRIED and measured: it took the local mean |dluma| over the
+  // pediment window from 46.06 to 46.43 and SSIM from 0.4199 to 0.4195, so it is reverted.
+  const friezeHalfWidth = 8.13; // the photograph's measured frieze end, see above
+  b.box('north portico frieze', { x0: -friezeHalfWidth, x1: friezeHalfWidth, y0: arch, y1: friezeTop, z0: BACK_Z - 0.05, z1: Z_FRONT + 0.05 }, COLORS.stoneTrim, { metric: true, occlusion: 0.86 }).castShadow = true;
   // THE DENTIL ROW IS THE EAVE CORNICE'S OWN BED MOULD, SO IT IS INSET FROM THE CORNICE'S END. It used to run
   // to +/-9.43 m under a 10.28 m cornice; with the cornice narrowed to the photograph's measured 7.9 m
   // (pass I) that old extent would have hung 1.5 m of toothed band out past the cornice's own end. The
