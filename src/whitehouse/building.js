@@ -27,20 +27,40 @@
 import * as THREE from 'three';
 import { DIMS, BAYS, COLORS, TERRACE } from './layout.js';
 
-// The north facade's own horizontal bands, in metres above the NORTH LAWN. Read off the reference photo by
-// the fitted camera's own scale: at the wall's plane 1 m is 0.019312 of the frame height (1 / (2 tanV d)
-// with d 47.863 m, i.e. 15.3 m over the frame's v 0.3800 to 0.6180 at the base's own height), so a
-// measured row converts directly. THE 0.01714 THAT STOOD HERE UNTIL PASS I3 WAS 11 % SMALL: a row-to-metre
-// conversion made with it understates every height by 1.127 (0.019312 / 0.01714).
+// The north facade's own horizontal bands, in metres above the NORTH LAWN. The scale at the wall's plane is
+// 1 m = 0.0193123 of the frame height, i.e. 1 / (2 tanV d) with d 47.863 m and tanV 0.54092, and it reads
+// the other way as 1 v of frame = 51.78 m at z = 0. THE 0.01714 THAT STOOD HERE UNTIL PASS I3 WAS 11 %
+// SMALL: a row-to-metre conversion made with it understates every height by 1.127
+// (0.019312 / 0.01714). The parenthetical it carried was wrong too: the frame's v 0.3800 to 0.6180 is the
+// wall's base row to the parapet row, 0.238 of the frame, which is 12.32 m at this scale and NOT 15.3 --
+// 15.3 is the parapet's own height and 2.976 m of it is the terrace the wall stands on.
 //
-//   the first-floor glass  v 0.5680 (head) to 0.6120 (sill)  ->  7.22 m to 4.16 m
-//   the second-floor glass v 0.4350 (head) to 0.4900 (sill)  ->  12.42 m to 9.24 m
+// THE METRE COLUMN THAT STOOD HERE UNTIL PASS I4 DID NOT FOLLOW FROM THAT SCALE, OR FROM ANY ONE SCALE.
+// Its four rows have been measured against the live camera (out/wh/scratch/pass-i4-bands.mjs, which
+// inverts each row through THREE.Vector3.project() at z = 0 and re-derives the two rows the whole camera
+// solve rests on): v 0.4350 inverts to 12.42 m, which is this file's secondHead exactly, and v 0.4875 to
+// 8.03 m against its 7.9; but v 0.5680 inverts to 5.57 m against this file's 7.22 and v 0.6120 to 3.29 m
+// against its 4.16. The row SPANS are wrong under every scale: 0.5680 - 0.6120 is 0.0440 of the frame,
+// 2.28 m, against the 3.06 m the table claimed for the same pair, and 0.4350 - 0.4900 is 2.85 m against its
+// 3.18 m. So the metre column was not derivable from the rows beside it, and the rows were not derived from
+// the metres. FACADE's numbers are LITERALS chosen for the building; nothing computes them from a row.
 //
-// The pediments, the dentil band and the frieze are the pass's own additions and their bands are set from
-// the photograph's rows as well: the frieze and its dentils occupy v 0.386 to 0.402, which is 12.2 m to
-// 13.1 m, the belt course sits at v 0.4875, which is 7.9 m, and the first-floor pediments rise from the
-// window head at 7.42 m to about 8.6 m, inside the 7.9 m belt's own band, which is where the photograph
-// puts them: the pediment's apex is LEVEL with the belt course and reads above it.
+// WHAT THE PHOTOGRAPH ACTUALLY SHOWS, measured rather than converted the same way (same tool, the dark-glass
+// runs of each open bay's own window column):
+//
+//   the first-floor glass   v 0.5667 to 0.6056  ->  5.63 m to 3.49 m
+//   the second-floor glass  v 0.4533 to 0.5200  ->  10.93 m to 8.05 m
+//
+// against this file's 4.16-7.22 and 9.24-12.42: both floors are placed 1.0 to 1.6 m ABOVE the photograph's
+// own glass. `npm run shot` + `npm run compare` was run on the correction that moves them down to their
+// measured rows (out/wh/scratch/pass-i4-compare-arm-windowrows.txt) and grew WORSE on both scored numbers,
+// 0.0952 -> 0.0955 cell distance and 0.4199 -> 0.4169 SSIM, so the metres above stay as they are and this
+// discrepancy is named rather than fixed. It is NOT the 11 % conversion: that factor would have moved these
+// rows by 1.127, i.e. ~0.7 m at the head, and no single conversion reproduces them.
+//
+// The pediments, the dentil band and the frieze were later additions and their bands are set the same way:
+// the frieze and its dentils occupy v 0.386 to 0.402, which is 13.1 m to 12.2 m, and the first-floor
+// pediments rise from the window head at 7.42 m to about 8.6 m, inside the 7.9 m belt's own band.
 export const FACADE = {
   base: 0.0, // the north LAWN. The wall's own base is TERRACE.baseY
   wallBase: TERRACE.baseY, // 2.976 m: where the bright wall begins, above the terrace and the hedge
