@@ -4,8 +4,8 @@
 `npm test` asserts scene 1's against `docs/PLAN-scores.md`. The thresholds started from scene 1's rule and
 have followed this scene's own achieved scores since: they move toward the achieved scores at the end of an
 iteration, they are never loosened to make a red gate green, and a worse score is a regression to fix rather
-than a reason to raise a limit. They have tightened twice on 2026-09-17 alone, 0.1066 / 0.3877 to
-0.1061 / 0.4086 to 0.0968 / 0.4157.
+than a reason to raise a limit. They have tightened three times on 2026-09-17 alone, 0.1066 / 0.3877 to
+0.1061 / 0.4086 to 0.0968 / 0.4157 to 0.0925 / 0.4399.
 
 THIS FILE HOLDS EXACTLY ONE FENCED JSON BLOCK, and it is the thresholds: tools/test.js takes the FIRST block
 it finds, so a second one above it is read as the thresholds and fails with a JSON parse error naming a word
@@ -30,6 +30,12 @@ Both metrics are computed by `SCENE=whitehouse npm run compare`, which scores `o
 | Trees: 150 and 175 facet-toned lobes | 0.0949 | 0.4207 |
 | Ground voids gated, the terrain mended, and the crowns corrected | 0.0949 | 0.4207 |
 | The apron sourced: a step, not a ramp | 0.0950 | 0.4206 |
+| Pediment rakes rebuilt, three parts at one width | 0.0954 | 0.4196 |
+| The frieze narrowed to the photograph's 8.13 m | 0.0952 | 0.4199 |
+| The north wall given real apertures | 0.0923 | 0.4363 |
+| Eleven bays re-spaced to the photograph's own centres | 0.0916 | 0.4494 |
+| The flower bed rebuilt as a mass | 0.0921 | 0.4316 |
+| The bed's west-east gradient removed | 0.0907 | 0.4449 |
 
 ## A hole to the sky, which no scored number could see
 
@@ -86,33 +92,49 @@ getting flatter. The instrument that watches the other thing is
 session's realism passes and on the shipped frame. A ratio of 1.0 is the photograph; detail and edge move
 toward it, the p1 and p5 ratios are the render's percentile over the photograph's, and below-16 is coverage.
 
-| measurement, render over photograph | before | after | what it was |
+| measurement, render over photograph | before | shipped frame | what it was |
 | --- | --- | --- | --- |
-| detail (high-pass luma sd) | 0.561 | **0.893** | a flat render reads 0.4; the lawn's blade speckle and the facet-toned crowns are most of the gain |
-| edge energy (levels/px) | 0.385 | **0.861** | the same two passes, measured as mean absolute gradient |
-| luma p5 ratio | 1.91 | **1.07** | the tree pass landed it on the photograph's own row (1.0026) from 1.91, the groundcover pass moved it to 1.06, and the crown correction blackframe required settled it at 1.07 |
-| pixels below luma 16 | 5.71% | **6.94%** | the photograph's own coverage is 6.86%; the frame's dark end is now within 0.08 of it |
-| luma p1 ratio | 1.07 | **2.64** | the one line that moved away, and the frame's remaining black-end residual: the darkest 1% is 2.64x the photograph's |
+| detail (high-pass luma sd) | 0.561 | **0.905** | a flat render reads 0.4; the lawn's blade speckle, the facet-toned crowns and the facade's real apertures are most of the gain |
+| detail at 64 px wide | — | **0.897** | the same measure at the gate's own SSIM scale; it was 0.861 when the facade phase opened |
+| edge energy (levels/px) | 0.385 | **0.896** | the same passes, measured as mean absolute gradient |
+| luma p5 ratio | 1.91 | **1.12** | the tree pass landed it on the photograph's own row (1.0026) from 1.91 and the crown correction blackframe required settled it at 1.07; the bed rebuilt as a mass crossed it to 0.91, and the pass that removed the bed's west-east gradient brought it back to 1.12 |
+| pixels below luma 16 | 5.71% | **6.98%** | the photograph's own coverage is 6.86%; the bed's two passes moved it 6.97 -> 7.26 -> 6.98, and the frame's dark end is now within 0.12 of it |
+| luma p1 ratio | 1.07 | **2.57** | the one line that moved away, and the frame's remaining black-end residual: the darkest 1% is 2.57x the photograph's |
+| luma p99 ratio | — | **1.009** | the bright end matches the photograph's to 0.9% |
 
-The last line is the one to read with the p5 line: the 5th percentile matches while the 1st does not, so the
-frame's shadow floor is right in mass and too light in its very darkest pixels. Note that the two instruments
+Across the facade phase the shipped frame moved detail **0.893 -> 0.905** and edge **0.861 -> 0.896**, both
+toward the photograph, and below-16 **6.97% -> 6.98%**; the p5 ratio crossed from 1.07 to **0.91** on the
+pass that rebuilt the flower bed as a mass and back to **1.12** on the pass that removed its west-east
+gradient, and the p1 ratio came 2.64 -> 2.57. The phase's two scored numbers moved 0.0952 / 0.4199 to
+0.0907 / 0.4449, and the detail and edge gains are the wall's real apertures and the re-spaced bays showing
+up in a metric the 24x22 cell grid cannot see.
+
+The p1 line is the one to read with the p5 line: the frame's 5th percentile is 12% light of the photograph's
+while its 1st is 2.57x it, so the shadow floor is right in mass and too light in its very darkest pixels --
+and the pass that removed the bed's gradient measured where those pixels are: 53.5% of the 5% below p5 sit
+in two cells at the frame's own edges, the framing trees, and not the bed. Note that the two instruments
 disagree at the third digit on purpose and not by accident — `measure.mjs` compares at the photograph's own
 600x550, and `out/wh/scratch/real.mjs`, the arm checker used inside the passes, compares at 600x450 and reads
 the same frame as detail 0.88 and edge 0.78. A number quoted from one is not a number from the other.
 
 ```json
 {
-  "cellDistanceMax": 0.0968,
-  "ssimMin": 0.4157
+  "cellDistanceMax": 0.0925,
+  "ssimMin": 0.4399
 }
 ```
 
 The margins are scene 1's: 2% on cell distance and 0.005 on SSIM, taken off this scene's own achieved
-0.0949 / 0.4207, below the 0.0010 cross-machine SSIM noise floor the repo measured on scene 1 and well above
-the run-to-run spread this scene has shown. They have tightened twice today — 0.1066 / 0.3877 at the session's
-start to 0.1061 / 0.4086 once the porch, the roofline and the lawn had moved the scores, and then to
-0.0968 / 0.4157 after the tree pass and the groundcover pass — from 0.1477 / 0.1212 earlier in the scene's
+0.0907 / 0.4449 -- the best pair the scene has recorded, from the pass that removed the flower bed's
+west-east gradient -- so the block above holds 0.0925 / 0.4399. Both lines are tighter than the
+0.0968 / 0.4157 they replace, and they sit below the 0.0010 cross-machine SSIM noise floor the repo measured
+on scene 1 and well above the run-to-run spread this scene has shown. They have tightened three times today
+— 0.1066 / 0.3877 at the session's start to 0.1061 / 0.4086 once the porch, the roofline and the lawn had
+moved the scores, then to 0.0968 / 0.4157 after the tree pass and the groundcover pass, and now to
+0.0925 / 0.4399 after the facade passes and the bed's two — from 0.1477 / 0.1212 earlier in the scene's
 history, which is the rule working as intended: thresholds follow the achieved scores down, and are never
-raised to make a red gate green. The apron pass's achieved 0.0950 / 0.4206 leaves them exactly where they are
-rather than re-deriving them, because re-deriving would be fractionally LOOSER on both lines (0.0950 x 1.02 =
-0.0969 and 0.4206 - 0.005 = 0.4156) and this repo never loosens a limit.
+raised to make a red gate green. Two earlier achieved pairs were left where they were rather than re-derived,
+because re-deriving them would have been fractionally LOOSER on both lines: the apron pass's 0.0950 / 0.4206
+(0.0950 x 1.02 = 0.0969 and 0.4206 - 0.005 = 0.4156) and the pediment-rakes pass's 0.0954 / 0.4196
+(0.0954 x 1.02 = 0.0973 and 0.4196 - 0.005 = 0.4146). This repo never loosens a limit, which is why only the
+best pair moves them.
