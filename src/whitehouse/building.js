@@ -355,6 +355,37 @@ export function buildBuilding(b) {
   const wallT = 0.7; // [estimate] the wall's own thickness at the openings
   const y0 = FACADE.wallBase; // everything on the north front starts at the terrace, not the lawn
 
+  // THE ELEVEN BAY CENTRES ARE MEASURED, NOT DERIVED FROM `BAYS.centreX` (the full argument is at the bay
+  // loop below; the arithmetic is out/wh/scratch/pass-k-layout.mjs and its output pass-k-layout.txt).
+  // They live here rather than at the bay loop because the WALL'S OWN BANDS need them FIRST: the bands
+  // are cut into the apertures these centres define (see APERTURES below), so a band emitted against
+  // `BAYS.centreX` would put the piers in one place and the windows in another.
+  //
+  // FACET_WEST is the six half-knots between the portico's axis and the north-west corner, x ASCENDING:
+  // bay 1 is the corner, bays 5 and 6 are the two narrow PORTICO bays beside the axis. Bays 7..11 are
+  // its mirror, so the north front is x-mirror-symmetric by construction and the photograph's own
+  // mirror symmetry (its pairwise sums are constant to 0.0003 u) cannot be lost to a transcription
+  // slip -- `facetCentre(7)` is +0.5819 and `facetCentre(11)` is +22.8585, the mirror of bays 6 and 1.
+  const FACET_WEST = [-22.8585, -18.7454, -14.6409, -10.5365, -1.7456, -0.5819];
+  const facetCentre = (i) => (i <= 6 ? FACET_WEST[i - 1] : -FACET_WEST[11 - i]);
+  // The photograph's own eight visible window centres, as u (pass-j-winscan.mjs's whole-window scan,
+  // re-measured this pass by pass-k-probe.mjs to 0.0001 u), and the bays that carry them.
+  const PHOTO_WINDOW_U = [0.1708, 0.2300, 0.2892, 0.3488, 0.6538, 0.7137, 0.7725, 0.8325];
+  const WINDOW_BAYS = [1, 2, 3, 4, 8, 9, 10, 11];
+  // u -> x at the wall's plane is exact and needs no camera: this scene's camera has zero yaw and zero
+  // roll, so a point at z 0 projects with u = 0.5 + x / (2 tanH d), d 47.863 m and tanH = tan(56.82/2)*4/3.
+  // THE CHECK IS ON THE SOURCE, so a later pass that nudges a number in FACET_WEST sees the residual here
+  // rather than having to re-run the whole scan to find it.
+  const SCALE_AT_WALL = 2 * Math.tan((56.82 / 2) * (Math.PI / 180)) * (4 / 3) * 47.863; // 69.041 m/u
+  const facetResiduals = WINDOW_BAYS.map((bay, k) => (PHOTO_WINDOW_U[k] - 0.5) * SCALE_AT_WALL - facetCentre(bay));
+  const facetRms = Math.sqrt(facetResiduals.reduce((s, r) => s + r * r, 0) / facetResiduals.length);
+  if (facetRms > 0.25) {
+    throw new Error(`the eleven bays no longer put the photograph's eight visible windows on their measured `
+      + `centres: ${facetRms.toFixed(3)} m rms against a 0.25 m budget. See out/wh/scratch/pass-k-layout.mjs.`);
+  }
+  console.log(`building: bays re-spaced -- the eight visible windows sit ${facetRms.toFixed(3)} m rms from the `
+    + `photograph's own centres (the uniform 4.6545 m bays gave 0.742 m)`);
+
   // ---- the terrace the north front stands on ----------------------------------------------------------
   // The "raised carriage ramp and parapet". Its top is the wall's own base at TERRACE.baseY; its face drops
   // to the lawn at TERRACE.outerZ. Split either side of the centre so the portico's own floor takes the
@@ -440,7 +471,7 @@ export function buildBuilding(b) {
   // emitted ("x -25.60..8.13") are what caught it, in out/wh/scratch/pass-j-walls.mjs.
   const APERTURES = [];
   for (let i = 1; i <= BAYS.count; i++) {
-    const cx = BAYS.centreX(i);
+    const cx = facetCentre(i);
     APERTURES.push([cx - OPENING.halfWidth, cx + OPENING.halfWidth]);
   }
   // One band, as the solid pieces between the apertures it overlaps. RECEIVING, AND ONLY THE NORTH FRONT
@@ -656,6 +687,47 @@ export function buildBuilding(b) {
   b.box('flag', { x0: -0.95, x1: -0.06, y0: 25.95, y1: 27.02, z0: -D / 2 - 0.03, z1: -D / 2 + 0.03 }, COLORS.flagDark);
 
   // ---- the north front's eleven bays ------------------------------------------------------------------
+  //
+  // THE BAYS ARE NOT ON A UNIFORM PITCH, AND THAT IS THIS PASS'S WHOLE GEOMETRIC CHANGE.
+  //
+  // `layout.js` laid the eleven out uniformly across the calibrated 51.2 m: `BAYS.pitch` 4.6545 m and
+  // `BAYS.centreX(i) = -25.6 + (i - 0.5) * 4.6545`. Pass J measured what that does to the facade
+  // (out/wh/scratch/pass-j-bayfit.mjs): the photograph's eight whole windows sit on a pitch of 4.1045 m
+  // (its own four-window group spans 12.29 m against the code's 13.96 m), and against the uniform bays
+  // the outer windows of each group land -- bay 1 at -0.02 m, bay 11 at +0.32 m -- while the inner ones
+  // are pulled 1.13 m and 0.79 m toward the portico. That is not a pitch error; a pitch error cannot
+  // move the inner windows one way and leave the outer ones alone.
+  //
+  // WHAT IT ACTUALLY IS, and the arithmetic is out/wh/scratch/pass-k-layout.mjs:
+  //
+  //   * The photograph's own axis is a PIER, not a window: u 0.5015 carries no aperture, and the eight
+  //     visible windows sit at +-2.5, +-3.5, +-4.5 and +-5.5 pitches from it. Eleven bays with bays
+  //     1..11 has the axis between bays 5 and 6, and bays 5, 6, 7 are the three the portico covers.
+  //   * The corner pier the photograph draws -- its outer window centre to the wall's own end -- is
+  //     2.74 m, and THIS PASS MEASURED the wall's end off the photograph rather than inheriting it
+  //     (out/wh/scratch/pass-k-corner.mjs: the sky->wall step sits at x 155-157 west, u 0.1292-0.1308,
+  //     and x 1045-1048 east, u 0.8708-0.8733). So the calibrated wall ends and the calibrated 51.2 m
+  //     are CONFIRMED by the frame to about a pixel, and the corner pier is real.
+  //   * That pier and the 4.1045 m outer pitch are 0.668 and 1.0 pitches of a layout that has to close
+  //     on 51.2 m. Combined: the OUTER FOUR BAYS on each side stand on the photograph's own 4.1045 m
+  //     pitch, the photograph's own outer centres at +-22.8585 and +-10.5365 m, the two half-gaps
+  //     between the axis and bay 4 come to 1.1638 m each, and every remaining metre of the 51.2 m falls
+  //     in the piers. The visible windows land on the photograph's own centres to 0.099 m rms (1.7 px),
+  //     against 0.742 m (12.9 px) for the uniform bays. The knots, from the axis outward:
+  //
+  //       0 (pier) | 0.5819 | 1.7456 | 10.5365 | 14.6409 | 18.7454 | 22.8585   and the mirror of each
+  //
+  //   * The portico's own geometry is NOT touched and still registers: its outer column pair is at
+  //     +-5.38 m, which is inside the 1.75..5.70 m pier (it was inside the 0.67..5.33 m pier before),
+  //     and its central pair at +-2.02 m is inside the 1.16..2.56 m pier. The portico's bays (5, 6, 7)
+  //     and the pediment rule are unchanged.
+  //
+  // WHAT IS ODD ABOUT IT, stated rather than hidden: the two bays beside the axis (0.58 m and 1.75 m
+  // from it) have to be narrow. They are PORTICO bays -- their own pier spacing is what the frame's
+  // 22.86 m outer centres and its 2.74 m corner pier leave for them -- and they carry no aperture the
+  // photograph can see, because the portico's 10.76 m column pair stands in front of them. They are
+  // built anyway: an orbit's view of the facade would otherwise have a blank 4.5 m of wall under the
+  // portico. What a reader should check before changing a number below is pass-k-layout.txt.
   const winW = DIMS.windowWidth;
   // The opening's own depth in the wall: the face at z -0.20, the glass at z -0.64, so the reveal is
   // 0.44 m of real recess and the glass is about a third of the way through the 0.7 m wall.
@@ -668,7 +740,7 @@ export function buildBuilding(b) {
   const firstGlass = { z0: zN - 0.60, z1: zN - 0.46 };
   const secondGlass = { z0: zN - 0.56, z1: zN - 0.44 };
   for (let i = 1; i <= BAYS.count; i++) {
-    const cx = BAYS.centreX(i);
+    const cx = facetCentre(i);
     const behindPortico = BAYS.porticoBays.includes(i);
     // The first floor: a reveal, the sash, the sill on blocks, the architrave head, and the pediment on its
     // console brackets. The photograph alternates the triangle and the segment, bay by bay, and the bay
