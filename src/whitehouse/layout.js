@@ -479,6 +479,26 @@ export const COLORS = {
   // #181812 with median #010400 and #020403. hedge is the body, this is the top.
   flowerBed: 0x8f1c23, // box u 0.30-0.36 v 0.69-0.71, mean
   flowerBedLit: 0xdf4c55, // pixel u 0.260 v 0.680 -- a single bloom catching the light
+  // ---- THE BED'S OWN PALETTE, AND THE FACTOR THAT IS IN EVERY ANCHOR -----------------------------------
+  // The bed's lattice across ONE row reads `#411f17 #5d2a26 #692827 #752729 #732f28 #79302d #5b2925 #43261f`
+  // (out/wh/scratch/meanbox.mjs, 18x18 px boxes -- quoted in grounds.js), a span of #411f17 to #79302d at
+  // luma 40 to 69, and those two hexes above are the middle of it and its top. The anchors below are that
+  // lattice plus the bed box's own bright quartile, and EVERY ONE OF THEM IS THE LATTICE RAISED BY THE SAME
+  // ~1.3x: a bloom head is a nearly-vertical surface facing away from a sun that stands 42 degrees up, so a
+  // colour that displays at luma 60 on a horizontal lawn displays about 45 there, and the palette has to be
+  // stated in the terms the rig will actually multiply. The factor is measured on the render and the whole
+  // palette is scaled once by `BED_GAIN` in grounds.js -- see out/wh/pass-l-handoff.md section 3.
+  flowerBedDeep: 0x471b22, // the shadow between the heads: the lattice's #411f17..#5d2a26 pair
+  flowerBedShade: 0x6b262b, // the lattice's own dark quartile, #5d2a26
+  flowerBedMid: 0x802327, // and its #752729/#732f28 pair
+  // THE THREE TONES ABOVE `flowerBed`, and why the photograph's own samples are not enough on their own. The
+  // sampled span DISPLAYS at luma 40 to 69 -- but the photograph's own bed box has 36.5% of its area at luma
+  // 75 and above, so a bloom head catching the sun is where the frame's brightness comes from. These are that
+  // end, read off the bed box's own bright quartile rather than off a single pixel: `flowerBedLit` is already
+  // the one sampled lit bloom.
+  flowerBedAlt: 0x9b2c31, // the bed box's own p75, luma 94
+  flowerBedMidLit: 0xb23a41, // and its p85
+  flowerBedLitHigh: 0xdc5560, // and its p95, luma 140
   drive: 0x3b3a33, // [estimate] the drive is in no clean box: the frame's foreground at the left edge reads
   // #0d1108, which is the drive UNDER the tree shadow, so the material takes a lighter gravel.
   fence: 0x0b0d0d, // box u 0.005-0.05 v 0.615-0.63, mean -- the iron fence, near black

@@ -12,9 +12,11 @@
 // The distances come from the photo rows the features were measured at, through the fitted camera, and each
 // one is stated with the row it came from.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DIMS, COLORS, TERRACE, NORTH_LAWN, frameWidthAtZ } from './layout.js';
 import { mulberry32, uniform } from '../random.js';
 import { albedoOf, albedoScaleOf, makeMaterial } from '../materials.js';
+import { srgbToLinear } from '../tonemap.js';
 import { speckleTexture } from './grass.js';
 
 // A smooth 0..1 ramp, 0 at or below `a` and 1 at or above `b`. Used for every edge the mowing modulation
@@ -26,6 +28,164 @@ function smoothstep(a, b, v) {
 
 // The bed's own seed: the flowers must build identically on every load, so nothing here is Math.random.
 const SEED_BED = 20240621;
+
+// ---- THE BED'S OWN TONE PALETTE, AND WHERE EVERY ANCHOR COMES FROM -----------------------------------
+// Seven tones, every one of them off the photograph, and the palette is the bed's own tone SPAN rather than
+// two samples of it. The anchors are, in order, the lattice's darkest pair, its dark quartile, its mid pair,
+// its own box mean, and the box's bright quartile (p75, p85, p95) -- the last three because a bloom head
+// catching the sun is where the frame's brightness comes from and the sampled lattice stops at luma 69.
+// THE DEFECT THIS REPLACES: the bed took ONE OF TWO tones per lobe (`rand() < 0.34 ? flowerBedLit :
+// flowerBed`) drawn independently, so 70.0% of the bed's box landed in ONE 10-luma bin of the histogram
+// against the photograph's 9.2%, and the frame read as a flat slab carrying a regular field of identical pink
+// balls. Six intermediate anchors, applied PER FACET, are what turn that into a mass. The measured histograms
+// are in out/wh/pass-l-handoff.md section 3.
+const BLOOM_LIT = [COLORS.flowerBedDeep, COLORS.flowerBedShade, COLORS.flowerBed, COLORS.flowerBedAlt, COLORS.flowerBedLit, COLORS.flowerBedLitHigh];
+const BLOOM_LOW = [COLORS.flowerBedDeep, COLORS.flowerBedMid, COLORS.flowerBedShade];
+
+// The three tones as LINEAR albedos, in the order the ramp above indexes them, and the display level each one
+// is aimed at. THE PALETTE IS A DISPLAY-SPACE RAMP, NOT AN `albedoOf` ONE, and that is a decision with a
+// measurement behind it: `albedoOf` answers "what does the rig's own ambient give a surface whose displayed
+// mean should be this hex at MATERIALS.irradiance", and a bloom head is a nearly-vertical surface facing away
+// from a sun that is 42 degrees up and 20 degrees east of the axis. Applied to the palette it would put the
+// lit red -- the tone sampled off a single bloom that IS catching the light -- inside the same bin as the
+// shade tone, because it would then be multiplied by a facing term of about 0.4. The palette is therefore the
+// linear value of each sampled hex, and the rig's own shading is the only thing applied to it, exactly as the
+// flat `MeshStandardMaterial({ color })` this replaces did (three decodes a material's hex to linear at the
+// same point). The consequence is that every anchor's DISPLAYED luma is a little under its own hex, and that
+// is corrected once, globally, by `BED_GAIN` -- measured on the render and not guessed.
+const lin = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255].map((c) => srgbToLinear(c / 255));
+// sky.js SKY.sunDirection, as a literal so this file does not import sky.js -- the same three numbers
+// foliage.js's own facing ramp uses.
+const SUNWARD = [0.254, 0.669, 0.698];
+// A global gain on the bed's albedo, and the one number here that is tuned rather than derived: it exists
+// because the vertex-colour path cannot go through `albedoOf` (see above), so the palette's own display luma
+// lands a little under the hexes it was sampled from. Each render moves it once, in the ratio the render's own
+// bed mean was off, and the value that ships is the one whose measured mean is on the photograph's. See
+// out/wh/pass-l-handoff.md section 3 for the renders and the numbers.
+const BED_GAIN = 0.37;
+// THE PALETTE IS SAMPLED OFF THE ANCHORS AS A CONTINUUM, NOT INTERPOLATED BETWEEN THEM PAIR BY PAIR, and that
+// is the fix for the last of the flatness. `pushLobe`'s tone indexes this table, so with the seven anchors used
+// directly a facet's colour could only ever be one of SEVEN values and the bed's histogram came back as a comb
+// of spikes with luma 40 to 75 empty -- measured 15.6 / 12.2 / 3.2 / 2.6 / 2.7 / 3.5 across the bins from 20 to
+// 80 against the photograph's 7.6 / 9.3 / 8.9 / 8.3 / 6.9 / 6.2. A 64-entry table keeps every anchor exactly
+// and lets every facet in between have its own tone.
+const RAMP_STOPS = 64;
+function rampTable(anchors) {
+  const na = anchors.length - 1;
+  const out = [];
+  for (let i = 0; i < RAMP_STOPS; i++) {
+    const k = (i / (RAMP_STOPS - 1)) * na;
+    const i0 = Math.min(na - 1, Math.floor(k));
+    const t = k - i0;
+    const a = anchors[i0];
+    const b2 = anchors[i0 + 1];
+    out.push([a[0] + (b2[0] - a[0]) * t, a[1] + (b2[1] - a[1]) * t, a[2] + (b2[2] - a[2]) * t]);
+  }
+  return out;
+}
+const gain3 = (a) => a.map((c) => [c[0] * BED_GAIN, c[1] * BED_GAIN, c[2] * BED_GAIN]);
+const BLOOM_LIT_RAMP = gain3(rampTable(BLOOM_LIT.map(lin)));
+const BLOOM_LOW_RAMP = gain3(rampTable(BLOOM_LOW.map(lin)));
+// THE RAMP'S OWN EMPHASIS, and it is not decoration. The anchors are the photograph's own dark red, its mid
+// tone, its box mean and the lit bloom; `TONE_EMPH` says which of them a facet's tone index actually lands on.
+// A straight ramp puts half of a sphere's facets at or above the MID tone, and the bed then measures far more
+// of its area above luma 75 than the photograph's 36.5%. The measured histogram is in
+// out/wh/pass-l-handoff.md section 3.
+const TONE_EMPH = 1.15;
+
+// A 2-D value noise on a 1 m lattice, quintic-interpolated, in [0, 1). The same instrument foliage.js's
+// `mottle` is -- a per-vertex albedo field rather than a texture, because a vertex colour costs no texture
+// unit, no uv set and no second copy of the albedo (see grass.js on why `map` is the wrong slot for a
+// modulation). It is written here rather than imported because foliage.js exports only its two builders.
+const smooth5 = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+function hash2(i, j, seed) {
+  let h = Math.imul(i | 0, 374761393) ^ Math.imul(j | 0, 668265263) ^ Math.imul(seed | 0, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function noise2(x, y, scale, seed) {
+  const fx = x / scale + 7.31;
+  const fy = y / scale + 2.17;
+  const i = Math.floor(fx), j = Math.floor(fy);
+  const [sx, sy] = [smooth5(fx - i), smooth5(fy - j)];
+  const at = (di, dj) => hash2(i + di, j + dj, seed);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  return lerp(lerp(at(0, 0), at(1, 0), sx), lerp(at(0, 1), at(1, 1), sx), sy);
+}
+
+// One bloom lobe of the bed: an ellipsoid of radius (rx, ry, rz) with its BOTTOM at `bottom` and its TOP at
+// `top`, merged into `parts` with a PER-FACET vertex colour and a per-facet mass gain.
+//
+// WHY THE TONE IS PER FACE AND NOT PER LOBE, and this is the whole of the fix. A lobe is one number in the
+// version this replaces, so a lobe is a DISC: it has no interior structure, and all of its variance is on its
+// silhouette -- which is why the frame showed a field of identical pink balls on a flat slab. The tone has to
+// change WITHIN a lobe for the lobe to be a mass of petals, and a vertex colour is shared by every triangle
+// that owns the vertex, so the geometry has to be `toNonIndexed()`d first (a 9x7 sphere is 126 triangles and
+// 378 vertices instead of 80). foliage.js's `crownLobes` is the same mechanism on the trees.
+//
+// The tone has three terms, all of them measurements:
+//   * FACING. The facet's own normal against the rig's sun (sky.js SKY.sunDirection, as a literal so this file
+//     does not import sky.js), ramped between two of the three sampled anchors, with `litAt` gating the lit
+//     red so only the facets near the sun's own quarter take it. The sphere is 4 pi, so the share of facets
+//     past `litAt` is set by geometry and not by a random draw -- which is what turns "34% of the lobes are
+//     pink" into "a third of the petals catch the light", the ratio the photograph's own histogram has.
+//   * CLUMP, a fine octave on the facet's WORLD position, which is the petal-scale mottle.
+//   * SHADE, the facet's own height in the lobe: a crest facet is out in the light and a facet at the lobe's
+//     foot is under the mass above it, which is the shadow BETWEEN the blooms that a two-tone lobe cannot have.
+function pushLobe(parts, cx, cz, rx, ry, rz, bottom, top, litAt, anchors) {
+  const na = anchors.length - 1;
+  // Two of the leaf-scale octaves of foliage.js's crown field, at 0.55 m and 1.70 m in world metres. They are
+  // deliberately NOT an `albedoOf` ramp: see the note at `BLOOM_LIT`.
+  const oct = [0.55 * 1.8, 1.7 * 1.6];
+  const cy = (bottom + top) / 2;
+  const g = new THREE.SphereGeometry(1, 9, 7).toNonIndexed();
+  g.scale(rx, (top - bottom) / 2, rz);
+  const pos = g.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const va = new THREE.Vector3();
+  const vb = new THREE.Vector3();
+  const vc = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const fn = new THREE.Vector3();
+  const tmp = new THREE.Color();
+  const shade0 = 0.74 + 0.32 * hash2(cx * 97, cz * 89, SEED_BED + 5);
+  for (let t = 0; t < pos.count; t += 3) {
+    va.fromBufferAttribute(pos, t);
+    vb.fromBufferAttribute(pos, t + 1);
+    vc.fromBufferAttribute(pos, t + 2);
+    fn.copy(ab.subVectors(vb, va)).cross(ac.subVectors(vc, va)).normalize();
+    const facing = fn.x * SUNWARD[0] + fn.y * SUNWARD[1] + fn.z * SUNWARD[2];
+    // The lit gate is the same shape facingRamp uses, so a facet square at the sun takes the lit anchor and a
+    // facet turned away stays wherever the ramp put it.
+    const lit = smoothstep(litAt - 0.30, litAt, facing);
+    const tone = Math.min(1, Math.max(0, 0.5 * (facing + 1))) * (1 - 0.35 * lit) + 0.35 * lit;
+    const k = Math.round(tone ** TONE_EMPH * na);
+    const a0 = anchors[k];
+    tmp.setRGB(a0[0], a0[1], a0[2], THREE.LinearSRGBColorSpace);
+    // The petal-scale mottle, +-30%: on the facet's world position, so two lobes side by side are not the same
+    // field sampled twice.
+    const px = pos.getX(t) + cx, py = pos.getY(t) + cy, pz = pos.getZ(t) + cz;
+    const am = (noise2(px, py, oct[0], SEED_BED + 11) - 0.5) * 2 * 0.95
+      + (noise2(pz, py, oct[1], SEED_BED + 31) - 0.5) * 2 * 0.70;
+    const shade = shade0 + 0.62 * ((py - bottom) / (top - bottom));
+    const f = (1 + am) * shade;
+    const fq = f < 0.03 ? 0.03 : f > 3.2 ? 3.2 : f;
+    for (let v = t; v < t + 3; v++) {
+      col[v * 3] = tmp.r * fq;
+      col[v * 3 + 1] = tmp.g * fq;
+      col[v * 3 + 2] = tmp.b * fq;
+    }
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  // The normals are rebuilt because `toNonIndexed` carries the UNIT sphere's and the lobe has since been
+  // scaled by three different numbers; on a non-indexed geometry this is the flat facet normal, which is what
+  // `flatShading: true` draws anyway.
+  g.computeVertexNormals();
+  g.deleteAttribute('uv');
+  g.translate(cx, cy, cz);
+  parts.push(g);
+}
 
 // A sampled colour scaled by a reflectance, in sRGB, clamped. The mowing bands are the photograph's own
 // sampled lawn colours times a small swing rather than new hexes, so every colour in this file is still one
@@ -446,46 +606,151 @@ export function buildGrounds(b) {
   // ends draw in as it comes towards the camera. A single rectangular box paints a red wall where the
   // photograph has the bed's own dark edge and then lawn.
   const soil = [
-    [bedFar, 8.1, DIMS.bedWidth],
-    [8.1, 10.6, DIMS.bedWidth - 1.5],
-    [10.6, 12.3, DIMS.bedWidth - 4.0],
-    [12.3, bedNear - 0.7, DIMS.bedWidth - 8.0],
+    [bedFar, 8.1, DIMS.bedWidth, 0.34],
+    [8.1, 10.6, DIMS.bedWidth - 1.5, 0.34],
+    [10.6, 12.3, DIMS.bedWidth - 4.0, 0.32],
+    [12.3, 13.4, DIMS.bedWidth - 8.0, 0.28],
+    [13.4, bedNear + 0.3, DIMS.bedWidth - 11.0, 0.10],
   ];
-  for (const [za, zb, w] of soil) {
-    b.box(`flower bed soil ${za.toFixed(1)}`, { x0: -w / 2, x1: w / 2, y0: 0, y1: 0.35, z0: za, z1: zb }, COLORS.flowerBed, { metric: true });
-  }
-  {
-    const rand = mulberry32(SEED_BED);
-    // THE GRAIN OF THE BED IS ITS OWN MEASUREMENT. The first cut of this pass used 7 rows of 0.9 m lobes on
-    // a 1.15 m pitch, and the frame showed a flat two-tone slab with a lighter band: at 40 m a 0.9 m lobe is
-    // 18 px and the photograph's own bloom heads are 6 to 10. 52 across by 9 deep at 0.85 m and 1.6 m, each
-    // lobe 0.44 to 0.68 m, is what the photograph's texture resolves to at this depth.
-    const nz = 9;
-    const nx = Math.round(DIMS.bedWidth / 0.85);
-    // THE BLOOM MASS STOPS AT DIMS.bedBloomTo, which is the row the photograph's bright red stops at: its
-    // near third is the bed's own dark soil and shadow, not blooms.
-    const z0 = bedFar + 0.05;
-    const z1 = DIMS.bedBloomTo;
+  // THE SOIL IS NOT ONE BOX PER DEPTH BAND, AND THAT IS A MEASUREMENT AND NOT A TIDY-UP. A flat top at one
+  // tone puts 62.4% of the whole bed box into ONE 10-luma bin of the histogram (measured, out/wh/scratch/
+  // bedstat.mjs, the render as it arrived), and the photograph has no bin above 12.2%. So every soil row is
+  // cut into 2.3 m cells and each cell takes one of the two dark sampled reds on a SEEDED lattice: a soil whose
+  // tone changes every 2.3 m is a bed of earth and litter, a soil at one tone is a slab. The cells are cut
+  // about the bed's own centre so the bed stays symmetric, and the tones are the bed's own dark red and the
+  // mid tone between them -- both already sampled off the photograph.
+  const SOIL_CELL = 1.6;
+  const SOIL_ZCELL = 0.8;
+  // THE SOIL'S TWO TONES ARE ITS OWN, not the bloom palette's: a soil is a brown-red and a bloom is a scarlet,
+  // and taking the two palette anchors directly put the near band's own red below the red-mask detector's
+  // r - g >= 30 threshold -- which is how the bed's own red came to end at v 0.714 instead of the photograph's
+  // 0.733. These two are the bed's shadow red and its mid tone at the soil's own reflectance.
+  const SOIL_DARK = 0x5e2127;
+  const SOIL_MID = 0x712a2f;
+  // Each soil row is cut into cells in BOTH directions and a cell's tone comes off the noise field, so the soil
+  // is a scatter of dark cells with a few of the mid tone in it rather than bands. The rows keep the
+  // photograph's own taper, which is what draws the bed's ends in as it comes towards the camera.
+  const soilColour = (cx, cz) => (noise2(cx, cz, 2.6, SEED_BED + 401) < 0.74 ? SOIL_DARK : SOIL_MID);
+  for (const [za, zb, w, h] of soil) {
+    const nx = Math.max(1, Math.round(w / SOIL_CELL));
+    const nz = Math.max(1, Math.round((zb - za) / SOIL_ZCELL));
     for (let i = 0; i < nx; i++) {
-      for (let j = 0; j < nz; j++) {
-        const u = (i + 0.5) / nx;
-        const v = (j + 0.5) / nz;
-        const x = -bedHalf + 0.5 + u * (DIMS.bedWidth - 1.0);
-        const z = z0 + v * (z1 - z0);
-        // THE CREST FALLS FROM THE FAR EDGE TO THE NEAR ONE, and that is the row arithmetic, not a look:
-        // 1.20 m at z +5.6 projects to the photo's v 0.674 and 0.50 m at z +14.1 to its v 0.735.
-        const top = DIMS.bedCrest - (DIMS.bedCrest - DIMS.bedNearCrest) * ((z - z0) / (bedNear - z0)) + uniform(rand, -0.03, 0.03);
-        const lobe = new THREE.Mesh(
-          new THREE.SphereGeometry(1, 7, 5),
-          new THREE.MeshStandardMaterial({ color: rand() < 0.34 ? COLORS.flowerBedLit : COLORS.flowerBed, roughness: 0.95, metalness: 0, flatShading: true }),
-        );
-        lobe.scale.set(uniform(rand, 0.22, 0.34), (top - 0.22) / 2, uniform(rand, 0.22, 0.34));
-        lobe.position.set(x, 0.22 + (top - 0.22) / 2, z);
-        lobe.receiveShadow = true;
-        b.add(lobe, `flower bed bloom ${i + 1} ${j + 1}`);
+      for (let k = 0; k < nz; k++) {
+        const x0 = -w / 2 + (i / nx) * w;
+        const x1 = -w / 2 + ((i + 1) / nx) * w;
+        const zc0 = za + (k / nz) * (zb - za);
+        // THE NEAR BAND'S FRONT FACE REACHES A DIFFERENT DEPTH IN EACH COLUMN, and that is the bed's own near
+        // edge. A soil body with one straight front face draws a dead straight line across the bottom of the
+        // bed however broken its top is: measured, the version before this one ran out at v 0.7495 over 940 of
+        // its 960 columns -- an rms of 1.4 px against the photograph's 5.4 px. The face is still a box, but its
+        // depth is drawn per column, so the line is broken.
+        const jitter = (k === nz - 1 && za > 12) ? noise2((x0 + x1) / 2, 3.7, 1.1, SEED_BED + 509) * 0.85 : 0;
+        const zc1 = za + ((k + 1) / nz) * (zb - za) - jitter;
+        b.box(`flower bed soil ${za.toFixed(1)} ${i + 1} ${k + 1}`, { x0, x1, y0: 0, y1: h, z0: zc0, z1: Math.max(zc0 + 0.12, zc1) }, soilColour((x0 + x1) / 2, (zc0 + zc1) / 2), { metric: true });
       }
     }
   }
+  // ---- the bloom mass, and why it is ONE MERGED MESH WITH A PER-FACET TONE ------------------------------
+  //
+  // THE DEFECT THIS REPLACES, MEASURED. The bed as it arrived was a dark soil body with 486 bloom lobes, each
+  // one a flat-shaded sphere taking one of TWO sampled reds, `rand() < 0.34 ? flowerBedLit : flowerBed`, on a
+  // perfect 52 x 9 lattice at a 0.85 m pitch with the tops drawn from +-0.03 m of a straight line. Out/wh/
+  // scratch/bedstat.mjs on the contract 1200x900 frame, over the bed box u 0.10-0.90 v 0.56-0.80:
+  //
+  //   measurement                photograph     render before
+  //   bed tone mean luma             62.9            61.6
+  //   luma histogram 40-50            9.2%           70.0%   <- one bin holds the whole bed
+  //   luma below 40 inside the mask  26.2%            1.1%
+  //   luma 75 and above              38.1%           17.9%
+  //   small bright heads per 100x100 42.1             5.2
+  //   head components' median size    3.0 px          7.9 px
+  //   bottom edge (red mask) rms      5.38 px         1.44 px  <- a dead straight line
+  //
+  // So the render's bed is one flat crimson tone with a REGULAR FIELD of big identical pink balls on it, and
+  // its lower edge is a ruled line: a slab of wallpaper, which is exactly what the coordinator's crop shows.
+  // The photograph is a mass whose tone is spread over the whole curve (11.4% of it is BELOW luma 10) and whose
+  // brightness lives in small heads a third the size of this one's.
+  //
+  // THE MECHANISM IS THE ONE foliage.js's `crownLobes` ALREADY USES FOR A MASS RATHER THAN A ROW OF BALLS, and
+  // it is copied here rather than imported because that function is a crown's own shape (an ellipsoidal
+  // envelope centred on a tree) and this is a bed: the three parts that matter are
+  //   * EVERY LOBE IS A NON-INDEXED COPY with a per-FACET vertex colour. A per-lobe colour cannot break a
+  //     disc, because a flat-shaded sphere's interior is one number and all of its variance is on its
+  //     silhouette; a facet colour can, because a vertex colour is per vertex and a `SphereGeometry` vertex is
+  //     owned by four to six triangles, so the lobe has to be `toNonIndexed()`d first. That is the whole of
+  //     "not a row of identical balls".
+  //   * A CLUMP FIELD. A regular lattice of equal lobes reads as a stagger however the tone varies, so each
+  //     lobe's SIZE and its REACH are drawn separately from a two-octave value noise in world metres, which
+  //     opens real gaps and lets real clumps stand proud -- the irregular top edge and the shadow between the
+  //     blooms both come out of this and neither is drawn.
+  //   * A VERTICAL SHADE, so a lobe's own crest is its lit part and its foot is in the mass's shadow.
+  //
+  // THE TONE PALETTE IS SAMPLED FROM THE PHOTOGRAPH AND IS NOT ALLOWED TO MOVE THE BED'S MEAN. Its seven
+  // anchors are in layout.js's COLORS, each with its own box recorded there: the photograph's own bed lattice,
+  // which out/wh/scratch/meanbox.mjs read across one row as
+  // `#411f17 #5d2a26 #692827 #752729 #732f28 #79302d #5b2925 #43261f`, plus `flowerBed` 0x8f1c23 (box
+  // u 0.30-0.36 v 0.69-0.71, mean) and `flowerBedLit` 0xdf4c55 (pixel u 0.260 v 0.680, a single bloom catching
+  // the light) and the bed box's own p75 / p85 / p95. THE LATTICE IS 66 COLUMNS AT A 0.68 m PITCH ACROSS 45.1 m
+  // x 12 ROWS OUT TO z +12.6 -- 792 lobes per layer, two layers, all merged into one mesh: the pitch is what
+  // the photograph's own bloom heads (a median of 3 px in the contract frame, out/wh/scratch/bedstat.mjs)
+  // resolve to at this depth. The bed's own full derivation and its measurements are in
+  // out/wh/pass-l-handoff.md.
+  const rand = mulberry32(SEED_BED);
+  const z0 = bedFar + 0.05;
+  // THE BLOOMS RUN PAST `bedBloomTo`, AND THAT IS THE PHOTOGRAPH'S OWN READING. `bedBloomTo` is the row the
+  // photograph's bright red stops at (v 0.705), and the bed's own dark near band runs from there to its near
+  // edge (v 0.735) -- but the photograph's red MASK, which the tone measurements are taken inside, reaches
+  // v 0.733: its near band is dark red blooms and the shadow between them, not bare soil. So the lobes are
+  // placed out to z +12.6 and their own lower layer carries the dark band, with the soil body's near strip only
+  // 0.10 m tall at the very edge so its face cannot draw the straight line the previous version's did.
+  const z1 = 12.6;
+  const ROWS = 12;
+  const COLS = 66;
+  const parts = [];
+  for (let j = 0; j < ROWS; j++) {
+    for (let i = 0; i < COLS; i++) {
+      // The lattice position, jittered, with the odd row offset by half a pitch so the columns do not line up
+      // in the x direction.
+      const x = -bedHalf + 0.45 + ((i + 0.5 + (j % 2 ? 0.5 : 0)) / COLS) * (DIMS.bedWidth - 0.9) + uniform(rand, -0.16, 0.16);
+      const z = z0 + ((j + 0.5) / ROWS) * (z1 - z0) + uniform(rand, -0.14, 0.14);
+      const tz = (z - z0) / (bedNear - z0);
+      // The crest falls from the far edge to the near one: 1.20 m at z +5.6 projects to the photo's v 0.674
+      // and 0.50 m at z +14.1 to its v 0.735 (layout.js), and the bloom mass stops at bedBloomTo.
+      const crest = (DIMS.bedCrest - (DIMS.bedCrest - DIMS.bedNearCrest) * tz) / DIMS.bedCrest;
+      // The clumps, at 1.6 m and 4.2 m. THEY ARE COARSER THAN THE 0.68 m LATTICE ON PURPOSE -- a field of the
+      // same pitch as the lattice it modulates is white noise between neighbours and opens no clumps at all;
+      // the field's own wavelength is what decides whether a size change is a clump or a per-lobe draw. THREE
+      // things come off the two fields and they are drawn separately, so a small lobe is not also a low one:
+      // the lobe's own SIZE, the lobe's own HEIGHT, and the crest's own height. Two lobes in one clump are
+      // alike and two clumps are not, which is what a bed of roses looks like at 40 m and what a lattice is not.
+      const clump = (noise2(x, z, 0.90, SEED_BED + 211) - 0.5) * 2;
+      const broad = (noise2(x, z, 2.60, SEED_BED + 241) - 0.5) * 2;
+      // 0.15 to 0.27 m of radius on a 0.68 m x-column pitch, so a lobe is 0.4 to 0.7 of a pitch and the row
+      // overlaps -- which is what puts the crest on the bloom mass's own tops instead of on the box under it. A
+      // 0.20 m lobe is 4 px across at the bed's own depth in the contract frame, which is the photograph's own
+      // bloom-head size; 66 x 12 = 792 of them per layer against the 486 the flat two-tone version drew.
+      const r = uniform(rand, 0.15, 0.27) * (1 + 0.30 * clump + 0.18 * broad);
+      // THE BLOOM MASS IS TWO LAYERS OF WIDE, LOW MOUNDS, and both of those words are the fix. A lobe that is
+      // 1.20 m tall and 0.40 m across reads as a ball standing on a slab -- which is what the crop showed --
+      // so the upper layer is about 0.6 m tall and 2.7 radii across, and the lower layer is flatter again.
+      // The two tops are DIFFERENCED rather than added, so the lower one can never poke through the crest.
+      const top = 0.74 + 0.25 * crest + 0.12 * broad + 0.10 * clump + uniform(rand, -0.06, 0.06);
+      const lowerTop = 0.56 + 0.15 * crest + 0.12 * clump + uniform(rand, -0.05, 0.05);
+      // The upper lobe first, so its own facet tones are the ones on the crest. BOTH LAYERS TAKE THE BRIGHT
+      // PALETTE: the lower layer is seen only as the dark band at the foot of the mass, and its own height in
+      // the lobe (the `shade` term) puts it there without a second, darker palette.
+      pushLobe(parts, x, z, r, r * 1.35, 0.62, 0.30, top, 0.60, BLOOM_LIT_RAMP);
+      // The lower lobe: wider, flatter, and never taller than the crest above it.
+      pushLobe(parts, x + uniform(rand, -0.10, 0.10), z, r * 0.92, r * 1.45, 0.34, 0.12, lowerTop, 0.28, BLOOM_LIT_RAMP);
+    }
+  }
+  const merged = mergeGeometries(parts, false);
+  for (const g of parts) g.dispose();
+  const bedMesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({
+    color: 0xffffff, vertexColors: true, flatShading: true, roughness: 0.95, metalness: 0,
+  }));
+  bedMesh.receiveShadow = true;
+  b.add(bedMesh, 'flower bed blooms');
 
   // ---- the fountain on the centre axis -----------------------------------------------------------------
   // IT STANDS IN THE BED, AND THE BED IS WHAT HIDES ITS BASIN. This is the one thing about the fountain the
@@ -647,3 +912,8 @@ export function buildGrounds(b) {
   void TERRACE;
   return b.group;
 }
+
+
+
+
+
