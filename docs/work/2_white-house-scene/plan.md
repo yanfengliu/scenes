@@ -72,18 +72,19 @@ Three sources, in this order of authority.
 
 | Sheet | What it is | URL suffix |
 | ----- | ---------- | ---------- |
-| 31 | North elevation, full | `00010v` |
-| 32 | East elevation, full and dimensioned | `00011v` |
-| 34 | South elevation, full and dimensioned | `00012v` |
-| 35 | South portico elevations | `00014v` |
-| 51 | South portico | `00024v` |
-| 76 | **North portico details: column and entablature** | `00034v` |
+| 31 | North elevation, full (with the datum chain) | `00007v` |
+| 32 | **West** elevation, full and dimensioned (with the datum chain) | `00008v` |
+| 33 | South elevation, full and dimensioned | `00009v` |
+| 34 | **East** elevation, full and dimensioned (with the datum chain) | `00010v` |
+| 35 | South portico elevations | `00011v` |
+| 51 | South portico | `00026v` |
+| 76 | **North portico details: column and entablature; pilaster and entablature** | `00034v` |
 | 78 | Typical ground-floor windows and doors | `00036v` |
-| 79 | **North portico entrance and steps** | `00037v` |
+| 79 | **North portico entrance** — the sheet draws the entrance, fanlight and surround, no steps | `00037v` |
 | 82 | **Typical first-floor windows — all three window types** | `00040v` |
-| 70, 71 | Ground- and first-floor axonometrics | `00031v`, `00032v` |
-| 2, 3 | Site plan and landscape plan | `00007v`, `00008v` |
-| 4, 5 | Ground- and first-floor plans | `00006v`, `00009v` |
+| 70, 71 | Ground- and first-floor axonometrics | `00032v`, `00033v` |
+| 2, 3 | Site plan and landscape plan | `00002v`, `00003v` |
+| 4, 5 | Ground- and first-floor plans | `00004v`, `00005v` |
 
 Sheet 40 (drawn as `00040v`, "typical first-floor windows") is the one that settles the facade: it draws an unpedimented window, a **triangular**-pedimented window on console brackets, and a **segmental**-pedimented window, at `1/4" = 1'-0"`, and its windows read **six-over-six**. Sheets 34 and 32 carry the level datums.
 
@@ -93,7 +94,9 @@ Sheet 40 (drawn as `00040v`, "typical first-floor windows") is the one that sett
 
 **What is deliberately NOT modelled.** Several figures the brief originally carried are wrong or unsupported and are not in the model: the roof is a **flat deck** behind the balustrade, not a low hip; the **South Portico has no pediment** (it is flat-roofed, hexastyle, six Ionic columns on a rusticated podium with seven arched openings, reached by a double staircase of 21 risers per flight); the **North Portico is tetrastyle** with a triangular pediment and Ionic columns carrying a swag of roses between the volutes; there is no pediment sculpture (that is the Capitol's); the window pediments alternate but **which end starts with the triangle is not recorded anywhere** and is read off the photograph. The building is modelled in its **pre-October-2025** configuration, because the reference photograph is June 2024 and the East Wing was demolished later that year.
 
-**Two corrections to this scene's own research record.** The local sheet-index naming in `out/wh/habs-findings.md` — and the `out/wh/habs/big_NN.jpg` copies that follow it — is WRONG for sheets 30-42: `big_7.jpg` is the north elevation, not the site plan. `out/wh/research-dims.md`'s URL table is the correct one, and the content-identified indices are **site plan 2, landscape plan 3, north elevation 7, west elevation 8, east elevation 10**. The URL-suffix column of the sheet table above was built from the wrong naming and inherits the error for the early sheets (the site plan and the landscape plan are indices 2 and 3, not `00007v`/`00008v`; the north elevation is index 7, not `00010v`; the west elevation is index 8 and the east elevation index 10), and the table's sheet-number labels for the east and west elevations disagree with `research-dims.md`'s (the table calls sheet 32 the East elevation, where `research-dims.md` and the apron pass both call sheet 32 the West elevation and sheet 34 the East). A future pass must therefore re-check a citation's sheet **by content** before trusting its index. Separately, the "granite retaining wall about 18 in high flanking the lawn" that the old residual (f) quoted from `research-dims.md` §8.2/§8.8 is the **fence's own boundary stone base** on the west and east boundaries and along Pennsylvania Avenue (CLR p.364), not a north-south wall between the two fronts, and it was deliberately not used as one; it is modelled already, as `fence wall`.
+**Two corrections to this scene's own research record.** The sheet-index mapping in the table above is now the verified one: `out/wh/habs-index-verify.md` fetched all 41 indices and identified each sheet from its own drawing and its own printed `SHEET n OF 85`, and it settles the disagreement between the two research files in favour of `out/wh/research-dims.md`, whose index table was right on every row it shares with this one; `out/wh/habs-findings.md`'s mapping — and the `out/wh/habs/big_NN.jpg` copies named after it — was wrong, so `big_7.jpg` IS the north elevation and the north elevation lives at index 7 (`00007v`), not at the `00010v` this table used to give it. That pass verified indices **02-16, 18, 20, 24, 26, 31-34, 36-38 and 40** by reading the drawing itself, twelve of them with the printed sheet number read off the TIFF title block; it did **not** establish indices **17, 19, 21-23, 25 and 27-30** (fetched but not read as images, or still behind the LOC rate limit), nor 01, 35, 39 and 41, which it does not address — no sheet this table names falls in either unverified group, so every row above rests on a sheet that was read, and no row carries `not verified`. The mapping is settled, not every citation: a citation's sheet must still be checked **by content** before its index is trusted, which is why the two comments in this entry and in `src/whitehouse/grounds.js` that give the South elevation's datum chain as "sheet 12, index 00012" do not survive it — index 12 is sheet 37, the north elevation's east half, and carries no datum chain, while the South elevation is sheet 33 at `00009v` and sheet 34 is the East elevation, not the South. Separately, the "granite retaining wall about 18 in high flanking the lawn" that the old residual (f) quoted from `research-dims.md` §8.2/§8.8 is the **fence's own boundary stone base** on the west and east boundaries and along Pennsylvania Avenue (CLR p.364), not a north-south wall between the two fronts, and it was deliberately not used as one; it is modelled already, as `fence wall`.
+
+**A datum conflict found by the same pass, recorded and not resolved.** The level datum chain was read at native resolution on the full elevations 31, 32 and 34 and all three print the same numbers: TOP OF ROOF **55'-2 1/2"**, PROMENADE **42'-0"**, THIRD FLOOR **38'-10"**, SECOND FLOOR **20'-11 1/2"**, FIRST FLOOR **0'-0"** and GROUND FLOOR **-12'-8 1/2"** (`out/wh/habs-verify/datum-index07*.png`, `datum-index08*.png`, `datum-index10*.png`). Source 2 above and `out/wh/habs-findings.md` §43-54 give a different chain — ground floor -6'-8", first floor +10'-0", second floor +30'-0", cornice +64'-6", roof at ~+65'-6", and 38'-0" from the first floor to the roof — and those numbers appear nowhere on the sheets this pass read at native resolution: the first-floor-to-roof figure there is 55'-2 1/2", the first-floor-to-promenade figure is 42'-0", and the second floor sits at +20'-11 1/2" rather than +30'-0". This is not the index question and is deliberately not resolved here, but the storey structure the model uses — the chain source 2 calls the only measured storey data found anywhere, which `src/whitehouse/layout.js` carries — may rest on a misread chain, so a pass that owns `src/` should re-read sheets 31, 32 and 34 before relying on it; the crops are in `out/wh/habs-verify/` for that pass to start from.
 
 ## What the gates can and cannot see here
 
