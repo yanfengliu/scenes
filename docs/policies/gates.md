@@ -1,12 +1,34 @@
 # Gates in detail (scenes)
 
-Each entry but the suite's cost continues a line of the Gates section in [AGENTS.md](../../AGENTS.md); read that line first. The text moved here from AGENTS.md sentence for sentence on 2026-10-29, so that AGENTS.md fits under Codex's 32 KiB limit for a project doc (`../fleet/FLEET.md`, Repo file shape).
+Each entry but the suite's cost continues a line of the Gates section in [AGENTS.md](../../AGENTS.md); read that line first. The text moved here from AGENTS.md sentence for sentence on 2026-10-29, so that AGENTS.md fits under Codex's 32 KiB limit for a project doc (`../fleet/FLEET.md`, Repo file shape). On 2026-10-30 each AGENTS.md line kept its opening and the rest of its sentences moved here, to the start of its entry, so each line is a gate and what it checks; `npm run perf` and `npm run shimmer` got entries of their own.
+
+## Index
+
+Find the entry here, then read only it.
+
+- [`npm test`'s evidence markers](#npm-tests-evidence-markers): how `npm test` knows each tool ran, and what a renamed summary line does.
+- [Renderers](#renderers): the GPU and software switches, what a gate prints when the renderer it asked for is not the one it got, and CI's settings.
+- [`npm run import-inert`](#npm-run-import-inert): the main-module guard and why it exists.
+- [Suite cost](#suite-cost): what each gate of the suite costs, measured.
+- [Scene ready](#scene-ready): the 300 s ceiling and how the wait reads the scene.
+- [Round-trips to the scene page](#round-trips-to-the-scene-page): why image work stays off the scene page, and what a frame and a round-trip cost.
+- [`npm run placement`](#npm-run-placement), [`npm run namerules`](#npm-run-namerules), [`npm run clearance`](#npm-run-clearance) and [`npm run groundcover`](#npm-run-groundcover): what each checks about the built scene, and how.
+- [`npm run animation`](#npm-run-animation), [`npm run nudge`](#npm-run-nudge) and [`npm run blackframe`](#npm-run-blackframe): drift across the cycle, flicker under a small move, and a black frame.
+- [`npm run shot`](#npm-run-shot) and [`npm run compare`](#npm-run-compare): the scored frame, its renderer, the scores and their bound.
+- [`npm run try`](#npm-run-try), [`npm run record`](#npm-run-record), [`npm run views`](#npm-run-views) and [`npm run treecheck`](#npm-run-treecheck): the quick score, the recorded drag, the fixed poses, and whether the records describe one tree.
+- [`npm run perf`](#npm-run-perf) and [`npm run shimmer`](#npm-run-shimmer): frame time against its budget, and the shimmer figure.
 
 ## `npm test`'s evidence markers
+
+It prints each gate's elapsed seconds too, so a log carries what each one cost. Those markers are plain substrings, so a tool that renames its summary line goes red until `GATES` in `tools/test.js` is updated.
 
 A tool that exits 0 having done nothing used to be reported here as a pass, which is what `blackframe` and `record` did on every CI run until 2026-09-09.
 
 ## Renderers
+
+A gate renders on the GPU unless its verdict depends on the CPU rasterizer; `shot` and `compare` are the only two where it does, and they have no switch at all. `<NAME>_GPU=0` forces one gate onto SwiftShader, `<NAME>_GPU=1` forces one onto the GPU, and `GATES_GPU=0` moves all of them — the gate's own variable wins, which is what lets CI say "software everywhere except blackframe".
+
+`GATES_GPU=0 BLACKFRAME_GPU=1 ANIMATION_FRAMES=3 BLACKFRAME_VIEWS=1 RECORD=0 npm test` is that run, locally.
 
 Asking for a GPU is a request: chromium falls back to SwiftShader where there is none, so the printed tag says `[GPU]`, `[software]`, `[SOFTWARE FALLBACK: the GPU was asked for and none was available]`, `[GPU, though software was asked for]` — which is what `shot` would print, and it now fails on it rather than writing a GPU frame to the contract — or `[UNRECOGNISED: …]` for a renderer string that names no device.
 
@@ -15,6 +37,8 @@ Asking for a GPU is a request: chromium falls back to SwiftShader where there is
 **How far apart the two renderers score one frame is not a constant of this repo, and it was being read as one.** Measured on four trees on 2026-09-17: SSIM's crossing is stable, the GPU reading 0.00080 to 0.00091 better everywhere, but cell distance's swung from 0.000103 better on the 2026-09-15 tree to 0.0000036 better on iteration 5's and 0.000069 WORSE on a tree with the ambient light moved — it changes sign with the scene. Nothing anywhere may size a limit from the single figure the 2026-09-15 line quotes; `npm run try` carries the measurement and the method, and `docs/devlog/detailed/2026-09-17-fast-arm.md` has the table.
 
 ## `npm run import-inert`
+
+A tool's main block goes inside `if (isMainModule(import.meta.url)) { … }`, with `isMainModule` **imported from `tools/serve.js`**, never hand-built. It opens no browser, costs about 7 s, and runs first in `npm test`.
 
 It exists because importing `tools/animation.js` started a full animation run on main until 2026-09-15, and importing `tools/test.js` ran the whole suite — seven tools had no main-module guard at all. Its other half is the evidence-marker check: this one catches a tool that runs when it should not, that one catches a tool that does not run when it should.
 
@@ -28,17 +52,23 @@ The ceiling is what a slow shared runner needs and costs a fast machine nothing;
 
 ## Round-trips to the scene page
 
+Image work never belongs there at all: `openInspector` in `tools/lib/browser.js` opens the blank page that every decode, resample and compose runs on, and it collects that page's errors into the caller's own array so moving work off the scene page does not move it out from under `collectErrors`.
+
 **Two numbers, and they are not the same number**: the FRAME at 1200x1100 on this machine's SwiftShader is about **5.0 s** (composer target 1440x1320 at 4 samples — the shipped 8, clamped), and a ROUND-TRIP to that page costs about **14 s**, because the evaluate waits out the frame in flight and then its own, plus CDP. The 5.0 s is corroborated twice outside the probe that measured it: `animation`'s own per-frame line reads `pose and two frames 15.4 s`, which is `setTime`'s render plus two loop frames, and the whole `shot` path (one evaluate of two rAF, then a compositor screenshot) is 36.0 s. On a shared runner both are several times larger; on this machine's GPU the frame is about 5 ms.
 
 **What the 5.0 s is spent on is not known** — two attempts to break it down both died on the same three.js fault, `Invalid value used as weak map key` in `WebGLState.drawBuffers`, reached by touching `renderTarget.samples` or `composer.setSize`; the second attempt's control row then read 0.02 s against its own 5.01 s baseline and the whole table was void. A third attempt should toggle `Pass.enabled` only and re-assert the baseline after every toggle. So the rule bites on the software rasterizer and is nearly free on a GPU — which is why moving the gates to the GPU on 2026-09-15 was worth more than every round-trip saving before it, and why the rule still matters: CI is SwiftShader and always will be. A round-trip to that page is never free there, so a gate that is slow is asked how many evaluates it makes before anything else. The same `decodeImage` call on the same file in the same process cost **96.1 s on the scene page and 0.1 s on the blank one**, and returns the same 1,320,000 bytes either way — byte-identical, with the scores off them equal as doubles (`out/scratch/decode-purity.mjs`). `tools/animation.js` was doing eight of those on the scene page.
 
 ## `npm run placement`
 
+`PLACEMENT_CHECKS` casts the photo camera's ray through each listed position and fails unless the first mesh hit is the named one (a piece built inside another, a canopy hiding a missing trunk). `GROUNDING_CHECKS` takes each listed object's own base, drops a ray, and fails when the mesh it should stand on is too far below it (floating) or too far above it (buried). Both lists are in `src/layout.js`.
+
 Both halves are cast in one `page.evaluate`, with the clock pinned first inside it; `clearance` pins its clock inside its own measuring call for the same reason.
 
 **Renderer: the GPU**, and it waits for no settling frames, because no pixel enters the verdict — both halves are `THREE.Raycaster` against the scene graph on the CPU. Measured on 2026-09-15: the same 21 forward hits and 10 grounding results on both renderers, 7 s against 26 s standing alone (8 s in `npm test`, against 30 s before). Iteration 3 then grew `PLACEMENT_CHECKS` to 23, and re-measured on 2026-09-16 both renderers print 23 forward hits and 10 grounding results, 10 s against 24 s.
 
 ## `npm run namerules`
+
+Updating is `node tools/namerules.js --update "<why>"`; the reason is required and must differ from the recorded one.
 
 A mesh name is an interface between rules that were written apart and do not import each other: `PLACEMENT_CHECKS` in `src/layout.js` matches by name PREFIX, and `NO_CAST` in `src/lighting.js` is a name regex deciding which meshes cast shadows. Iteration 4 renamed `far roof ridges` to `far house ridges` to stop it widening the first, which moved it across the second and put 37 instances into the shadow pass; the shot went 364 to 366 draw calls and **every gate stayed green**, because `placement` only asks that the check still passes, `shot` prints the draw count and asserts nothing, and `perf`'s budget is 400. The only signal was a two-call move in a printed number, and it was explained away in writing before a second critic round decomposed the frame.
 
@@ -51,6 +81,8 @@ A mesh name is an interface between rules that were written apart and do not imp
 **Renderer: the GPU**, no settling frames, no pixel in the verdict; `NAMERULES_GPU=0` (or `GATES_GPU=0`) forces SwiftShader. Measured rather than assumed: SwiftShader prints the same 53 rules, 255 meshes, 98 shadow casters and even the same 370 draw calls and 745,206 triangles, so the manifest is a property of the scene and not the driver and CI is held to the numbers recorded here. About 9 s in the suite.
 
 ## `npm run clearance`
+
+It writes `out/clearance.json`.
 
 Both measure the built scene rather than the constants it was built from — it imports nothing from `src/` — because both defects it exists for were introduced by editing exactly the constants a source-derived check would have read.
 
@@ -82,11 +114,15 @@ It exists because a user saw the scene flicker while orbiting and no scored gate
 
 ## `npm run blackframe`
 
+`BLACKFRAME_VIEWS=<n>` trims the sweep and the run prints which views it covered; CI runs one, the size the user's report came from.
+
 It is the counterpart to `nudge`, which scores how much the frame *changes* and therefore rates a fully black frame as perfectly stable; this one scores whether the frame is *there*.
 
 **Renderer: the GPU, and it is the one gate that asks even where the others are told not to** (`BLACKFRAME_GPU=1` beats `GATES_GPU=0`, which is how CI is written) — the defect it guards is a driver behaviour, so it asks wherever it runs, prints the renderer it got, and falls back to SwiftShader where there is no GPU. The two frames a resized view settles for are waited for inside the measuring call rather than in a `page.evaluate` of their own, which is the same frames and one round-trip fewer.
 
 ## `npm run shot`
+
+That frame is the contract `docs/PLAN-scores.md` records, so nothing in the tool may change the pixels: hiding the page's chrome, pinning the clock and waiting two frames for the compositor are one evaluate rather than three, and the file is byte-identical either way (sha256 `d29b76dd0272…` on SwiftShader).
 
 **Renderer: SwiftShader, and this is the one gate with no GPU switch at all** — the scored number has to be the same digits here and on a runner, and a CPU rasterizer is deterministic across machines while a driver is not. A flag that could move these pixels is a flag that could move them by accident, and the tool now **fails** rather than shooting if chromium hands it a GPU anyway — a GPU frame would score 0.0748 / 0.4742, inside the thresholds, and rewrite the contract on a green run.
 
@@ -102,6 +138,10 @@ It is the counterpart to `nudge`, which scores how much the frame *changes* and 
 
 ## `npm run compare`
 
+It refuses a render older than the source. It writes `out/compare.png` (photo | render | 50% overlay | heat-map), `out/overlay.png` (the plan's landmark boxes over a 50% blend at 1200x1100), and `out/scores.json` (scores plus per-cell means, the tree the render came from, and the post-chain and environment state it was drawn at).
+
+Bound of the compare scores: they see 528 mean colors and a 64 px grayscale image, so a landmark 10 px off in the photo is invisible to them. `out/overlay.png` is the check for placement.
+
 **Renderer: SwiftShader, no switch either, for a different reason than `shot`'s** — it renders no 3D at all, but it decodes and resamples both images through chromium's 2D canvas, and an accelerated canvas would make the scored digits a property of the graphics driver. On this machine the decode came back byte-identical either way; the lever is absent because the measurement covers one machine and the contract covers every machine.
 
 **It refuses nine things, not one**: a render older than any source file (by mtime, which is the 2026-09-05 rule), a missing `out/render.tree.json`, a sidecar whose recorded render digest is not the `out/render.png` on disk, a recorded scene source tree that is not the tree on disk, a sidecar with no post-chain state or no verdict inside it, one whose post-chain rung `src/post.js` does not mark as the chain as designed, a sidecar with no environment state or one of a shape it does not know, and one whose environment map `src/lighting.js` could not prove or had to build twice — the second, third and fourth are the score's half of the binding that replaced `1-photo.png` being byte-identical to `out/render.png`, and they catch what an mtime cannot: a source reverted to an older copy, a checkout that rewrote mtimes, a render carried in from another tree. The fifth and sixth are the 2026-09-17 POST half: the thresholds in `docs/PLAN-scores.md` are the FULL chain's numbers, and a frame drawn at a lesser rung scores differently while looking, in every other field of the sidecar, exactly like the contract. Their bound is that they read a number the page reported about itself, and that they are blind to the flake they were written for, which was drawn at rung 0. The seventh and eighth are that day's LIGHT half and are not blind to it: the thresholds are also the fully lit scene's, and the frame this scene draws without its environment map scored 0.0632 against 0.05958, which fails them.
@@ -109,6 +149,8 @@ It is the counterpart to `nudge`, which scores how much the frame *changes* and 
 **And a ninth check is aimed at that flake's own class from the other side: the same tree must draw the same amount of light.** When the previous `out/light-anchor.json` is of the same scene source tree, its `referenceLuma` — `verifyComposer`'s own 64x64 render of the scene with no post chain, at a clock pinned to 0 — is the anchor, and this run must land within 0.15 of it; the 2026-09-17 flake moved it 2.9 (57.5 to 54.6, the figure that scene reads with `scene.environment` removed). Nothing is pinned: the anchor is whatever the last run of the same source measured, so an iteration lane that changes the scene resets it and nothing has to be maintained. Its bounds are real and printed: it needs a previous anchor OF THE SAME TREE, so a fresh clone and every CI run skip it and say which case they took — **and it would NOT have caught the 2026-09-17 incident itself**, which was the first `npm test` on a freshly merged main with no same-tree anchor; it catches every repeat. It says the two runs disagree and never which is right. The tolerance is 0.15, against a measured run-to-run jitter of ZERO over the 54 logged shot runs that recorded it, so it is one rounding step of a one-decimal figure and a twentieth of the 2.9 the defect moved. The anchor lives in its own file, written before the comparison decides anything, because keeping it in `out/scores.json` — which `compare` writes only after the check passes — would let one flake wedge every later correct run red against a stale figure. And it is blind to any change that moves no light.
 
 ## `npm run try`
+
+**It is a diagnostic, not a gate**: it is in no suite, it asserts nothing about the scene and it has no threshold — and it **writes neither `out/render.png` nor `out/render.tree.json`**, only `out/try/render.png` and `out/try/score.json`, so it cannot feed `compare` and cannot become the scored record.
 
 It renders the same photo view at the same 1200x1100 with the clock pinned at t = 0, scores it with the same `cellDistance` and `ssimGray` out of `tools/lib/metrics.js`, and prints the two numbers, the renderer it got, the scene source tree hash, the frame's sha256, the post-chain rung and its own seconds split by phase. What it does refuse are instrument faults, because an A/B is void without them: a page error, a frame not drawn by the post chain as designed, **a frame that did not get the sky’s environment map** (`src/lighting.js` proves that map and this tool refuses an arm whose proof failed, on exactly the grounds it already refuses a lesser rung — losing the map costs this scene about 0.0036 of cell distance, **36 times this tool’s own margin**, so an arm that lost it would read as a scene change and is not one), and the scene source changing under the run.
 
@@ -122,11 +164,15 @@ It renders the same photo view at the same 1200x1100 with the clock pinned at t 
 
 ## `npm run record`
 
+`RECORD_SECONDS` and `RECORD_GPU=0` (or `GATES_GPU=0`) trim it and `RECORD=0` skips it with a printed reason; CI skips it, because on SwiftShader its 3007x1957 buffer had not finished after 19 minutes and would prove nothing about a GPU driver anyway.
+
 It is the only gate that exercises the controls rather than posing the camera, and the only one that can see a flicker: the others sample moments. It also fails when it caught fewer than 30 frames, because too short a recording cannot tell a scene that never went dark from a recorder that never caught it.
 
 **Renderer: the GPU, which it has always asked for** — the fault it exists for is a driver behaviour, and it is the only gate whose assertions are about real time, so it is also the one gate whose verdict could move with machine load.
 
 ## `npm run views`
+
+There is no contact sheet: an aggregate view answers "is there one of each" and never "is each one right", so `out/views/index.txt` lists each pose's path, sha256 and mean luminance, plus one sweep digest over all seven to quote in a review, and the frames are reviewed one at a time at 1200x1100.
 
 It poses the camera directly and does not exercise the controls, which is `npm run record`'s job, but it applies the same `clampCamera` a drag gets, and one pose exists only to prove that clamp fires. It found the top platform's bare face standing across the head of the stairs, which every scored gate passes over.
 
@@ -140,6 +186,16 @@ It poses the camera directly and does not exercise the controls, which is `npm r
 
 ## `npm run treecheck`
 
+It opens no browser and costs under a second. **It is not in `npm test`**, on purpose: `views` is a diagnostic, a fresh clone's first suite run has never produced a sweep, and a gate that went red for a missing diagnostic would be a false red.
+
 Inside the suite it is `compare` that carries the same check for the half that always exists, failing when its sidecar is missing, when the sidecar's render digest is not the render on disk, or when the recorded tree is not the tree on disk. Bounds: it hashes `index.html` and `src/**` only, so a `tools/` edit or a CDN serving different three.js bytes moves no hash; **`japan.webp` is half of what `compare` scores and is bound by none of this** — it is in neither the hash nor `compare`'s mtime list, so a changed reference photo moves every score with no guard in this repo, and what binds it is its own bytes in git; it proves the artifacts agree about a tree and never that any of them is right; `docs/render.webp` is encoded from `out/render.png` without consulting the sidecar and so sits outside the binding too; and it reports a missing artifact as missing, prints how many pairings it actually made, and fails outright when no record carries a tree, so a run that compared nothing cannot read as a pass.
 
 **CRLF is normalised to LF before hashing**, because this repo has `core.autocrlf = true` and no `.gitattributes`: hashing raw bytes made the hash a property of the checkout rather than of the commit — the same tree read `3811005047643b3b…` here and `dda00820d3825d48…` with LF — so a hash quoted in a review meant nothing across machines and a Linux re-run against artifacts made on Windows gave a false red naming every file. The cost is that a pure line-ending change is invisible to it, which moves no pixel.
+
+## `npm run perf`
+
+It launches chromium with the GPU (ANGLE/D3D11) and prints the renderer it got; `PERF_GPU=0` or `GATES_GPU=0` forces SwiftShader. CI does not run it: a shared runner's frame time says nothing about the budget. Measured here: 4.90 ms median at 1920x1080 on ANGLE/D3D11, which is the number the whole renderer decision rests on.
+
+## `npm run shimmer`
+
+`npm run shimmer` orbits the camera 0.1 degrees a frame through three poses at device pixel ratios 1 and 2 and scores the temporal second difference, `|2*F(i) - F(i-1) - F(i+1)|` as a frame mean and a worst 16x16 block, which cancels smooth motion and keeps pixels that toggle; a still control must read 0 or it exits 1, because a scene that changes with the camera and clock held still makes the figure meaningless. It is a diagnostic, not a gate: disocclusion at silhouettes sits under the figure as a floor, so the number compares builds on the same path and has no absolute threshold; it writes `out/shimmer.json`.
